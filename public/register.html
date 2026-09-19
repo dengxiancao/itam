@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>注册账号 · IT 资产管理系统</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='23' fill='%232563eb'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Arial'>IT</text></svg>" />
+  <link rel="stylesheet" href="/assets/auth.css" />
+</head>
+<body>
+  <div class="box">
+    <div class="logo">
+      <div class="mark">IT</div>
+      <div>
+        <h1>注册账号</h1>
+        <p>IT 资产管理系统 · 自助注册</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="msg" id="msg"></div>
+      <form id="form">
+        <div class="field">
+          <div class="label-row"><label for="username">用户名 <span style="color:var(--red)">*</span></label></div>
+          <input type="text" id="username" placeholder="3~40 位字母/数字/下划线" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <div class="label-row"><label for="display_name">姓名</label></div>
+          <input type="text" id="display_name" placeholder="真实姓名（选填）" autocomplete="name" />
+        </div>
+        <div class="field">
+          <div class="label-row"><label for="password">密码 <span style="color:var(--red)">*</span></label></div>
+          <input type="password" id="password" placeholder="至少 8 位，建议字母+数字+符号" autocomplete="new-password" required />
+          <div class="pw-meter"><i id="pwBar"></i></div>
+          <div class="pw-tip" id="pwTip">至少 8 位，不能是纯数字或纯字母</div>
+        </div>
+        <div class="field">
+          <div class="label-row"><label for="password2">确认密码 <span style="color:var(--red)">*</span></label></div>
+          <input type="password" id="password2" autocomplete="new-password" required />
+        </div>
+        <div class="field">
+          <div class="label-row"><label for="email">邮箱</label></div>
+          <input type="email" id="email" placeholder="选填，便于管理员联系" autocomplete="email" />
+        </div>
+        <button type="submit" id="submit">注 册</button>
+      </form>
+      <div class="foot">已有账号？<a class="link" id="loginLink" href="/login">返回登录</a></div>
+      <div class="hint" id="hint"></div>
+    </div>
+  </div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const nextUrl = qs.get('next') || '/';
+    const msg = document.getElementById('msg');
+    const btn = document.getElementById('submit');
+    const show = (t, k = 'err') => { msg.className = 'msg ' + k; msg.innerHTML = t; };
+
+    document.getElementById('loginLink').href = '/login?next=' + encodeURIComponent(nextUrl);
+
+    // 未开放注册就直接挡回来
+    fetch('/api/auth/status', { headers: { Accept: 'application/json' } })
+      .then((r) => r.json())
+      .then((j) => {
+        const d = j.data || j;
+        if (d.authenticated) location.replace(nextUrl);
+        if (!d.allow_register) {
+          show('本系统未开放自助注册，请联系管理员为你开户。', 'warn');
+          document.getElementById('form').style.display = 'none';
+          btn.disabled = true;
+        }
+        if (d.allow_register) {
+          document.getElementById('hint').innerHTML = '注册后可能需要管理员审核通过才能登录。';
+        }
+      })
+      .catch(() => {});
+
+    // 密码强度提示
+    const pw = document.getElementById('password');
+    const bar = document.getElementById('pwBar');
+    const tip = document.getElementById('pwTip');
+    const score = (s) => {
+      let n = 0;
+      if (s.length >= 8) n++;
+      if (s.length >= 12) n++;
+      if (/[a-z]/.test(s) && /[A-Z]/.test(s)) n++;
+      if (/\d/.test(s)) n++;
+      if (/[^A-Za-z0-9]/.test(s)) n++;
+      return Math.min(n, 4);
+    };
+    pw.addEventListener('input', () => {
+      const s = score(pw.value);
+      const colors = ['var(--red)', 'var(--red)', 'var(--amber)', 'var(--green)', 'var(--green)'];
+      const labels = ['太短', '弱', '一般', '较强', '很强'];
+      bar.style.width = (s / 4 * 100) + '%';
+      bar.style.background = colors[s];
+      tip.textContent = pw.value ? ('密码强度：' + labels[s]) : '至少 8 位，不能是纯数字或纯字母';
+      tip.style.color = s >= 3 ? 'var(--green)' : (s >= 2 ? 'var(--amber)' : 'var(--red-text)');
+    });
+
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.className = 'msg';
+      const username = document.getElementById('username').value.trim();
+      const password = pw.value;
+      const password2 = document.getElementById('password2').value;
+      if (password !== password2) { show('两次输入的密码不一致'); return; }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 提交中…';
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            password,
+            display_name: document.getElementById('display_name').value.trim(),
+            email: document.getElementById('email').value.trim(),
+          }),
+        });
+        const body = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(body?.error || ('注册失败 (HTTP ' + res.status + ')'));
+        const d = body?.data ?? body;
+        location.replace('/login?next=' + encodeURIComponent(nextUrl) + (d.need_approval ? '&pending=1' : '&registered=1'));
+      } catch (err) {
+        show(err.message);
+        btn.disabled = false;
+        btn.textContent = '注 册';
+      }
+    });
+  </script>
+</body>
+</html>

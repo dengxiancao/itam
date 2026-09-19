@@ -1,0 +1,127 @@
+/* ==================================================================
+ *  登录 / 注册页共用样式
+ * ------------------------------------------------------------------
+ *  与后台同一套视觉系统：冷中性画布 + 白卡片 + 1px 发丝线，
+ *  圆角语法一致（卡片 12 / 控件 8），强调色只有一处 —— 主按钮。
+ *  版式上留白给足，页面除主按钮外不出现第二个色块。
+ * ================================================================== */
+:root {
+  --primary: #2563eb;
+  --primary-600: #1d4ed8;
+  --primary-soft: #eff4ff;
+  --primary-ring: rgba(37, 99, 235, .16);
+
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --ink-3: #64748b;
+  --ink-4: #94a3b8;
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --surface-2: #f9fafb;
+  --surface-3: #f1f3f5;
+  --border: #e5e7eb;
+  --border-soft: #f1f3f5;
+  --line-strong: #d1d5db;
+  --text: #0f172a;
+  --text-2: #334155;
+  --text-3: #64748b;
+
+  --green: #067647;
+  --green-soft: #ecfdf3;
+  --green-border: #abefc6;
+  --red: #b42318;
+  --red-soft: #fef3f2;
+  --red-border: #fecdca;
+  --red-text: #b42318;
+  --amber: #b54708;
+  --warn-bg: #fffaeb;
+  --warn-border: #fedf89;
+  --warn-text: #b54708;
+
+  --radius: 12px;
+  --radius-md: 8px;
+  --pill: 9999px;
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .04);
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { height: 100%; }
+/* 用 min-height 而不是 height：注册表单在矮屏上变长时可以正常滚动，顶端不会被裁掉 */
+body {
+  margin: 0; min-height: 100vh;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px; line-height: 1.5;
+  display: flex; align-items: center; justify-content: center; padding: 24px 20px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+a { color: var(--primary); }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.box { width: 100%; max-width: 400px; }
+.logo { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.logo .mark {
+  width: 40px; height: 40px; border-radius: var(--radius-md); display: grid; place-items: center;
+  background: var(--ink); font-weight: 600; font-size: 15px; color: #fff;
+  letter-spacing: -.3px; flex: none;
+}
+.logo h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.02em; }
+.logo p { margin: 2px 0 0; font-size: 12px; color: var(--ink-3); }
+
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+.label-row { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 6px; }
+label { display: block; font-size: 12.5px; color: var(--text-2); font-weight: 600; }
+.link { font-size: 12.5px; color: var(--primary); text-decoration: none; font-weight: 600; }
+.link:hover { color: var(--primary-600); text-decoration: underline; }
+input[type=text], input[type=password], input[type=email] {
+  width: 100%; height: 42px; padding: 0 12px; border-radius: var(--radius-md); font-size: 14px;
+  background: #fff; border: 1px solid var(--line-strong); color: var(--ink); outline: none;
+  box-shadow: var(--shadow-xs);
+  transition: border-color .15s, box-shadow .15s; font-family: inherit;
+}
+input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); }
+input::placeholder { color: var(--ink-4); }
+.field { margin-bottom: 16px; }
+.row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; font-size: 13px; color: var(--text-2); gap: 10px; }
+.row label { margin: 0; display: flex; align-items: center; gap: 7px; font-weight: 400; cursor: pointer; }
+input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; flex: none; }
+
+/* 全页唯一的主色块 —— 主按钮 */
+button {
+  width: 100%; height: 42px; border: none; border-radius: var(--radius-md); font-size: 14.5px; font-weight: 600;
+  color: #fff; background: var(--primary); cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: background .15s, transform .1s;
+  font-family: inherit;
+}
+button:hover { background: var(--primary-600); }
+/* 整宽按钮用极轻微缩放：0.95 那种幅度在 400px 宽上会显得塌陷 */
+button:active { transform: scale(.99); }
+button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+button:disabled:active { transform: none; }
+button.ghost { background: var(--surface-3); color: var(--ink); box-shadow: none; }
+button.ghost:hover { background: #e8eaee; }
+
+.msg { display: none; margin-bottom: 16px; padding: 10px 13px; border-radius: var(--radius-md); font-size: 13px; line-height: 1.55; border: 1px solid transparent; }
+.msg.err  { display: block; background: var(--red-soft);   border-color: var(--red-border);   color: var(--red-text); }
+.msg.warn { display: block; background: var(--warn-bg);    border-color: var(--warn-border);  color: var(--warn-text); }
+.msg.ok   { display: block; background: var(--green-soft); border-color: var(--green-border); color: var(--green); }
+
+.hint { margin-top: 18px; font-size: 12px; color: var(--ink-3); line-height: 1.8; }
+.hint code { background: var(--surface-3); padding: 1px 6px; border-radius: 5px; font-size: 11.5px; font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+.spin { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: rot .7s linear infinite; vertical-align: -3px; }
+@keyframes rot { to { transform: rotate(360deg); } }
+.pw-meter { height: 5px; border-radius: var(--pill); background: var(--border-soft); margin-top: 8px; overflow: hidden; }
+.pw-meter i { display: block; height: 100%; width: 0; transition: width .2s, background .2s; }
+.pw-tip { font-size: 11.5px; color: var(--ink-3); margin-top: 6px; }
+.foot { margin-top: 16px; text-align: center; font-size: 13px; color: var(--text-2); }

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>登录 · IT 资产管理系统</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='23' fill='%232563eb'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Arial'>IT</text></svg>" />
+  <link rel="stylesheet" href="/assets/auth.css" />
+</head>
+<body>
+  <div class="box">
+    <div class="logo">
+      <div class="mark">IT</div>
+      <div>
+        <h1>IT 资产管理系统</h1>
+        <p>请登录后使用 · 需要账号才能访问</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="msg" id="msg"></div>
+      <form id="form" autocomplete="on">
+        <div class="field">
+          <label for="username">用户名</label>
+          <input type="text" id="username" name="username" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="password">密码</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required />
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="remember" /> 记住我（30 天）</label>
+        </div>
+        <button type="submit" id="submit">登 录</button>
+      </form>
+      <div class="foot" id="regFoot" hidden>还没有账号？<a class="link" id="regLink" href="/register">立即注册</a></div>
+      <div class="hint" id="hint">
+        忘记密码？请联系系统管理员重置，或在服务器上运行 <code>node server/reset-password.js</code>。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const nextUrl = qs.get('next') || '/';
+    const msg = document.getElementById('msg');
+    const form = document.getElementById('form');
+    const btn = document.getElementById('submit');
+
+    const show = (text, kind = 'err') => { msg.className = 'msg ' + kind; msg.innerHTML = text; };
+
+    if (qs.get('expired') === '1') show('登录已过期，请重新登录', 'warn');
+    if (qs.get('registered') === '1') show('注册成功，请登录', 'ok');
+    if (qs.get('pending') === '1') show('注册成功！账号正在等待管理员审核，审核通过后即可登录。', 'warn');
+
+    fetch('/api/auth/status', { headers: { Accept: 'application/json' } })
+      .then((r) => r.json())
+      .then((j) => {
+        const d = j.data || j;
+        if (d.authenticated) { location.replace(nextUrl); return; }
+        if (d.username) document.getElementById('username').value = d.username;
+        if (d.allow_register) {
+          document.getElementById('regFoot').hidden = false;
+          document.getElementById('regLink').href = '/register?next=' + encodeURIComponent(nextUrl);
+        }
+      })
+      .catch(() => {});
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.className = 'msg';
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 登录中…';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value,
+            remember: document.getElementById('remember').checked,
+          }),
+        });
+        const body = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(body?.error || ('登录失败 (HTTP ' + res.status + ')'));
+        const d = body?.data ?? body;
+        location.replace(d.must_change ? '/?first=1' : nextUrl);
+      } catch (err) {
+        show(err.message);
+        btn.disabled = false;
+        btn.textContent = '登 录';
+        document.getElementById('password').select();
+      }
+    });
+  </script>
+</body>
+</html>

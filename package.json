@@ -1,0 +1,20 @@
+{
+  "name": "itam",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "IT 资产管理系统 —— 设备台账 / 组织管理 / Excel 对接 / 手机拍照识别",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "cert": "node server/make-cert.js",
+    "reset-db": "node server/reset-db.js",
+    "selftest": "node tests/selftest.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

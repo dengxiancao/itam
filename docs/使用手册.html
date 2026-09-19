@@ -301,8 +301,21 @@ tbody tr:hover { background: #f8fafc; }
 <h4 id="为什么识别会更准了">为什么识别会更准了<a class="anchor" href="#为什么识别会更准了">#</a></h4>
 <div class="tw"><table>
 <thead><tr><th>改进</th><th>说明</th></tr></thead>
-<tbody><tr><td><strong>图像分辨率 1600 → 2200px</strong></td><td>铭牌上的序列号只占几十个像素，多给点像素明显更准</td></tr><tr><td><strong>送识别前先做灰度 + 对比度拉伸</strong></td><td>手机拍铭牌常偏灰、反光，拉伸后字和底分得更开（不动归档的原图）</td></tr><tr><td><strong>提示词明确要求逐字符确认易混字符</strong></td><td>明确告诉模型 <code>1/L/I</code>、<code>0/O/Q</code>、<code>8/B</code>、<code>5/S</code>、<code>2/Z</code>、<code>H/K</code> 要分清，且不许「猜一个合理的」</td></tr><tr><td><strong>同型号编号规律兜底</strong></td><td>同型号机器的编号长得极像（联想 ThinkCentre 全是 <code>YLX</code> 开头 8 位），拿档案一比就能把看错的字符纠回来</td></tr></tbody>
+<tbody><tr><td><strong>图像分辨率 1600 → 2200px</strong></td><td>铭牌上的序列号只占几十个像素，多给点像素明显更准</td></tr><tr><td><strong>送识别前先做灰度 + 对比度拉伸</strong></td><td>手机拍铭牌常偏灰、反光，拉伸后字和底分得更开（不动归档的原图）</td></tr><tr><td><strong>提示词明确要求逐字符确认易混字符</strong></td><td>明确告诉模型 <code>1/L/I</code>、<code>0/O/Q</code>、<code>8/B</code>、<code>5/S</code>、<code>2/Z</code>、<code>H/K</code> 要分清，且不许「猜一个合理的」</td></tr><tr><td><strong>同型号编号规律兜底</strong></td><td>同型号机器的编号长得极像（联想 ThinkCentre 全是 <code>YLX</code> 开头 8 位），拿档案一比就能把看错的字符纠回来</td></tr><tr><td><strong>只保留取景框内的画面</strong></td><td>见下</td></tr></tbody>
 </table></div>
+<h4 id="-只保留取景框内的画面省空间">📐 只保留取景框内的画面（省空间）<a class="anchor" href="#-只保留取景框内的画面省空间">#</a></h4>
+<p>拍照时<strong>只截取取景框里的那一块</strong>，框外的背景全部丢掉：</p>
+<div class="tw"><table>
+<thead><tr><th>分辨率</th><th>整帧</th><th>实际保留</th><th>省掉</th></tr></thead>
+<tbody><tr><td>1080×1920（常见手机竖屏）</td><td>100%</td><td><strong>约 30%</strong></td><td>≈ 3.4 倍</td></tr><tr><td>2160×3840（4K）</td><td>100%</td><td><strong>约 30%</strong></td><td>≈ 3.4 倍</td></tr><tr><td>1920×1080（横屏平板）</td><td>100%</td><td>约 27%</td><td>≈ 3.7 倍</td></tr></tbody>
+</table></div>
+<p>好处有两个：</p>
+<ol>
+<li><strong>省空间</strong>：归档的原图从一两 MB 降到两三百 KB，服务器磁盘和手机存储都省</li>
+<li><strong>识别更准</strong>：同样的像素预算集中在铭牌上，字符更清楚</li>
+</ol>
+<blockquote><p>📌 <strong>怎么保证不会把字裁掉</strong>：</p><p>- 取景框四周额外留了 <strong>15% 余量</strong>，铭牌稍微出去一点也能带上</p><p>- 拍完的<strong>预览页显示的就是裁好的那张图</strong>——如果发现铭牌被切了，当场点「重拍」就行</p><p>- 相机顶部提示也改成了「把铭牌放进框内（只保留框里的画面，请让字完整入框）」</p></blockquote>
+<blockquote><p>用 <strong>🖼️ 从相册选图</strong> 时<strong>不裁</strong>——你选的那张图本身就是你要的，按屏幕比例硬裁反而会切掉铭牌。</p></blockquote>
 <p>保存成功后提示「已入库：资产编号」，设备出现在台账里。</p>
 <blockquote><p>⚠️ 如果 SN 已存在，会提示冲突，不会重复建两条记录。此时可以改用「扫码核对」去查那台设备。</p></blockquote>
 <h3 id="521-照片是自动归档的不用点任何保存">5.2.1 📸 照片是自动归档的（不用点任何保存）<a class="anchor" href="#521-照片是自动归档的不用点任何保存">#</a></h3>
@@ -620,7 +633,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/19 17:59:11</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/19 18:13:06</div>
 </div>
 </body>
 </html>

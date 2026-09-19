@@ -380,6 +380,21 @@ try {
   assert(candHTML.includes('同型号编号规律'), '候选有说明来源');
   assert(globalThis.snCandidatesHTML({ sn: 'X', sn_candidates: [] }) === '', '没有候选时不渲染空块');
   assert(typeof globalThis.enhanceForOcr === 'function', 'OCR 图像增强已暴露');
+
+  // ── 只保留取景框内的画面（省空间 + 提高像素密度）──
+  assert(typeof globalThis.frameCropRect === 'function', '取景框裁剪已暴露');
+  const crop = globalThis.frameCropRect(1080, 1920);
+  assert(crop.w > 0 && crop.h > 0, '裁剪区域有效：' + JSON.stringify(crop));
+  assert(crop.x >= 0 && crop.y >= 0 && crop.x + crop.w <= 1080.01 && crop.y + crop.h <= 1920.01,
+    '裁剪不能越界：' + JSON.stringify(crop));
+  const kept = (crop.w * crop.h) / (1080 * 1920);
+  assert(kept < 0.5, `框内画面应远小于整帧，实际保留 ${(kept * 100).toFixed(0)}%`);
+  assert(crop.w > crop.h, '铭牌框是横条，裁出来也该是横条');
+  // 4K 竖屏也要正常
+  const crop4k = globalThis.frameCropRect(2160, 3840);
+  assert(crop4k.w <= 2160 && crop4k.h <= 3840 && crop4k.w > 0 && crop4k.h > 0, '4K 分辨率下裁剪仍然有效');
+  assert((crop4k.w * crop4k.h) / (2160 * 3840) < 0.5, '4K 下也应省掉一半以上');
+  assert(typeof globalThis.shootFromVideo === 'function', '拍照取图函数已暴露');
   assert(typeof globalThis.saveShotToPhone === 'function', '存手机方法已暴露');
   assert(typeof globalThis.savePreviewShot === 'function' && typeof globalThis.saveViewerShot === 'function', '预览页 / 放大页的保存入口已暴露');
   assert(typeof globalThis.autosaveOn === 'function' && typeof globalThis.setAutosave === 'function', '自动备份开关已暴露');

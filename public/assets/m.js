@@ -382,7 +382,7 @@ async function openCamera(mode) {
   } else {
     $('#camFrame').style.height = '26%';
     $('#camFrame').style.top = '22%';
-    if (hint) hint.textContent = '对准铭牌上的 SN 条码 / 文字，按快门拍照识别';
+    if (hint) hint.textContent = '把铭牌放进框内（只保留框里的画面，请让字完整入框）';
   }
   try {
     // 尽量要最高的分辨率：原图要归档，糊了以后放大看不清铭牌小字
@@ -432,24 +432,69 @@ async function flipCamera() {
 }
 
 /**
- * 把视频帧 / 图片等比压缩成 JPEG Blob。
+ * 取景框在「视频像素坐标」里对应的矩形。
+ *
+ * 视频是 object-fit: cover 铺满屏幕的，所以屏幕上的框不能直接当像素坐标用。
+ * 换算关系：
+ *   缩放比 s = max(屏幕宽/视频宽, 屏幕高/视频高)      ← cover 是「放大到铺满」
+ *   视频在屏幕里的左上角 = ((屏宽 - 视频宽*s)/2, (屏高 - 视频高*s)/2)   ← 居中，通常是负的
+ *   视频坐标 = (屏幕坐标 - 左上角) / s
+ *
+ * 取景框只占屏幕一小条，换算到视频里通常只有全画面的 10~30%，
+ * 所以裁掉框外内容能省掉大部分体积。
+ */
+function frameCropRect(vw, vh, { pad = 0.15 } = {}) {
+  const winW = window.innerWidth || vw;
+  const winH = window.innerHeight || vh;
+  let rect = null;
+  try {
+    const f = $('#camFrame');
+    rect = f && f.getBoundingClientRect ? f.getBoundingClientRect() : null;
+  } catch { rect = null; }
+  if (!rect || !rect.width || !rect.height) {
+    // 拿不到真实框（测试环境等）：按默认位置估一个
+    rect = { left: winW * 0.09, top: winH * 0.22, width: winW * 0.82, height: winH * 0.26 };
+  }
+
+  const s = Math.max(winW / vw, winH / vh);
+  const dx = (winW - vw * s) / 2;
+  const dy = (winH - vh * s) / 2;
+
+  // 四周留点余量：用户习惯把铭牌贴着框边放，裁太紧会切掉字符
+  const padX = rect.width * pad;
+  const padY = rect.height * pad;
+
+  const x = Math.max(0, (rect.left - padX - dx) / s);
+  const y = Math.max(0, (rect.top - padY - dy) / s);
+  const w = Math.min(vw - x, (rect.width + padX * 2) / s);
+  const h = Math.min(vh - y, (rect.height + padY * 2) / s);
+  return { x, y, w, h };
+}
+
+/**
+ * 等比缩放成 JPEG Blob，可只取其中的一块（crop 用视频像素坐标）。
  * 手机原图动辄 4000×3000、好几 MB，直接 toDataURL 会卡死主线程且上传极慢。
  * maxSide 只做「不超过」限制：传 4096 时若源图只有 1920 宽，就保持 1920 原样输出。
  */
-function downscaleToBlob(src, maxSide = 1600, quality = 0.85) {
+function downscaleToBlob(src, maxSide = 1600, quality = 0.85, crop = null) {
   return new Promise((resolve) => {
     try {
       const sw = src.videoWidth || src.naturalWidth || src.width || 0;
       const sh = src.videoHeight || src.naturalHeight || src.height || 0;
       if (!sw || !sh) { resolve(null); return; }
-      const scale = Math.min(1, maxSide / Math.max(sw, sh));
-      const w = Math.max(1, Math.round(sw * scale));
-      const h = Math.max(1, Math.round(sh * scale));
+      const sx = crop ? Math.max(0, Math.min(crop.x, sw - 1)) : 0;
+      const sy = crop ? Math.max(0, Math.min(crop.y, sh - 1)) : 0;
+      const cw = crop ? Math.max(1, Math.min(crop.w, sw - sx)) : sw;
+      const ch = crop ? Math.max(1, Math.min(crop.h, sh - sy)) : sh;
+
+      const scale = Math.min(1, maxSide / Math.max(cw, ch));
+      const w = Math.max(1, Math.round(cw * scale));
+      const h = Math.max(1, Math.round(ch * scale));
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(src, 0, 0, w, h);
+      ctx.drawImage(src, sx, sy, cw, ch, 0, 0, w, h);
       if (typeof canvas.toBlob !== 'function') { resolve(null); return; }
       canvas.toBlob((b) => resolve(b), 'image/jpeg', quality);
     } catch {
@@ -522,17 +567,33 @@ function enhanceForOcr(blob) {
   });
 }
 
-/** 从相机视频帧取三份图 */
+/**
+ * 从相机视频帧取三份图 —— **都只保留取景框内的画面**。
+ *
+ * 取景框通常只占整幅画面的 10~30%，裁掉框外的背景能省掉大部分体积：
+ * 一张 1920×1080 的帧，存档原图从 ~1.5 MB 降到 ~200 KB，
+ * 而且裁出来的像素密度更高，识别反而更准。
+ *
+ * 预览页看到的就是裁好的这张图，万一裁掉了不该裁的（比如铭牌探出框外），
+ * 当场就能看出来并重拍。
+ */
 async function shootFromVideo(video) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const crop = frameCropRect(vw, vh);
   const [image, original, thumb] = await Promise.all([
-    downscaleToBlob(video, OCR_MAX_SIDE, 0.92),
-    downscaleToBlob(video, ORIGINAL_MAX_SIDE, 0.92),
-    downscaleToBlob(video, THUMB_MAX_SIDE, 0.7),
+    downscaleToBlob(video, OCR_MAX_SIDE, 0.92, crop),
+    downscaleToBlob(video, ORIGINAL_MAX_SIDE, 0.92, crop),
+    downscaleToBlob(video, THUMB_MAX_SIDE, 0.7, crop),
   ]);
-  return { image, original, thumb };
+  return { image, original, thumb, crop, source: { vw, vh } };
 }
 
-/** 从相册图片取三份图；原图直接复用用户选的文件，不再二次压缩 */
+/**
+ * 从相册选图：**不裁**。
+ * 这里没有取景框，用户选的图本身就是他想要的那张；
+ * 按屏幕比例硬裁一条反而会把铭牌切掉。
+ */
 async function shootFromImage(img, file) {
   const [image, thumb] = await Promise.all([
     downscaleToBlob(img, OCR_MAX_SIDE, 0.92),
@@ -1228,23 +1289,7 @@ function scanRegion(attempt) {
     // 前两次试取景框区域，之后试整帧，兼顾「码在框里」和「码有点偏」
     const box = attempt % 3 === 2
       ? { x: 0, y: 0, w: vw, h: vh }
-      : (() => {
-        const f = $('#camFrame');
-        const rect = f && f.getBoundingClientRect ? f.getBoundingClientRect() : null;
-        if (!rect || !rect.width) return { x: vw * 0.09, y: vh * 0.38, w: vw * 0.82, h: vh * 0.18 };
-        const scaleX = vw / (window.innerWidth || vw);
-        const scaleY = vh / (window.innerHeight || vh);
-        // 视频是 object-fit: cover，取中间的等比区域更稳
-        const cover = Math.max(vw / (window.innerWidth || vw), vh / (window.innerHeight || vh));
-        const offX = (vw - (window.innerWidth || vw) * cover) / 2;
-        const offY = (vh - (window.innerHeight || vh) * cover) / 2;
-        return {
-          x: Math.max(0, rect.left * cover + offX),
-          y: Math.max(0, rect.top * cover + offY),
-          w: Math.min(vw, rect.width * (cover || scaleX)),
-          h: Math.min(vh, rect.height * (cover || scaleY)),
-        };
-      })();
+      : frameCropRect(vw, vh, { pad: 0 });
 
     const outW = 640;
     const outH = Math.max(1, Math.round((box.h / box.w) * outW));
@@ -1610,6 +1655,8 @@ window.closePreview = closePreview;
 window.retakePhoto = retakePhoto;
 window.enhanceForOcr = enhanceForOcr;
 window.snCandidatesHTML = snCandidatesHTML;
+window.frameCropRect = frameCropRect;
+window.shootFromVideo = shootFromVideo;
 window.startRecognize = startRecognize;
 window.renderHome = renderHome;
 window.renderScan = renderScan;

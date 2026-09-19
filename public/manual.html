@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT 资产管理系统 · 使用手册</title>
+<style>
+:root {
+  --fg: #0f172a; --fg2: #334155; --fg3: #64748b;
+  --line: #e5e7eb; --primary: #2563eb; --bg: #ffffff; --surface-2: #f7f8fa;
+  --font: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: #f7f8fa; color: var(--fg);
+  font-family: var(--font);
+  font-size: 15.5px; line-height: 1.85; -webkit-font-smoothing: antialiased;
+}
+/* 文档页 = 白纸 + 发丝线描边，不给投影，与后台同一套视觉语言 */
+.wrap { max-width: 900px; margin: 0 auto; background: var(--bg); padding: 48px 56px 80px;
+  border: 1px solid var(--line); }
+h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -.5px; font-weight: 600; }
+h1 + blockquote { margin-top: 0; }
+h2 { font-size: 23px; margin: 46px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-weight: 600; }
+h3 { font-size: 18px; margin: 32px 0 10px; font-weight: 600; }
+h4 { font-size: 16px; margin: 24px 0 8px; font-weight: 600; color: var(--fg2); }
+p { margin: 12px 0; }
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.anchor { opacity: 0; margin-left: 8px; font-size: .7em; color: var(--fg3); }
+h1:hover .anchor, h2:hover .anchor, h3:hover .anchor { opacity: 1; }
+code { background: var(--surface-2); padding: 2px 6px; border-radius: 5px; font-size: .88em;
+  font-family: ui-monospace, "SF Mono", Consolas, "Cascadia Code", monospace; color: #b3261e; }
+pre { background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 11px; overflow-x: auto; font-size: 13.5px; line-height: 1.6; }
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+blockquote { margin: 16px 0; padding: 12px 18px; background: #eff6ff; border-left: 3px solid var(--primary);
+  border-radius: 0 8px 8px 0; color: var(--fg2); }
+blockquote p { margin: 4px 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 34px 0; }
+ul, ol { padding-left: 26px; margin: 12px 0; }
+li { margin: 5px 0; }
+.tw { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 11px; }
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+th, td { padding: 10px 13px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; color: var(--fg2); white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: #f8fafc; }
+.footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--fg3); font-size: 13px; text-align: center; }
+@media (max-width: 720px) { .wrap { padding: 24px 18px 60px; border: none; } body { font-size: 15px; } th, td { padding: 8px 10px; } }
+@media print {
+  body { background: #fff; font-size: 11.5pt; }
+  .wrap { border: none; padding: 0; max-width: none; }
+  h2 { page-break-after: avoid; page-break-before: auto; }
+  table, pre, blockquote { page-break-inside: avoid; }
+  .anchor { display: none; }
+  a { color: #000; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1 id="it-资产管理系统-使用手册">IT 资产管理系统 · 使用手册<a class="anchor" href="#it-资产管理系统-使用手册">#</a></h1>
+<blockquote><p>版本 1.0 · 适用于管理端网页、移动端网页与 Excel 对接</p><p>如有疑问先看 <strong>第九章 常见问题</strong>，仍有问题请联系系统管理员。</p></blockquote>
+<hr>
+<h2 id="目录">目录<a class="anchor" href="#目录">#</a></h2>
+<ol>
+<li><a href="#一系统概览">系统概览</a></li>
+<li><a href="#二快速上手5-分钟">快速上手（5 分钟）</a></li>
+<li><a href="#三账号与权限">账号与权限</a></li>
+<li><a href="#四设备台账核心功能">设备台账（核心功能）</a></li>
+<li><a href="#五手机端拍照识别入库">手机端：拍照识别入库</a></li>
+<li><a href="#六excel-批量导入与导出">Excel 批量导入与导出</a></li>
+<li><a href="#七组织架构与设备分类">组织架构与设备分类</a></li>
+<li><a href="#八系统设置">系统设置</a></li>
+<li><a href="#九常见问题">常见问题</a></li>
+<li><a href="#十附录状态与字段说明">附录：状态与字段说明</a></li>
+</ol>
+<hr>
+<h2 id="一系统概览">一、系统概览<a class="anchor" href="#一系统概览">#</a></h2>
+<p>本系统用来管理公司的 IT 资产：<strong>设备台账、组织归属、领用交接、保修跟踪、批量导入导出</strong>，并支持在手机上<strong>拍照识别设备品牌与 SN 号</strong>快速入库。</p>
+<h3 id="三个访问入口">三个访问入口<a class="anchor" href="#三个访问入口">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>入口</th><th>地址</th><th>用途</th></tr></thead>
+<tbody><tr><td><strong>管理端</strong>（电脑）</td><td><code>http://&lt;服务器IP&gt;:8080/</code></td><td>全部管理功能，建议用 Chrome / Edge</td></tr><tr><td><strong>移动端</strong>（手机）</td><td><code>https://&lt;服务器IP&gt;:8443/m</code></td><td>现场拍照识别、扫码核对。<strong>必须是 https</strong>，否则相机用不了</td></tr><tr><td><strong>公网访问</strong></td><td><code>https://itam.&lt;你的域名&gt;:&lt;端口&gt;/</code></td><td>出差在外也能用，需由管理员部署</td></tr></tbody>
+</table></div>
+<blockquote><p>💡 手机首次打开自签证书的地址会提示「不是私密连接」，点 <strong>高级 → 继续访问</strong> 即可。</p></blockquote>
+<h3 id="浏览器要求">浏览器要求<a class="anchor" href="#浏览器要求">#</a></h3>
+<ul>
+<li>电脑：Chrome / Edge / 火狐 等现代浏览器（不支持 IE）</li>
+<li>手机：系统自带浏览器、Chrome、Safari 均可；<strong>相机功能要求 https</strong></li>
+</ul>
+<hr>
+<h2 id="二快速上手5-分钟">二、快速上手（5 分钟）<a class="anchor" href="#二快速上手5-分钟">#</a></h2>
+<h3 id="第-1-步登录">第 1 步：登录<a class="anchor" href="#第-1-步登录">#</a></h3>
+<ol>
+<li>打开管理端地址，会自动跳转到登录页</li>
+<li>输入管理员给你的<strong>用户名</strong>和<strong>密码</strong></li>
+<li>勾选「记住我」可保持 30 天免登录（公共电脑请勿勾选）</li>
+<li>点「登 录」</li>
+</ol>
+<h3 id="第-2-步认识界面">第 2 步：认识界面<a class="anchor" href="#第-2-步认识界面">#</a></h3>
+<pre><code>┌────────────┬──────────────────────────────────────────────┐
+│  IT 资产管理 │  ☰  仪表盘          [全局搜索框]  XX公司 👤账号 退出 │
+├────────────┼──────────────────────────────────────────────┤
+│ 📊 仪表盘   │                                              │
+│ 💻 设备台账 │              内容区                          │
+│ 🏢 组织架构 │                                              │
+│ 🗂️ 设备分类 │                                              │
+│ 📑 Excel对接│                                              │
+│ 🗑️ 回收站   │                                              │
+│ 👥 用户管理 │                                              │
+│ ⚙️ 系统设置 │                                              │
+└────────────┴──────────────────────────────────────────────┘</code></pre>
+<ul>
+<li><strong>左侧菜单</strong>：只能看到你有权限的功能（权限由角色决定）</li>
+<li><strong>顶部搜索框</strong>：输入资产编号 / SN / 品牌 / 型号 / 使用人，回车直接搜</li>
+<li><strong>右上角</strong>：「账号」改自己的密码，「退出」注销登录</li>
+<li><strong>☰ 按钮</strong>：收起/展开左侧菜单，屏幕小的时候很有用</li>
+</ul>
+<h3 id="第-3-步录入第一台设备">第 3 步：录入第一台设备<a class="anchor" href="#第-3-步录入第一台设备">#</a></h3>
+<ol>
+<li>左侧点 <strong>💻 设备台账</strong></li>
+<li>点右上角 <strong>＋ 新增设备</strong></li>
+<li>必填项只有两个：<strong>设备分类</strong>、<strong>资产编号</strong>（留空会自动生成）</li>
+<li>建议同时填 <strong>品牌、型号、SN 序列号</strong>（SN 是设备的唯一身份，强烈建议填）</li>
+<li>点「保存」</li>
+</ol>
+<blockquote><p>📱 如果现场有设备实物，用手机拍铭牌录入更快，见<a href="#五手机端拍照识别入库">第五章</a>。</p></blockquote>
+<h3 id="第-4-步在手机上也能用管理端">第 4 步：在手机上也能用管理端<a class="anchor" href="#第-4-步在手机上也能用管理端">#</a></h3>
+<p>管理端已经做了手机适配，用手机浏览器打开同一个地址即可：</p>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>打开菜单</strong></td><td>点左上角 <strong>☰</strong>，侧边栏从左侧滑出；点右侧灰色遮罩、按返回或选中任意菜单都会自动收起</td></tr><tr><td><strong>看设备列表</strong></td><td>宽表格自动变成<strong>一张张卡片</strong>，每个字段前面带名称，不用左右拖动</td></tr><tr><td><strong>筛选</strong></td><td>筛选框自动变成整行排列，手指好点</td></tr><tr><td><strong>弹窗</strong></td><td>从屏幕底部滑出，按钮变大，方便单手操作</td></tr><tr><td><strong>搜索</strong></td><td>顶栏搜索框会自动伸缩适应屏幕</td></tr></tbody>
+</table></div>
+<blockquote><p>分工建议：<strong>现场录入用移动端 <code>/m</code></strong>（拍照识别、扫码最快）；<strong>查看和管理用管理端</strong>（信息最全）。</p><p>管理端和移动端共用同一个账号，登录一次两边都能用。</p></blockquote>
+<hr>
+<h2 id="三账号与权限">三、账号与权限<a class="anchor" href="#三账号与权限">#</a></h2>
+<h3 id="31-查看和修改自己的账号">3.1 查看和修改自己的账号<a class="anchor" href="#31-查看和修改自己的账号">#</a></h3>
+<p>点右上角 <strong>账号</strong>：</p>
+<ul>
+<li>可以看到自己的用户名、姓名、角色、权限数量</li>
+<li>可以改<strong>姓名</strong>和<strong>密码</strong>（改密码需要输入当前密码）</li>
+<li>点「我的登录记录」可以看到自己最近的登录时间、IP、设备</li>
+</ul>
+<blockquote><p>⚠️ 修改密码后，你在<strong>其它设备上的登录会全部失效</strong>，需要用新密码重新登录——这是正常的安全机制。</p></blockquote>
+<h3 id="32-四种角色能做什么">3.2 四种角色能做什么<a class="anchor" href="#32-四种角色能做什么">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>角色</th><th>适合谁</th><th>能做什么</th></tr></thead>
+<tbody><tr><td><strong>系统管理员</strong></td><td>IT 负责人</td><td>全部功能：设备增删改、组织分类、Excel 导入导出、回收站、<strong>用户管理</strong>、系统设置</td></tr><tr><td><strong>资产管理员</strong></td><td>资产专员</td><td>设备增删改、组织分类、Excel 导入导出、回收站、查看审计日志；<strong>不能</strong>管用户、不能改系统设置</td></tr><tr><td><strong>录入员</strong></td><td>现场录入人员</td><td>查看设备 + 新增/编辑设备（含手机拍照录入）、导出 Excel；<strong>不能删除</strong>设备</td></tr><tr><td><strong>只读</strong></td><td>领导 / 其他部门</td><td>只能查看仪表盘、台账、组织、分类，不能做任何修改</td></tr></tbody>
+</table></div>
+<blockquote><p>权限是<strong>服务端强制校验</strong>的：即使绕过界面直接调接口，也会被拒绝（返回 403）。</p></blockquote>
+<h3 id="33-忘记密码怎么办">3.3 忘记密码怎么办<a class="anchor" href="#33-忘记密码怎么办">#</a></h3>
+<ul>
+<li>找<strong>系统管理员</strong>，在「用户管理」里点「重置密码」，会生成一个一次性随机密码给你</li>
+<li>用这个密码登录后，系统会提示你立即改成自己的密码</li>
+<li>如果管理员自己忘了密码，需要在服务器上运行：<code>node server/reset-password.js</code></li>
+</ul>
+<h3 id="34-管理员用户管理">3.4 管理员：用户管理<a class="anchor" href="#34-管理员用户管理">#</a></h3>
+<p>左侧 <strong>👥 用户管理</strong>（仅系统管理员可见）</p>
+<p><strong>新建用户</strong></p>
+<ol>
+<li>点「＋ 新建用户」</li>
+<li>填用户名（登录名）、姓名、选择<strong>角色</strong>、<strong>状态</strong></li>
+<li>设初始密码（至少 8 位，不能纯数字/纯字母；可点 🎲 生成随机密码）</li>
+<li>保存后把用户名和密码交给对方</li>
+</ol>
+<p><strong>常用操作</strong></p>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>说明</th></tr></thead>
+<tbody><tr><td>编辑</td><td>改姓名、角色、状态、邮箱、电话；也能直接帮他改密码</td></tr><tr><td>重置密码</td><td>生成一次性随机密码，该用户<strong>所有已登录设备立即被踢下线</strong></td></tr><tr><td>解锁</td><td>连续输错 5 次密码会锁定 10 分钟，可在这里提前解锁</td></tr><tr><td>通过</td><td>审核自助注册的账号（待审核状态不能登录）</td></tr><tr><td>删除</td><td>删除账号（该用户录入过的设备记录会保留）</td></tr></tbody>
+</table></div>
+<p><strong>查看登录日志</strong>：点「📜 登录日志」可以看到谁在什么时候、从哪个 IP、用什么设备登录成功或失败。</p>
+<p><strong>自助注册开关</strong>（在 系统设置 → 企业信息 里）：</p>
+<ul>
+<li>「允许访客自助注册」默认<strong>关闭</strong>（内网自用建议保持关闭）</li>
+<li>开启后建议同时勾选「注册后需管理员审核」，并把默认角色设为「只读」或「录入员」</li>
+</ul>
+<hr>
+<h2 id="四设备台账核心功能">四、设备台账（核心功能）<a class="anchor" href="#四设备台账核心功能">#</a></h2>
+<h3 id="41-仪表盘一眼看全局">4.1 仪表盘：一眼看全局<a class="anchor" href="#41-仪表盘一眼看全局">#</a></h3>
+<p>左侧 <strong>📊 仪表盘</strong>，包含：</p>
+<div class="tw"><table>
+<thead><tr><th>区块</th><th>内容</th></tr></thead>
+<tbody><tr><td>顶部数字卡</td><td>设备总数、在用、库存/闲置、维修中、资产总值、<strong>保修即将到期</strong></td></tr><tr><td>设备状态分布</td><td>环形图，鼠标悬停看各类占比</td></tr><tr><td>分类 TOP</td><td>各分类设备数量柱状图</td></tr><tr><td>品牌 TOP10</td><td>各品牌数量排行</td></tr><tr><td>最近更新</td><td>最近改动的 10 台设备，点击直接进详情</td></tr><tr><td>保修预警</td><td><strong>90 天内到期或已过期</strong>的设备清单 ⚠️ 重点看这里</td></tr><tr><td>最近操作记录</td><td>谁在什么时候改了什么设备</td></tr></tbody>
+</table></div>
+<h3 id="42-查设备筛选与搜索">4.2 查设备：筛选与搜索<a class="anchor" href="#42-查设备筛选与搜索">#</a></h3>
+<p>进入 <strong>💻 设备台账</strong>，顶部有一排筛选条件：</p>
+<div class="tw"><table>
+<thead><tr><th>筛选项</th><th>说明</th></tr></thead>
+<tbody><tr><td>关键词</td><td>搜资产编号 / SN / 品牌 / 型号 / 使用人 / 工号 / IP / MAC / 位置 / 合同号 / 备注</td></tr><tr><td>分类</td><td>按设备分类过滤</td></tr><tr><td>组织</td><td>按组织过滤（<strong>含下级组织</strong>，选「总公司」会带出所有子部门设备）</td></tr><tr><td>状态</td><td>在用 / 库存 / 闲置 / 借出 / 维修中 / 已报废 / 丢失</td></tr><tr><td>供应商</td><td>按供应商过滤</td></tr></tbody>
+</table></div>
+<ul>
+<li>点「🔍 查询」或直接在关键词框按回车</li>
+<li>点「重置」清空所有条件</li>
+<li>每一列点表头无法排序（如需排序请用导出后在 Excel 里排）</li>
+</ul>
+<h3 id="43-看一台设备的全部信息">4.3 看一台设备的全部信息<a class="anchor" href="#43-看一台设备的全部信息">#</a></h3>
+<p>在列表里点行尾的 <strong>查看</strong>，弹出详情：</p>
+<ul>
+<li><strong>基本信息</strong>：编号、分类、品牌型号、SN、状态、组织、使用人、联系方式、IP/MAC、系统、配置、采购与保修、金额、供应商、合同号</li>
+<li><strong>流转记录</strong>：这台设备从创建到现在，每一次改动（谁、什么时候、把哪个字段从什么改成了什么）</li>
+<li><strong>资产二维码</strong>：手机移动端扫码即可查到这台设备，可直接打印贴到设备上</li>
+</ul>
+<h3 id="44-新增设备">4.4 新增设备<a class="anchor" href="#44-新增设备">#</a></h3>
+<p>点 <strong>＋ 新增设备</strong>，表单字段说明：</p>
+<div class="tw"><table>
+<thead><tr><th>分组</th><th>字段</th><th>说明</th></tr></thead>
+<tbody><tr><td>必填</td><td><strong>设备分类</strong></td><td>决定资产编号前缀，以及下面出现的「专属字段」</td></tr><tr><td>必填</td><td><strong>资产编号</strong></td><td>留空按「分类前缀-年份-流水号」自动生成，如 <code>MON-2026-0001</code></td></tr><tr><td>设备</td><td>品牌 / 型号 / <strong>SN 序列号</strong></td><td>SN 全库唯一，重复会报错</td></tr><tr><td>归属</td><td>所属组织 / 状态 / 使用人 / 工号 / 电话 / 存放位置</td><td></td></tr><tr><td>网络</td><td>IP 地址 / MAC 地址 / 操作系统</td><td></td></tr><tr><td>配置</td><td>CPU / 内存 / 硬盘 / 屏幕尺寸</td><td></td></tr><tr><td>采购</td><td>采购日期 / 保修到期 / 采购金额 / 供应商 / 合同号</td><td>保修到期会进「保修预警」</td></tr><tr><td>其它</td><td>成色（A/B/C）/ 备注</td><td></td></tr><tr><td>专属字段</td><td>随分类变化</td><td>例如选「显示器」会出现「分辨率」「接口类型」</td></tr></tbody>
+</table></div>
+<h3 id="45-编辑与批量操作">4.5 编辑与批量操作<a class="anchor" href="#45-编辑与批量操作">#</a></h3>
+<p><strong>编辑单台</strong>：列表行尾点「编辑」，改完保存。所有改动都会记进流转记录。</p>
+<p><strong>批量操作</strong>：</p>
+<ol>
+<li>勾选左侧复选框（表头复选框 = 全选本页）</li>
+<li>点「批量操作」下拉，选择：</li>
+</ol>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>用途</th></tr></thead>
+<tbody><tr><td>变更状态</td><td>一批设备统一改成「在用 / 维修中 / 已报废」等</td></tr><tr><td>转移到组织</td><td>部门调整时整批划转</td></tr><tr><td>交接使用人</td><td>人员离职/换岗，填新使用人+工号+电话+组织，状态自动设为「在用」</td></tr><tr><td><strong>⬇ 导出所选</strong></td><td>⭐ <strong>只把勾选的这几台导成 Excel</strong>（菜单上会显示数量，如「导出所选 (7)」）</td></tr><tr><td>删除所选</td><td>放进回收站（可恢复）</td></tr></tbody>
+</table></div>
+<blockquote><p>📌 「导出所选」导出的是<strong>你勾中的那些设备</strong>，跟当前筛选条件、分页都没关系——</p><p>比如筛出「显示器」后只勾 3 台，导出的就是这 3 台。</p></blockquote>
+<h3 id="46-删除与回收站">4.6 删除与回收站<a class="anchor" href="#46-删除与回收站">#</a></h3>
+<ul>
+<li>删除设备<strong>不会真的丢</strong>，会先进 <strong>🗑️ 回收站</strong>（软删除）</li>
+<li>在回收站里可以：<strong>单条恢复</strong>、<strong>全部恢复</strong>、<strong>彻底删除</strong>（不可找回）、<strong>清空回收站</strong></li>
+<li>恢复时会自动检查资产编号和 SN 是否与现有设备冲突</li>
+</ul>
+<h3 id="47-导出">4.7 导出<a class="anchor" href="#47-导出">#</a></h3>
+<p>设备台账右上角有两个导出入口，<strong>分得很清楚</strong>：</p>
+<div class="tw"><table>
+<thead><tr><th>按钮</th><th>导出范围</th></tr></thead>
+<tbody><tr><td><strong>⬇ 全部导出</strong>（右上角）</td><td>⭐ <strong>全部设备</strong>，不受上方筛选条件影响</td></tr><tr><td><strong>批量操作 → ⬇ 导出所选</strong></td><td><strong>只导出勾选的设备</strong>，不限本页、跨页也认</td></tr><tr><td><strong>📑 Excel 对接</strong> 页的按钮</td><td>按<strong>当前筛选结果</strong>导出，可选分表 / 带照片</td></tr></tbody>
+</table></div>
+<blockquote><p>三者都是导出 .xlsx，都默认带上设备照片（图片嵌在单元格里）。</p><p>只想导出某个筛选范围（比如「财务部的显示器」）→ 去 <strong>Excel 对接</strong> 页点导出。</p><p>详见<a href="#六excel-批量导入与导出">第六章</a>。</p></blockquote>
+<hr>
+<h2 id="五手机端拍照识别入库">五、手机端：拍照识别入库<a class="anchor" href="#五手机端拍照识别入库">#</a></h2>
+<p>这是本系统最省事的功能：<strong>对着设备铭牌拍一张照，自动识别出品牌、型号、SN</strong>，核对后一键入库。</p>
+<h3 id="51-手机上怎么打开">5.1 手机上怎么打开<a class="anchor" href="#51-手机上怎么打开">#</a></h3>
+<ol>
+<li>手机连接<strong>与服务器同一个 WiFi</strong></li>
+<li>浏览器打开 <code>https://&lt;服务器IP&gt;:8443/m</code></li>
+<li>首次会提示「不是私密连接」→ 点 <strong>高级 → 继续访问</strong></li>
+<li>浏览器询问是否允许使用摄像头 → 点 <strong>允许</strong></li>
+<li>顶部可以填「录入人」姓名（会记进操作日志，且会被记住）</li>
+</ol>
+<blockquote><p>如果一直提示打不开相机，多半是用了 <code>http://</code> 而不是 <code>https://</code>——相机必须在 HTTPS 下才能调用。</p></blockquote>
+<h4 id="两端可以互相跳转">两端可以互相跳转<a class="anchor" href="#两端可以互相跳转">#</a></h4>
+<div class="tw"><table>
+<thead><tr><th>从哪 → 到哪</th><th>入口</th></tr></thead>
+<tbody><tr><td><strong>电脑端 → 手机端</strong></td><td>左侧菜单最下方「📱 打开移动端录入」</td></tr><tr><td><strong>手机端 → 电脑端</strong></td><td>⭐ 两种：① 顶栏右上角的<strong>显示器小图标</strong>；② 首页最下方「<strong>回到电脑端管理后台</strong>」</td></tr><tr><td>两端 → 使用手册</td><td>电脑端左侧菜单「使用手册」；手机端首页最下方「使用手册」</td></tr></tbody>
+</table></div>
+<blockquote><p>手机上只能拍照录入、扫码核对、查最近设备。<strong>改数据、看报表、导 Excel、管账号都要回电脑端</strong>——所以手机端特意放了两个回去的入口，不用再手敲网址。</p></blockquote>
+<h3 id="52-拍照识别入库完整流程">5.2 拍照识别入库（完整流程）<a class="anchor" href="#52-拍照识别入库完整流程">#</a></h3>
+<ol>
+<li>点 <strong>📷 拍照识别入库</strong></li>
+<li>把设备铭牌上的 <strong>SN 条码或文字</strong>放在取景框内，点白色快门按钮</li>
+<li>出现照片预览，点 <strong>🔍 识别</strong></li>
+</ol>
+<p>&gt; 📸 按下快门的那一刻，系统已经<strong>自动准备了 3 份照片</strong>（原图 / 识别图 / 缩略图）， &gt; 识别成功后<strong>自动归档到这台设备名下</strong>，不需要你点任何保存按钮。</p>
+<ol>
+<li>系统自动识别并填入：</li>
+</ol>
+<div class="tw"><table>
+<thead><tr><th>字段</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>品牌</strong></td><td>显示置信度。若显示「由 SN 前缀推断」说明是根据序列号猜的，<strong>请核对</strong></td></tr><tr><td><strong>型号</strong></td><td>同上</td></tr><tr><td><strong>SN 序列号</strong></td><td>关键字段，置信度最高，仍建议眼神核对一遍</td></tr></tbody>
+</table></div>
+<ol>
+<li>⭐ <strong>照片就在上面，对着比一遍</strong>：识别结果最上方是<strong>刚拍的那张铭牌照片</strong>缩略图，</li>
+</ol>
+<p>照片在下、字段在上，一眼就能看出 OCR 有没有读错（例如 <code>0</code> 认成 <code>O</code>、<code>8</code> 认成 <code>B</code>）。</p>
+<ul>
+<li>点缩略图（或点右下角的 🔍）→ <strong>全屏放大比对</strong></li>
+<li>全屏里可以 <strong>双指捏合缩放 / 单指拖动</strong>，也可以点 <strong>➕ 放大 / ➖ 缩小</strong></li>
+<li>比完点「<strong>比完了</strong>」或右上角 ✕ 返回</li>
+<li>照片是识别时自动存到服务器上的，保存入库后会作为设备的<strong>铭牌照片</strong>一并归档</li>
+</ul>
+<ol>
+<li><strong>人工校正</strong>：</li>
+</ol>
+<ul>
+<li>⭐ <strong>SN 有候选就点候选</strong>：系统会拿<strong>同型号已录入的编号规律</strong>推断几个更可能的写法，</li>
+</ul>
+<p>显示在 SN 下面（如 <code>YLX2K4K1</code>），<strong>点一下就替换</strong>，不用一个字一个字改。 视觉模型最容易把 <code>L/1</code>、<code>O/Q</code>、<code>H/K</code> 看错，这一步能省掉大半手工修改。</p>
+<ul>
+<li>自动纠正过会明确告诉你（「已自动去掉标签：SN1YLX22196 → YLX22196」），不会偷偷改</li>
+<li>其它字段识别不准就直接点进去改；置信度低于 60% 会标红，重点检查</li>
+</ul>
+<ol>
+<li>补充信息：</li>
+</ol>
+<ul>
+<li><strong>设备分类</strong>（有识别提示会自动选好）</li>
+<li>⭐ <strong>分类专属字段</strong>：选好分类后会自动出现这个分类特有的字段。例如选「显示器」会多出 <strong>屏幕尺寸（24寸 / 27寸 下拉）</strong>、<strong>分辨率</strong>、<strong>接口类型</strong>；选「笔记本电脑」会出现 CPU / 内存 / 硬盘 / 屏幕尺寸等</li>
+<li>所属组织、使用人、存放位置、<strong>供应商</strong>、状态</li>
+</ul>
+<ol>
+<li>点 <strong>💾 保存入库</strong></li>
+</ol>
+<blockquote><p>🔁 <strong>识别不满意想重拍？</strong> 底部有 <strong>重拍</strong> 按钮，点一下<strong>直接回到相机</strong>（不用回首页再点一次「拍照识别入库」）。</p><p>拍照预览页上的「重拍」同理。</p></blockquote>
+<h4 id="为什么识别会更准了">为什么识别会更准了<a class="anchor" href="#为什么识别会更准了">#</a></h4>
+<div class="tw"><table>
+<thead><tr><th>改进</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>图像分辨率 1600 → 2200px</strong></td><td>铭牌上的序列号只占几十个像素，多给点像素明显更准</td></tr><tr><td><strong>送识别前先做灰度 + 对比度拉伸</strong></td><td>手机拍铭牌常偏灰、反光，拉伸后字和底分得更开（不动归档的原图）</td></tr><tr><td><strong>提示词明确要求逐字符确认易混字符</strong></td><td>明确告诉模型 <code>1/L/I</code>、<code>0/O/Q</code>、<code>8/B</code>、<code>5/S</code>、<code>2/Z</code>、<code>H/K</code> 要分清，且不许「猜一个合理的」</td></tr><tr><td><strong>同型号编号规律兜底</strong></td><td>同型号机器的编号长得极像（联想 ThinkCentre 全是 <code>YLX</code> 开头 8 位），拿档案一比就能把看错的字符纠回来</td></tr><tr><td><strong>只保留取景框内的画面</strong></td><td>见下</td></tr></tbody>
+</table></div>
+<h4 id="-只保留取景框内的画面省空间">📐 只保留取景框内的画面（省空间）<a class="anchor" href="#-只保留取景框内的画面省空间">#</a></h4>
+<p>拍照时<strong>只截取取景框里的那一块</strong>，框外的背景全部丢掉：</p>
+<div class="tw"><table>
+<thead><tr><th>分辨率</th><th>整帧</th><th>实际保留</th><th>省掉</th></tr></thead>
+<tbody><tr><td>1080×1920（常见手机竖屏）</td><td>100%</td><td><strong>约 30%</strong></td><td>≈ 3.4 倍</td></tr><tr><td>2160×3840（4K）</td><td>100%</td><td><strong>约 30%</strong></td><td>≈ 3.4 倍</td></tr><tr><td>1920×1080（横屏平板）</td><td>100%</td><td>约 27%</td><td>≈ 3.7 倍</td></tr></tbody>
+</table></div>
+<p>好处有两个：</p>
+<ol>
+<li><strong>省空间</strong>：归档的原图从一两 MB 降到两三百 KB，服务器磁盘和手机存储都省</li>
+<li><strong>识别更准</strong>：同样的像素预算集中在铭牌上，字符更清楚</li>
+</ol>
+<blockquote><p>📌 <strong>怎么保证不会把字裁掉</strong>：</p><p>- 取景框四周额外留了 <strong>15% 余量</strong>，铭牌稍微出去一点也能带上</p><p>- 拍完的<strong>预览页显示的就是裁好的那张图</strong>——如果发现铭牌被切了，当场点「重拍」就行</p><p>- 相机顶部提示也改成了「把铭牌放进框内（只保留框里的画面，请让字完整入框）」</p></blockquote>
+<blockquote><p>用 <strong>🖼️ 从相册选图</strong> 时<strong>不裁</strong>——你选的那张图本身就是你要的，按屏幕比例硬裁反而会切掉铭牌。</p></blockquote>
+<p>保存成功后提示「已入库：资产编号」，设备出现在台账里。</p>
+<blockquote><p>⚠️ 如果 SN 已存在，会提示冲突，不会重复建两条记录。此时可以改用「扫码核对」去查那台设备。</p></blockquote>
+<h3 id="521-照片是自动归档的不用点任何保存">5.2.1 📸 照片是自动归档的（不用点任何保存）<a class="anchor" href="#521-照片是自动归档的不用点任何保存">#</a></h3>
+<p>按一次快门，系统会自动做三件事——<strong>全部默认开启，无需手动操作</strong>：</p>
+<div class="tw"><table>
+<thead><tr><th>自动动作</th><th>说明</th></tr></thead>
+<tbody><tr><td>① 存<strong>原图</strong></td><td>手机摄像头的完整分辨率（最高 4K）。归档进这台设备的<strong>设备详情</strong>，随时可放大看铭牌小字</td></tr><tr><td>② 存<strong>识别图</strong></td><td>最长边 1600px，OCR 识别和列表/详情预览用它，又快又清楚</td></tr><tr><td>③ 存<strong>缩略图</strong></td><td>最长边 320px，导出 Excel 时<strong>直接嵌进表格单元格</strong></td></tr></tbody>
+</table></div>
+<p>之后<strong>保存入库</strong>时，这三份就自动挂到该设备名下。看照片有两个地方：</p>
+<ul>
+<li><strong>电脑端</strong>：设备台账 → 点设备 → 设备详情右侧「设备照片」，点图看原图，也能「下载原图」</li>
+<li><strong>手机端</strong>：最近设备 → 点设备 → 顶部「📸 设备照片」，点图全屏放大，也能「存到手机」</li>
+</ul>
+<blockquote><p>💡 用「🖼️ 选图片」从相册上传时，<strong>你选的原始文件本身就是原图</strong>，系统照样自动归档。</p></blockquote>
+<h4 id="顺便在手机里也留一份">顺便在手机里也留一份<a class="anchor" href="#顺便在手机里也留一份">#</a></h4>
+<p>服务器上的照片归服务器管；如果你想在<strong>手机本地</strong>也有备份（发同事、离线看），系统默认就会自动存：</p>
+<div class="tw"><table>
+<thead><tr><th>入口</th><th>什么时候用</th><th>存到哪</th></tr></thead>
+<tbody><tr><td><strong>识别成功后自动存</strong></td><td>⭐ 默认开启，不用管</td><td>安卓「下载 / Download」，iOS「文件」App</td></tr><tr><td>识别结果页照片下方 <strong>💾 下载到手机</strong> / <strong>📤 存到相册</strong></td><td>补存、或想进相册</td><td>下载同上；「存到相册」会打开<strong>系统分享面板</strong>，在里面选「存储图像 / 保存到照片」</td></tr><tr><td>设备详情 <strong>💾 存到手机</strong></td><td>事后想再存一张</td><td>同「下载」</td></tr></tbody>
+</table></div>
+<p><strong>文件名自动带 SN 和时间</strong>，例如 <code>IT资产铭牌_3TLF261_20260918-1128.jpg</code>，事后在文件管理器里一搜就能对上台账。</p>
+<p><strong>关掉手机端自动存</strong>：手机端首页最下方「💾 照片备份到手机」卡片里把开关关掉即可（只影响这台手机）。</p>
+<p><strong>想进手机相册（而不是「文件」）</strong>：</p>
+<ul>
+<li>iOS：用 <strong>📤 存到相册</strong> → 选「存储图像」；或在照片上<strong>长按</strong> → 选「存储到照片」</li>
+<li>安卓：用 <strong>📤 存到相册</strong> → 选相册类应用；或在照片上<strong>长按</strong> → 选「下载图片」</li>
+</ul>
+<blockquote><p>📌 浏览器不允许网页「偷偷」往相册写文件，所以第一次会弹一次「是否允许下载多个文件」的询问，</p><p>点允许之后就安静了。如果某次自动保存没反应，点一下照片下方的 <strong>💾 下载到手机</strong> 即可。</p></blockquote>
+<h3 id="53-扫码核对-查询">5.3 扫码核对 / 查询<a class="anchor" href="#53-扫码核对-查询">#</a></h3>
+<p>⭐ <strong>提醒：扫码核对和拍照入库是两条完全独立的流程</strong>，互不影响：</p>
+<div class="tw"><table>
+<thead><tr><th></th><th>📷 识别入库（首页大按钮）</th><th>🔎 扫码核对（底部标签）</th></tr></thead>
+<tbody><tr><td>干什么</td><td>拍铭牌 → OCR 认品牌/型号/SN → <strong>新建一台设备</strong></td><td>扫二维码/条码 → <strong>查出已有设备</strong></td></tr><tr><td>快门按钮</td><td>拍照并进入识别结果页</td><td><strong>只解条码</strong>，绝不会跳到入库页</td></tr><tr><td>取景框</td><td>26% 高（够放铭牌）</td><td>18% 高（够放二维码）</td></tr></tbody>
+</table></div>
+<p><strong>用法</strong>：</p>
+<ol>
+<li>点底部 <strong>🔎 扫码核对</strong></li>
+<li>对准设备上的<strong>资产二维码</strong>或 <strong>SN 条码</strong>，自动识别</li>
+<li>识别到资产二维码 → 直接打开该设备详情；识别到 SN → 在库里查找</li>
+</ol>
+<h4 id="二维码为什么以前扫不出来">二维码为什么以前扫不出来<a class="anchor" href="#二维码为什么以前扫不出来">#</a></h4>
+<p><strong>码里放什么，直接决定能不能扫出来</strong>：</p>
+<div class="tw"><table>
+<thead><tr><th>码里放的内容</th><th>二维码规格</th><th>240px 显示时每格</th><th>手机对着屏幕扫</th></tr></thead>
+<tbody><tr><td>网址 <code>https://.../m/#/device/xxx</code></td><td>版本 5 · <strong>37×37 模块</strong></td><td>6.5 px</td><td>❌ 太密，基本解不出</td></tr><tr><td><strong>资产编号</strong> <code>MON-2026-0010</code></td><td>版本 1 · <strong>21×21 模块</strong></td><td>11.4 px</td><td>✅ 同样距离一眼就过</td></tr></tbody>
+</table></div>
+<p>以前码里放的是网址，所以一维条码（SN 条码）能扫、二维码扫不出来——<strong>这就是「只能识别条码」的原因</strong>。</p>
+<p>现在设备详情和「打开二维码」弹窗都改成：</p>
+<ul>
+<li>⭐ <strong>大码 = 资产编号</strong>（21×21）→ 手机 App 里「扫码核对」扫这个，好扫得多</li>
+<li><strong>小码 = 网址</strong>（37×37）→ 手机<strong>自带相机</strong>扫这个，直接打开设备页</li>
+</ul>
+<p>扫码后是先按资产编号查设备（<code>/devices/lookup</code> 同时支持 SN 和资产编号），查到就打开详情。</p>
+<blockquote><p>📌 贴在设备上的标签，建议<strong>印左边那个短码 + 把资产编号印成文字</strong>，双保险。</p></blockquote>
+<h4 id="手机浏览器扫不了码iphone-部分浏览器">手机浏览器扫不了码？（iPhone / 部分浏览器）<a class="anchor" href="#手机浏览器扫不了码iphone-部分浏览器">#</a></h4>
+<p>网页内扫码靠的是浏览器的 <code>BarcodeDetector</code> 能力，<strong>iPhone 的 Safari 没有开放这个能力</strong>（不是系统坏了）。 这时「扫码核对」页会明确提示，并给你两条路：</p>
+<div class="tw"><table>
+<thead><tr><th>办法</th><th>怎么做</th></tr></thead>
+<tbody><tr><td>⭐ <strong>用手机自带相机</strong></td><td>直接扫设备上的资产二维码 → 会打开 <code>/m/#/device/xxx</code> → <strong>直接进这台设备的详情页</strong>（不需要登录注册任何东西，用你已有的账号即可）</td></tr><tr><td><strong>手动输入</strong></td><td>在「扫码核对」页输入 SN 或资产编号，一样能查</td></tr><tr><td>换个浏览器</td><td>安卓 <strong>Chrome / Edge</strong> 支持网页内扫码</td></tr></tbody>
+</table></div>
+<blockquote><p>📌 <strong>二维码里放的地址必须是手机能访问的</strong>。管理端点「打开二维码」时可以选地址：</p><p>手机连同一个 WiFi 就选<strong>局域网</strong>，手机在外面就选<strong>公网地址</strong>。</p><p>系统会自动把 <code>127.0.0.1</code> 换掉，不会生成一个只有服务器自己打得开的码。</p></blockquote>
+<p><strong>核对一致性</strong>：在设备详情页点「✅ 扫码核对这台设备」，再扫一次 SN，系统会告诉你<strong>扫描值与台账值是否一致</strong>，并把核对结果记进流转记录——适合盘点时用。</p>
+<h3 id="54-从相册选图识别">5.4 从相册选图识别<a class="anchor" href="#54-从相册选图识别">#</a></h3>
+<p>没有摄像头权限或想用已拍好的照片时：首页点 <strong>🖼️ 选择图片</strong>，选一张铭牌照片即可识别（不需要相机权限）。</p>
+<h3 id="55-最近设备">5.5 最近设备<a class="anchor" href="#55-最近设备">#</a></h3>
+<p>底部 <strong>🗂️ 最近设备</strong> 列出最近更新的 50 台设备，点进去看详情，省得回电脑上查。</p>
+<h3 id="56-手机端常见问题">5.6 手机端常见问题<a class="anchor" href="#56-手机端常见问题">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>现象</th><th>解决</th></tr></thead>
+<tbody><tr><td>点拍摄没反应 / 提示需要 HTTPS</td><td>必须用 <code>https://</code> 打开；或先用「从相册选图」</td></tr><tr><td>提示「相机权限被拒绝」</td><td>浏览器地址栏左侧图标 → 把「摄像头」设为允许，刷新重试</td></tr><tr><td>识别结果不准</td><td>拍照时让铭牌填满取景框、光线充足、避免反光；<strong>对着结果页顶部的照片再核对一遍</strong>，必要时点开放大</td></tr><tr><td>结果页顶部的照片打不开</td><td>说明这次识别没有保存图片（或服务器上的文件被清理）；识别字段仍然可用，重拍一次即可恢复</td></tr><tr><td>照片太糊看不清</td><td>点缩略图全屏后两指放大；还是看不清就重拍，让手机离铭牌近一点并对上焦</td></tr><tr><td>想存到手机相册</td><td>识别结果页点「📤 存到相册」→ 选「存储图像」；或长按照片选「存储图像 / 下载图片」</td></tr><tr><td>自动保存没生成文件</td><td>部分浏览器会拦截「自动下载」。点照片下方的 <strong>💾 下载到手机</strong> 手动存一次；若之前点过「拒绝」，去浏览器设置里允许本站下载</td></tr><tr><td>不想自动存到手机</td><td>首页「💾 照片备份到手机」卡片里关掉开关</td></tr><tr><td>提示「SN 已存在」</td><td>该设备已录过，用「扫码核对」查询即可</td></tr><tr><td>上传很慢 / 卡住</td><td>系统已自动把照片压缩到最长边 1600px；若仍慢，检查手机与服务器是否同一 WiFi</td></tr><tr><td>打开是乱码或样式错乱</td><td>强制刷新（下拉刷新），或换 Chrome 浏览器</td></tr></tbody>
+</table></div>
+<hr>
+<h2 id="六excel-批量导入与导出">六、Excel 批量导入与导出<a class="anchor" href="#六excel-批量导入与导出">#</a></h2>
+<p>左侧 <strong>📑 Excel 对接</strong>。</p>
+<h3 id="61-导出设备台账一次性快照">6.1 导出设备台账（一次性快照）<a class="anchor" href="#61-导出设备台账一次性快照">#</a></h3>
+<blockquote><p>💡 <strong>界面上的「?」小圆点</strong>：鼠标悬停或点一下，会弹出这个设置/按钮的完整说明。</p><p>长解释都收在里面了，所以按钮上只留几个字——看不明白就点那个「?」。</p></blockquote>
+<p>在左侧 <strong>📑 Excel 对接</strong> 页，或直接在设备台账页点「⬇ 导出」：</p>
+<div class="tw"><table>
+<thead><tr><th>按钮</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>按分类分表</strong></td><td>⭐ 主机、显示器、笔记本… <strong>各自一个工作表</strong>，另附一张「汇总」页（数量/占比/资产总值/对应表名）</td></tr><tr><td><strong>⬇ 导出全部（单表）</strong></td><td>所有设备放在一张「设备台账」表里</td></tr><tr><td><strong>🚫 不导出照片</strong></td><td>表格更小（比如只想看数据、或设备很多）</td></tr><tr><td><strong>不含说明页</strong></td><td>只导数据表，文件更小</td></tr><tr><td>设备台账页的「⬇ 导出」</td><td>只导出<strong>当前筛选结果</strong></td></tr></tbody>
+</table></div>
+<p>导出的工作表：</p>
+<div class="tw"><table>
+<thead><tr><th>模式</th><th>工作表</th></tr></thead>
+<tbody><tr><td>分表</td><td><code>汇总</code> + 每个分类一张表（如 <code>台式主机</code>、<code>显示器</code>）+ <code>字段说明</code>、<code>设备分类</code>、<code>组织架构</code></td></tr><tr><td>单表</td><td><code>设备台账</code> + <code>字段说明</code>、<code>设备分类</code>、<code>组织架构</code></td></tr></tbody>
+</table></div>
+<h4 id="-设备照片会一起导出默认开启">📸 设备照片会一起导出（默认开启）<a class="anchor" href="#-设备照片会一起导出默认开启">#</a></h4>
+<p>每张明细表的<strong>最后三列</strong>就是照片：</p>
+<div class="tw"><table>
+<thead><tr><th>列</th><th>内容</th></tr></thead>
+<tbody><tr><td><strong>照片</strong></td><td>⭐ 图片<strong>直接嵌在单元格里</strong>，打开就能看到，不用点链接</td></tr><tr><td><strong>照片链接</strong></td><td>可点击的「打开照片」</td></tr><tr><td><strong>原图链接</strong></td><td>可点击的「打开原图」——<strong>只有真的存了独立原图时才出现这一列</strong>（早期录入的设备只有一张图，就不会出这列，免得两列一模一样）</td></tr></tbody>
+</table></div>
+<p>例如显示器那张表的列尾就是：</p>
+<pre><code>… 分辨率 | 接口类型 | 照片 | 照片链接</code></pre>
+<blockquote><p>🔗 <strong>链接地址是「大家都能打开」的那个</strong>：即使你是在服务器本机用 <code>127.0.0.1</code> 打开后台导出的，</p><p>链接也会自动写成<strong>局域网 IP</strong>（如 <code>http://192.168.110.138:8080/...</code>），换台电脑照样打得开。</p><p>想固定成某个地址（比如公网域名），去 <strong>系统设置 → 企业信息 → 外部访问地址</strong> 填一下即可。</p></blockquote>
+<blockquote><p>💡 行高会自动撑大让图放得下。如果设备很多导致文件偏大，点 <strong>不含照片</strong> 即可。</p></blockquote>
+<h4 id="导出的文件太大-下载很慢">导出的文件太大 / 下载很慢？<a class="anchor" href="#导出的文件太大-下载很慢">#</a></h4>
+<p>早期录入的设备（缩略图功能上线之前）只有一张 1600px 的大图，每张约 150 KB，几十台就是好几 MB。</p>
+<p><strong>Excel 对接</strong> 页有一个 <strong>补缩略图</strong> 按钮：点一下，浏览器会批量把这些老照片缩成 320px 小图回传， 之后导出的体积能降到<strong>十分之一</strong>左右（30 台从 4.5 MB → 约 0.6 MB），下载也快得多。</p>
+<blockquote><p>新拍的照片本来就自带缩略图，不用管这个按钮。</p></blockquote>
+<blockquote><p>只导出了链接没图？说明那台设备的照片文件超过了 400 KB 的嵌入上限（没有缩略图的旧设备会这样），</p><p>链接照样可用；点上面的「补缩略图」就能让它们也显示成图片。</p></blockquote>
+<h4 id="快照-vs-实时链接照片怎么选">快照 vs 实时链接：照片怎么选<a class="anchor" href="#快照-vs-实时链接照片怎么选">#</a></h4>
+<p><strong>照片能自动更新</strong> 和 <strong>表格里直接看到图</strong> 这两件事，在 Excel 里没法同时做到，选一个：</p>
+<div class="tw"><table>
+<thead><tr><th>你的需求</th><th>用哪个</th><th>Excel 里的照片长什么样</th></tr></thead>
+<tbody><tr><td>表格里<strong>直接看到图</strong>，不介意手动更新</td><td><strong>按分类分表</strong></td><td>图片嵌在单元格里</td></tr><tr><td>数据<strong>自动更新</strong>，照片点开看</td><td><strong>🔄 实时数据链接</strong></td><td>「打开照片」超链接，点一下浏览器打开</td></tr><tr><td><strong>两个都要</strong></td><td>实时链接 + 自己加一列公式</td><td>加 <code>=IMAGE(照片链接单元格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图会跟着变</td></tr></tbody>
+</table></div>
+<p><strong>Excel 对接</strong> 页上有一张对照表，随时可以看。</p>
+<blockquote><p>⚠️ 导出的是<strong>快照</strong>，导完就固定了。想让数据自动更新，看下一节。</p></blockquote>
+<h4 id="每个分类的表只带自己的字段">每个分类的表<strong>只带自己的字段</strong><a class="anchor" href="#每个分类的表只带自己的字段">#</a></h4>
+<p>分表导出不是简单复制一份同样的表头，而是<strong>按每个分类在「设备分类」里配置的专属字段出列</strong>：</p>
+<div class="tw"><table>
+<thead><tr><th>通用列（所有分类都有）</th><th>资产编号、设备分类、品牌、型号、SN 序列号、所属组织、状态、使用人、使用人工号、使用人电话、存放位置、采购日期、保修到期、采购金额、供应商、合同号、成色、备注</th></tr></thead>
+<tbody><tr><td>硬件规格列（<strong>由分类专属字段决定</strong>）</td><td>IP 地址、MAC 地址、操作系统、CPU、内存、硬盘、屏幕尺寸</td></tr><tr><td>分类自定义列</td><td>分辨率、接口类型、打印类型、端口数、机柜位、IMEI、手机号…</td></tr></tbody>
+</table></div>
+<p>举例（按出厂默认配置）：</p>
+<div class="tw"><table>
+<thead><tr><th>工作表</th><th>除了通用列，还会有的列</th><th>不会出现的列</th></tr></thead>
+<tbody><tr><td><code>台式主机</code></td><td>CPU、内存、硬盘、操作系统、IP 地址、MAC 地址</td><td>屏幕尺寸、分辨率、打印类型、IMEI…</td></tr><tr><td><code>显示器</code></td><td><strong>屏幕尺寸、分辨率、接口类型</strong></td><td>CPU、内存、硬盘、操作系统、IP 地址、MAC 地址…</td></tr><tr><td><code>打印机</code></td><td>IP 地址、打印类型</td><td>CPU、内存、屏幕尺寸…</td></tr></tbody>
+</table></div>
+<blockquote><p>💡 想让某个分类多一列？去 <strong>设备分类 → 编辑</strong> 的「专属字段」里加上去，导出/实时链接里就会自动出现。</p><p>字段的 <code>key</code> 若是 <code>cpu</code>、<code>memory</code>、<code>disk</code>、<code>os_name</code>、<code>ip_address</code>、<code>mac_address</code>、<code>screen_size</code>，</p><p>会写进设备表对应列；其它 <code>key</code>（如 <code>resolution</code>）存在扩展字段里，导出时同样成列。</p></blockquote>
+<blockquote><p>⚠️ 导出的是<strong>快照</strong>，导完就固定了。想让数据自动更新，看下一节。</p></blockquote>
+<h3 id="62-实时数据链接让-excel-wps-自动刷新推荐">6.2 🔄 实时数据链接：让 Excel / WPS 自动刷新（推荐）<a class="anchor" href="#62-实时数据链接让-excel-wps-自动刷新推荐">#</a></h3>
+<p><strong>痛点</strong>：每次都要重新导出一遍很麻烦。</p>
+<p><strong>解法</strong>：把表格软件接成系统的<strong>数据源</strong>，之后打开文件或点「刷新」就能拉到最新台账，<strong>再也不用导出</strong>。</p>
+<h4 id="先选对取数地址和链接格式">先选对「取数地址」和「链接格式」<a class="anchor" href="#先选对取数地址和链接格式">#</a></h4>
+<p><strong>Excel 对接</strong> 页的实时链接卡片上有两个下拉：</p>
+<div class="tw"><table>
+<thead><tr><th>下拉</th><th>怎么选</th></tr></thead>
+<tbody><tr><td><strong>取数地址</strong></td><td>表格软件和服务器在<strong>同一台电脑</strong> → 选「本机」最快；在<strong>另一台电脑</strong> → 选「局域网」&lt;br&gt;⚠️ <strong>别用「当前访问地址」里的公网 https 链接</strong>（自签证书 + 隧道认证页会导致取不到数据）</td></tr><tr><td><strong>链接格式</strong></td><td>⭐ <strong>WPS 用户必须选「网页表格 · WPS / Excel 通用」</strong>&lt;br&gt;Excel 用户可选「CSV」，数字/日期会更规整</td></tr></tbody>
+</table></div>
+<blockquote><p>📌 <strong>WPS 的「自网站」只认网页里的 <code>&lt;table&gt;</code> 表格，不认 CSV</strong>——直接粘 CSV 链接会报</p><p><strong>「无法获取数据，请确认网络链接是否正常或输入网址是否正确」</strong>。</p><p>这是 WPS 的机制问题，不是链接坏了。<strong>换成「网页表格」格式即可。</strong></p></blockquote>
+<p><strong>不确定链接对不对？</strong> 点「📖 配置步骤」，在弹窗左下角点 <strong>「浏览器打开」</strong>——能看到一个表格页面就说明链接没问题。</p>
+<h4 id="配置步骤一次性">配置步骤（一次性）<a class="anchor" href="#配置步骤一次性">#</a></h4>
+<ol>
+<li>选好地址和格式 → 在列表里点 <strong>📋 复制链接</strong>（想每个分类一个表，就复制对应分类的）</li>
+<li><strong>Excel</strong>：菜单 <strong>数据</strong> → <strong>获取数据</strong> → <strong>自其他源</strong> → <strong>自网站</strong></li>
+</ol>
+<p><strong>WPS</strong>：菜单 <strong>数据</strong> → <strong>获取数据</strong> / <strong>自网站</strong></p>
+<ol>
+<li>粘贴链接 → 确定 → 在导航器里选 <strong>Table</strong>（表格）→ 点「加载」／「导入」</li>
+</ol>
+<h4 id="想让每个设备分类各占一个工作表">想让「每个设备分类各占一个工作表」？<a class="anchor" href="#想让每个设备分类各占一个工作表">#</a></h4>
+<p>系统提供了两种做法，<strong>推荐第 1 种</strong>：</p>
+<p><strong>做法 1：一次导入多张表（推荐）</strong></p>
+<p>点卡片上的 <strong>📋 复制「全部分类（多表）」链接</strong>——这条链接打开后是一个<strong>含多张表格的页面</strong> （台式主机一张、显示器一张……）：</p>
+<ul>
+<li><strong>Excel</strong>：数据 → 自网站 → 粘贴 → 导航器里 <strong>勾选全部表格</strong>（Ctrl 多选）→ 加载 →</li>
+</ul>
+<p>选「<strong>每个表放入新工作表</strong>」</p>
+<ul>
+<li><strong>WPS</strong>：数据 → 自网站 → 粘贴 → 表格列表里 <strong>全选</strong> → 导入</li>
+</ul>
+<p><strong>做法 2：逐个导入（最稳，一定能成）</strong></p>
+<ol>
+<li>在链接列表里点「台式主机」的 <strong>📋 复制链接</strong> → 数据 → 自网站 → 粘贴 → 加载到 <strong>Sheet1</strong>，</li>
+</ol>
+<p>把 Sheet1 重命名为「台式主机」</p>
+<ol>
+<li>换成「显示器」的链接，重复一次 → 放到 <strong>Sheet2</strong> → 重命名为「显示器」</li>
+<li>以后按 <strong>数据 → 全部刷新</strong>，所有工作表一起更新</li>
+</ol>
+<blockquote><p>点卡片上的 <strong>📖 多工作表怎么配</strong> 可以随时查看这两套步骤。</p><p>想先确认页面里有几张表，点弹窗里的「预览表格」。</p></blockquote>
+<h4 id="让它自动刷新">让它自动刷新<a class="anchor" href="#让它自动刷新">#</a></h4>
+<p>在生成的数据表上右键 → <strong>表格 → 外部数据属性</strong>（WPS 里叫「数据范围属性」）→ 勾选：</p>
+<ul>
+<li>☑ <strong>打开文件时刷新数据</strong></li>
+<li>☑ <strong>每 30 分钟刷新一次</strong>（按需调整）</li>
+</ul>
+<p>配置一次，以后打开就自动是最新的。</p>
+<h4 id="几点说明">几点说明<a class="anchor" href="#几点说明">#</a></h4>
+<div class="tw"><table>
+<thead><tr><th>事项</th><th>说明</th></tr></thead>
+<tbody><tr><td>数据范围</td><td>只读，只包含设备台账字段，<strong>不含任何密钥或账号信息</strong></td></tr><tr><td>列的多少</td><td><strong>按分类走</strong>：每个分类的表格只带该分类配置的字段（显示器不会出现 CPU/内存/硬盘，主机不会出现屏幕尺寸），和 6.1 的分表导出一致</td></tr><tr><td>照片</td><td>实时表里有 <strong>照片链接</strong> 列，单元格是可点击的「<strong>打开照片</strong>」（点一下浏览器打开图）。链接用的是<strong>局域网地址或你设置的「外部访问地址」</strong>，不会写成 <code>127.0.0.1</code>，所以同网段的电脑都能打开</td></tr><tr><td>想在实时表里直接看图</td><td>导入后在表格里自己加一列，填 <code>=IMAGE(照片链接那一格)</code>（Excel 365 / 较新版 WPS 支持）。数据刷新时图片会跟着变——<strong>这是唯一能「自动更新 + 直接看图」的办法</strong></td></tr><tr><td>「全部设备」那一行</td><td>是跨分类的汇总视图，保留<strong>完整列</strong>，方便一眼看全</td></tr><tr><td>链接安全</td><td>链接里带一个 token；<strong>点「🔁 重置链接」可让旧链接立即失效</strong>（照片链接是同一套 token）</td></tr><tr><td>数字变成科学计数法</td><td>用 CSV 格式时可能出现；网页表格格式不会（但所有列都会是文本）</td></tr><tr><td>想改数据</td><td>实时链接是<strong>只读</strong>的。要批量改数据，用导入功能（见 6.5）</td></tr><tr><td>导出点了没反应 / 浏览器报「网络问题」</td><td>系统已改成「先由页面把文件取回来、再触发下载」，失败时会明确告诉你原因（HTTP 状态、空文件等），不会再是含糊的网络错误。若仍失败，试试 <strong>不含照片</strong> 缩小体积，或点 <strong>补缩略图</strong></td></tr></tbody>
+</table></div>
+<h3 id="63-下载导入模板">6.3 下载导入模板<a class="anchor" href="#63-下载导入模板">#</a></h3>
+<p>点 <strong>⬇ 下载导入模板</strong>，得到 <code>IT资产导入模板_日期.xlsx</code>，包含 5 个工作表：</p>
+<div class="tw"><table>
+<thead><tr><th>工作表</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>设备台账</strong></td><td>⭐ <strong>数据填在这里</strong>，从第 3 行开始，表头（第 2 行）不要改</td></tr><tr><td>填写示例</td><td>两条示例，<strong>仅供参考格式，本页不会被导入</strong></td></tr><tr><td>字段说明</td><td>每个字段的填写要求</td></tr><tr><td>设备分类</td><td>已有分类名称（导入时按名称匹配）</td></tr><tr><td>组织架构</td><td>已有组织（支持写全路径）</td></tr></tbody>
+</table></div>
+<h3 id="64-填写规则">6.4 填写规则<a class="anchor" href="#64-填写规则">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>列</th><th>怎么填</th></tr></thead>
+<tbody><tr><td>资产编号</td><td>可留空（自动生成）。填写时必须全库唯一</td></tr><tr><td><strong>设备分类</strong></td><td>填分类名称，如「显示器」。<strong>不存在的分类会自动创建</strong></td></tr><tr><td>品牌 / 型号</td><td>如 Dell / U2723QE</td></tr><tr><td><strong>SN 序列号</strong></td><td>建议必填；重复的 SN 不会重复建记录（会走更新）</td></tr><tr><td><strong>所属组织</strong></td><td>支持三种写法：<code>信息技术部</code>、<code>总公司 / 信息技术部</code>、<code>总公司 / 信息技术部 / 运维组</code></td></tr><tr><td>状态</td><td>从下拉选择：在用 / 库存 / 闲置 / 借出 / 维修中 / 已报废 / 丢失</td></tr><tr><td>采购日期 / 保修到期</td><td>支持 <code>2024-03-15</code>、<code>2024/3/15</code>、<code>2024年3月15日</code>，Excel 日期格式也行</td></tr><tr><td>采购金额</td><td>纯数字，不要带「元」或货币符号</td></tr><tr><td>供应商</td><td>从下拉选择（选项在 系统设置 → 企业信息 里维护）</td></tr><tr><td>成色</td><td>建议 A / B / C</td></tr></tbody>
+</table></div>
+<p><strong>小技巧</strong></p>
+<ul>
+<li>表头<strong>可以换位置、也可以用同义词</strong>（如「SN」「序列号」「Service Tag」都能识别）</li>
+<li>多余的列会被忽略，不会报错</li>
+</ul>
+<h3 id="65-导入流程三步">6.5 导入流程（三步）<a class="anchor" href="#65-导入流程三步">#</a></h3>
+<ol>
+<li>点 <strong>📁 选择文件导入</strong>，选填好的 Excel</li>
+<li><strong>预览</strong>：系统显示识别到多少行、匹配成功多少列、前几行数据的样子</li>
+</ol>
+<ul>
+<li>有「未匹配列」会黄字提示（这些列会被忽略）</li>
+<li>建议先勾选 <strong>仅预览（不写入数据库，先看结果）</strong> 跑一次</li>
+</ul>
+<ol>
+<li>点 <strong>开始导入</strong>，完成后提示：</li>
+</ol>
+<pre><code>导入完成：新增 12、更新 3、跳过 1、失败 0</code></pre>
+<div class="tw"><table>
+<thead><tr><th>结果</th><th>含义</th></tr></thead>
+<tbody><tr><td>新增</td><td>库里没有这台设备，新建了记录</td></tr><tr><td>更新</td><td>按 SN（或资产编号）匹配到已有设备，更新了它的信息</td></tr><tr><td>跳过</td><td>勾了「仅预览」，或该行被标记为示例</td></tr><tr><td>失败</td><td>该行有问题，会列出「第几行：什么原因」</td></tr></tbody>
+</table></div>
+<p><strong>两个选项</strong></p>
+<ul>
+<li>☑ <strong>自动创建缺失的组织/分类</strong>：建议勾选，省得先建组织</li>
+<li>☑ <strong>遇到同 SN 时更新已有设备</strong>：建议勾选；取消则同 SN 的行会被跳过</li>
+</ul>
+<h3 id="66-导入失败常见原因">6.6 导入失败常见原因<a class="anchor" href="#66-导入失败常见原因">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>报错</th><th>原因与解决</th></tr></thead>
+<tbody><tr><td>表头无法识别</td><td>用了自己的表格但表头完全不认识。请用系统模板，或确保至少有「设备分类」「SN 序列号」这类标准列名</td></tr><tr><td>状态「XXX」无法识别</td><td>状态列的值不在下拉选项里，改为标准的七个状态之一</td></tr><tr><td>资产编号「XXX」已存在</td><td>同编号设备已存在，把这一行的编号留空（自动生成）或改成别的</td></tr><tr><td>分类「XXX」不存在</td><td>没勾「自动创建缺失的组织/分类」时会出现，勾上即可</td></tr><tr><td>表格里没有数据行</td><td>数据没填在「设备台账」页，或填到了「填写示例」页</td></tr><tr><td>第 N 行：SN「XXX」已存在</td><td>该 SN 在库中已有记录；勾了「更新」会更新，没勾会跳过</td></tr></tbody>
+</table></div>
+<hr>
+<h2 id="七组织架构与设备分类">七、组织架构与设备分类<a class="anchor" href="#七组织架构与设备分类">#</a></h2>
+<h3 id="71-组织架构">7.1 组织架构（🏢）<a class="anchor" href="#71-组织架构">#</a></h3>
+<p>支持<strong>无限层级</strong>：集团 → 公司 → 部门 → 小组。</p>
+<ul>
+<li>左侧是<strong>树形图</strong>，点组织名前的箭头可展开/收起</li>
+<li>右侧是<strong>表格</strong>，显示每个组织的类型、编码、负责人、设备数</li>
+<li>点「＋ 新增组织」新建；编辑时可以改「上级组织」来调整层级</li>
+<li><strong>设备数统计</strong>：父组织会统计所有下级的设备</li>
+</ul>
+<p><strong>注意</strong>：删除组织前必须先处理它下面的子组织和设备（或勾选强制转移）。</p>
+<h3 id="72-设备分类">7.2 设备分类（🗂️）<a class="anchor" href="#72-设备分类">#</a></h3>
+<ul>
+<li>每个分类有：名称、编码、<strong>资产编号前缀</strong>、图标、主题色、<strong>专属字段</strong></li>
+<li><strong>资产编号前缀</strong>决定自动生成的编号，如「显示器」前缀 <code>MON</code> → <code>MON-2026-0001</code></li>
+<li><strong>专属字段</strong>：给该分类特有的属性，<strong>电脑端和手机端录入时都会自动出现</strong></li>
+<li>已有设备的分类不能直接删除，需要先处理设备</li>
+</ul>
+<p><strong>专属字段支持 4 种类型</strong></p>
+<div class="tw"><table>
+<thead><tr><th>类型</th><th>说明</th></tr></thead>
+<tbody><tr><td>文本</td><td>自由输入</td></tr><tr><td>数字</td><td>只能填数字</td></tr><tr><td>日期</td><td>日期选择器</td></tr><tr><td><strong>下拉选项</strong></td><td>只能从预设选项里选，避免各人写法不一致</td></tr></tbody>
+</table></div>
+<p><strong>怎么加一个下拉选项</strong>（以「显示器 → 屏幕尺寸」为例）</p>
+<ol>
+<li>进入 <strong>🗂️ 设备分类</strong>，找到「显示器」，点「编辑」</li>
+<li>在「专属字段」里找到 <code>screen_size</code> 那一行</li>
+<li>类型选 <strong>下拉选项</strong>，右边会出现「选项」输入框</li>
+<li>填入 <code>24寸, 27寸</code>（<strong>逗号分隔</strong>）</li>
+<li>保存</li>
+</ol>
+<p>设置好后：</p>
+<ul>
+<li>电脑端新增/编辑显示器时，「屏幕尺寸」变成下拉框</li>
+<li>📱 <strong>手机端拍照录入选到「显示器」分类时，也会出现这个下拉框</strong></li>
+<li>想增减尺寸，改这里的选项即可，不用改代码</li>
+</ul>
+<blockquote><p>系统已预置：显示器 = <code>24寸 / 27寸</code>；笔记本电脑 = <code>13.3寸 / 14寸 / 15.6寸 / 16寸</code>。</p><p>如果某台设备的历史值不在选项里，下拉框会把它临时保留下来，不会因为改配置而丢数据。</p></blockquote>
+<hr>
+<h2 id="八系统设置">八、系统设置<a class="anchor" href="#八系统设置">#</a></h2>
+<p>左侧 <strong>⚙️ 系统设置</strong>（需要「查看/修改系统设置」权限）。</p>
+<h3 id="81-企业信息">8.1 企业信息<a class="anchor" href="#81-企业信息">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>项目</th><th>说明</th></tr></thead>
+<tbody><tr><td>企业名称</td><td>显示在右上角</td></tr><tr><td>资产编号格式</td><td>支持变量 <code>{PREFIX}</code> 分类前缀、<code>{YYYY}</code> 年份、<code>{SEQ:4}</code> 四位流水号</td></tr><tr><td>货币符号</td><td>默认 CNY</td></tr><tr><td><strong>设备供应商选项</strong></td><td>逗号分隔。会同步到设备表单、筛选、手机端和 Excel 模板的下拉</td></tr><tr><td><strong>外部访问地址</strong></td><td>导出 Excel 里照片链接用的地址。留空 = 自动（本机地址自动换成局域网 IP）；想固定成公网域名就填 <code>https://itam.dengxc.cloud:40259</code></td></tr><tr><td><strong>自助注册</strong></td><td>开关 + 是否需审核 + 注册默认角色</td></tr></tbody>
+</table></div>
+<h3 id="811-照片归档">8.1.1 照片归档<a class="anchor" href="#811-照片归档">#</a></h3>
+<p>系统设置里的 <strong>📸 照片归档</strong> 卡片（默认全开，一般不用动）：</p>
+<div class="tw"><table>
+<thead><tr><th>项目</th><th>默认</th><th>说明</th></tr></thead>
+<tbody><tr><td>保存原图</td><td>✅ 开</td><td>手机拍到多清楚就存多清楚（最高 4K），设备详情可放大看铭牌小字</td></tr><tr><td>保存缩略图</td><td>✅ 开</td><td>导出 Excel 时嵌进单元格用的就是它</td></tr><tr><td>导出 Excel 时带上照片</td><td>✅ 开</td><td>关掉后导出只有数据，表格更小</td></tr><tr><td>原图体积上限</td><td>15 MB</td><td>单张超了就退回用识别图，免得手机流量和磁盘被吃掉</td></tr></tbody>
+</table></div>
+<h3 id="82-识别服务手机拍照识别用">8.2 识别服务（手机拍照识别用）<a class="anchor" href="#82-识别服务手机拍照识别用">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>项目</th><th>说明</th></tr></thead>
+<tbody><tr><td>服务提供商</td><td>视觉大模型 / 百度 OCR / 腾讯云 OCR / 阿里云 / 自定义 / 本地模拟</td></tr><tr><td>服务商预设</td><td>选一家自动填好地址与模型（推荐智谱 GLM-4.6V-Flash，免费）</td></tr><tr><td>API Key</td><td>服务商的密钥，保存后只显示为 <code>d484****mevK</code> 掩码</td></tr><tr><td>图片编码方式</td><td>一般选「自动」</td></tr><tr><td>置信度阈值</td><td>低于该值的识别结果会在手机端标红提示人工确认</td></tr><tr><td>🧪 测试识别</td><td>点一下验证密钥是否可用</td></tr></tbody>
+</table></div>
+<h3 id="83-我的账号">8.3 我的账号<a class="anchor" href="#83-我的账号">#</a></h3>
+<p>查看自己的角色权限、修改姓名密码、查看登录记录。</p>
+<hr>
+<h2 id="九常见问题">九、常见问题<a class="anchor" href="#九常见问题">#</a></h2>
+<h3 id="登录相关">登录相关<a class="anchor" href="#登录相关">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>问题</th><th>解决</th></tr></thead>
+<tbody><tr><td>登录页打不开</td><td>确认服务在运行（管理员跑 <code>scripts\status.cmd</code>），确认地址端口正确</td></tr><tr><td>提示「用户名或密码错误」</td><td>检查大小写；连续错 5 次会锁 10 分钟</td></tr><tr><td>提示「账号已被锁定」</td><td>等 10 分钟，或让管理员在「用户管理」里点「解锁」</td></tr><tr><td>提示「正在等待管理员审核」</td><td>你的自助注册还没被通过</td></tr><tr><td>提示「账号已被停用」</td><td>联系管理员</td></tr><tr><td>登录后看不到某些菜单</td><td>正常——你的角色没有该权限</td></tr></tbody>
+</table></div>
+<h3 id="使用相关">使用相关<a class="anchor" href="#使用相关">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>问题</th><th>解决</th></tr></thead>
+<tbody><tr><td>页面显示旧内容</td><td><code>Ctrl + F5</code> 强制刷新</td></tr><tr><td>顶部搜索没反应</td><td>输入关键词后要按<strong>回车</strong></td></tr><tr><td>找不到刚录入的设备</td><td>检查筛选条件是否被限制；点「重置」；确认保存成功（有绿色提示）</td></tr><tr><td>误删了设备</td><td>去 <strong>🗑️ 回收站</strong> 点「恢复」</td></tr><tr><td>保修预警里出现很多设备</td><td>说明这些设备快到保修期了，及时联系供应商续保或更新</td></tr></tbody>
+</table></div>
+<h3 id="数据相关">数据相关<a class="anchor" href="#数据相关">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>问题</th><th>解决</th></tr></thead>
+<tbody><tr><td>想备份数据</td><td>整个应用目录下的 <code>data</code> 文件夹复制走即可；数据库是 <code>data/itam.db</code></td></tr><tr><td>想导出给别人看</td><td>用「导出」，或只给只读账号让对方自己在网页上看</td></tr><tr><td>照片存在哪</td><td><code>data/uploads/</code> 目录，按日期分文件夹</td></tr></tbody>
+</table></div>
+<hr>
+<h2 id="十附录状态与字段说明">十、附录：状态与字段说明<a class="anchor" href="#十附录状态与字段说明">#</a></h2>
+<h3 id="设备状态">设备状态<a class="anchor" href="#设备状态">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>状态</th><th>含义</th><th>建议用法</th></tr></thead>
+<tbody><tr><td><strong>在用</strong></td><td>已分配给员工使用</td><td>填了使用人就是这种状态</td></tr><tr><td><strong>库存</strong></td><td>未分配、可领用</td><td>新采购入库</td></tr><tr><td><strong>闲置</strong></td><td>暂时没人用但还在</td><td></td></tr><tr><td><strong>借出</strong></td><td>借给他人/外单位</td><td></td></tr><tr><td><strong>维修中</strong></td><td>送修或待修</td><td>会在仪表盘统计</td></tr><tr><td><strong>已报废</strong></td><td>已走完报废流程</td><td>建议保留记录不删除，便于审计</td></tr><tr><td><strong>丢失</strong></td><td>遗失</td><td></td></tr></tbody>
+</table></div>
+<h3 id="关键字段">关键字段<a class="anchor" href="#关键字段">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>字段</th><th>为什么重要</th></tr></thead>
+<tbody><tr><td><strong>资产编号</strong></td><td>公司内部唯一标识，用于贴标签、盘点</td></tr><tr><td><strong>SN 序列号</strong></td><td>厂商唯一标识，<strong>唯一</strong>。查重、对接厂商保修都靠它</td></tr><tr><td><strong>所属组织</strong></td><td>决定设备归属，统计和筛选都靠它</td></tr><tr><td><strong>使用人 + 工号</strong></td><td>责任到人，离职交接时用「批量交接」</td></tr><tr><td><strong>保修到期</strong></td><td>进「保修预警」，提前 90 天提醒</td></tr><tr><td><strong>采购金额</strong></td><td>汇总成仪表盘的「资产总值」，用于固定资产核算</td></tr></tbody>
+</table></div>
+<h3 id="效率小技巧">效率小技巧<a class="anchor" href="#效率小技巧">#</a></h3>
+<ol>
+<li><strong>电脑上大批量</strong> → 用 Excel 导入；<strong>现场零星录入</strong> → 用手机拍照</li>
+<li>手机识别后<strong>务必扫一眼 SN</strong>，识别置信度再高也要人工确认</li>
+<li>盘点时用手机<strong>扫码核对</strong>，会自动记录核对结果</li>
+<li>打印资产二维码贴在设备上（设备详情页可打开二维码），以后手机一扫就能查</li>
+<li>顶部全局搜索框支持 SN，客户报故障时直接粘 SN 回车定位</li>
+<li>定期看仪表盘的「保修即将到期」，比翻 Excel 靠谱</li>
+</ol>
+<hr>
+<p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/19 18:13:06</div>
+</div>
+</body>
+</html>

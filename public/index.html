@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f8fa" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>IT 资产管理 · 管理端</title>
+  <link rel="stylesheet" href="/assets/admin.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='23' fill='%232563eb'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Arial'>IT</text></svg>" />
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo">IT</div>
+        <div class="brand-text">
+          <strong>资产管理系统</strong>
+          <span>IT Asset Manager</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot">
+        <a href="/manual" target="_blank" class="foot-link"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18.5A2.5 2.5 0 0 1 6.5 16H20"/><path d="M6.5 3H20v18H6.5A2.5 2.5 0 0 1 4 18.5v-13A2.5 2.5 0 0 1 6.5 3z"/></svg>使用手册</a>
+        <a href="/m" target="_blank" class="foot-link"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 18.6h.01"/></svg>打开移动端录入</a>
+        <div class="foot-status"><span class="dot" id="healthDot"></span> 服务运行中</div>
+      </div>
+    </aside>
+
+    <!-- 手机端：侧边栏打开时的遮罩，点击可关闭 -->
+    <div class="sidebar-mask" id="sidebarMask" hidden></div>
+
+    <!-- 主区域 -->
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn" id="menuToggle" title="展开/收起菜单" aria-label="展开菜单"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7h17M3.5 12h17M3.5 17h17"/></svg></button>
+          <h1 id="pageTitle">仪表盘</h1>
+        </div>
+        <div class="topbar-right">
+          <input class="global-search" id="globalSearch" placeholder="搜索 编号 / SN / 品牌 / 使用人…" />
+          <span class="company" id="companyName"></span>
+        </div>
+      </header>
+      <div class="content" id="content"></div>
+    </main>
+  </div>
+
+  <!-- 通用弹窗 -->
+  <div class="modal-mask" id="modalMask" hidden>
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <!-- 轻提示 -->
+  <div class="toasts" id="toasts"></div>
+
+  <script type="module" src="/assets/admin.js"></script>
+</body>
+</html>

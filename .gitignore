@@ -1,0 +1,32 @@
+# ---- 依赖（本项目零依赖，此目录一般不存在）----
+node_modules/
+
+# ---- 运行时数据（含真实数据库、现场照片、导出文件、备份库）----
+data/
+certs/
+logs/
+*.log
+
+# ---- 密钥 / 凭据（切勿入库）----
+key.txt
+*.key
+*.pem
+admin-password.txt
+
+# ---- 本地临时文件与一次性脚本 ----
+tests/_tmp-*.js
+scripts/_sleep.cmd
+
+# ---- 本地工作台与设计草稿 ----
+.workbuddy/
+_redesign-preview/
+_redesign-preview.html
+_mobile-redesign.html
+
+# ---- 本地快照备份目录 ----
+_backup-*/
+
+# ---- 操作系统噪音 ----
+.DS_Store
+Thumbs.db
+desktop.ini

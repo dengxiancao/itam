@@ -888,11 +888,14 @@ async function routeApi(ctx) {
         （认证方式和应答格式都不同）。这里只服务管理端页面。 */
   if (route === '/agent/overview') {
     require('device.read');
+    // 公网入口只认「外部访问地址」这个设置：没配就不编造，由前端提示去配。
+    const publicBase = String(getSetting('system', {})?.link_base_url || '').trim().replace(/\/+$/, '');
     return {
       stats: agentStats(),
       tokens: agentTokenSafeList(),
       endpoint: `${linkBaseOf(req)}/api/agent`,
       endpoint_lan: `http://${localIPs()[0] || '127.0.0.1'}:${PORT}/api/agent`,
+      endpoint_public: publicBase ? `${publicBase}/api/agent` : '',
       ca_fingerprint: caFingerprintOf(),
       max_bytes: MAX_AGENT_BYTES,
     };

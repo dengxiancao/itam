@@ -13,15 +13,15 @@
   --------
   LAN machine (the normal case -- plain HTTP, no certificate involved):
     powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 `
-      -Server "http://192.168.110.138:8080/api/agent" -Token "itam_xxxxx"
+      -Server "http://192.168.1.100:8080/api/agent" -Token "itam_xxxxx"
 
   Laptop that also goes home (public tunnel, HTTPS):
     powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 `
-      -Server "https://itam.dengxc.cloud:40259/api/agent" -Token "itam_xxxxx" -UsePublic
+      -Server "https://itam.example.com:12345/api/agent" -Token "itam_xxxxx" -UsePublic
 
   No internet on this PC (copy the MSI over first):
     powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 `
-      -Server "http://192.168.110.138:8080/api/agent" -Token "itam_xxxxx" `
+      -Server "http://192.168.1.100:8080/api/agent" -Token "itam_xxxxx" `
       -MsiPath "D:\GLPI-Agent-1.19-x64.msi"
 
   Notes / gotchas (learned the hard way, do not "simplify"):

@@ -73,7 +73,7 @@ Start-ScheduledTask -TaskName 'ITAM-SakuraFrp'
 | ITAM 服务随任务启动 | ✅ 进程运行在 **session 0**（与桌面/登录无关） |
 | **杀掉服务进程 → 看门狗恢复** | ✅ **6 秒内**自动拉起，健康检查恢复 ok |
 | **杀掉樱花全部进程 → 任务恢复** | ✅ 三个进程全部重建，公网隧道回到 **HTTP 200** |
-| 公网可达性 | ✅ `https://itam.dengxc.cloud:40259/` → HTTP 200 |
+| 公网可达性 | ✅ `https://itam.example.com:12345/` → HTTP 200 |
 
 ---
 

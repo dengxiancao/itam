@@ -11,8 +11,8 @@
  *
  * 用法：
  *   node server/make-cert.js
- *   node server/make-cert.js itam.dengxc.cloud              # 追加域名到 SAN
- *   ITAM_CERT_HOSTS="itam.dengxc.cloud,dengxc.cloud" node server/make-cert.js
+ *   node server/make-cert.js itam.example.com              # 追加域名到 SAN
+ *   ITAM_CERT_HOSTS="itam.example.com,example.com" node server/make-cert.js
  *   ITAM_CERT_IPS="1.2.3.4" node server/make-cert.js
  */
 import fs from 'node:fs';

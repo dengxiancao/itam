@@ -114,7 +114,7 @@ const SAMPLES = [
   ['MON-2026-0010', 'M'],
   ['YLX2K4K1', 'M'],
   ['ITAM:PC-2026-0051', 'L'],
-  ['https://itam.dengxc.cloud:40259/m/#/device/820c5898-de4d-4688-80d9-23a56711b593', 'L'],
+  ['https://itam.example.com:12345/m/#/device/820c5898-de4d-4688-80d9-23a56711b593', 'L'],
 ];
 
 t('干净的图：四种内容都能解回来', () => {

@@ -112,9 +112,7 @@ await check('正确密码可登录并拿到会话', async () => {
 
 /* ---------- 准备：库为空时自建测试数据，结束后清理 ---------- */
 const fixtureIds = [];
-async function ensureFixtureDevice() {
-  const { body } = await req('/api/devices?status=in_use&page_size=1');
-  if (body.total > 0) return false;
+async function createFixtureDevice(tag) {
   const { body: opts } = await req('/api/options');
   const cat = opts.categories.find((c) => c.has_sn) || opts.categories[0];
   const { body: dev } = await req('/api/devices', {
@@ -122,14 +120,54 @@ async function ensureFixtureDevice() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       category_id: cat.id, brand: 'SMOKE', model: 'SMOKE-TEST',
-      sn: 'SMOKE' + Date.now(), status: 'in_use', supplier: (opts.suppliers || [])[0] || null,
+      sn: 'SMOKE' + tag + Date.now(), status: 'in_use', supplier: (opts.suppliers || [])[0] || null,
     }),
   });
   fixtureIds.push(dev.id);
-  return true;
+  return dev;
 }
-const hadToSeed = await ensureFixtureDevice();
-if (hadToSeed) console.log('  （库中无设备，已自动创建测试数据）\n');
+async function ensureFixtureDevice() {
+  const { body } = await req('/api/devices?status=in_use&page_size=1');
+  if (body.total > 0) return null;
+  return createFixtureDevice('');
+}
+const fixtureDevice = await ensureFixtureDevice();
+if (fixtureDevice) console.log('  （库中无设备，已自动创建测试数据）\n');
+
+/**
+ * 保证库里**至少有一台带照片的设备**。
+ *
+ * 以前这段依赖「真实库里正好有照片」：全新环境（临时库）里演示数据没有照片，
+ * 「导出 Excel 自动嵌图」那条断言就会红 —— 看起来像导出坏了，其实是测试没有素材。
+ * 这里自己补一张，测试才不靠运气。图片直接写进 data/uploads（和服务同一个目录），
+ * 再把路径挂到设备上，走的正是手机端入库时写的那两个字段。
+ *
+ * ⚠️ 只改**本次测试自己建的**那台设备。以前这里顺手挑「列表里第一台」去挂照片 ——
+ *    对着真实服务跑一次，用户某台设备的照片就被改成了测试图。
+ */
+async function ensurePhotoDevice() {
+  const list = (await req('/api/devices?page_size=200')).body;
+  if (list.items.some((d) => d.photo_path)) return null;
+
+  const target = fixtureDevice || await createFixtureDevice('-PHOTO');
+  const day = new Date().toISOString().slice(0, 10);
+  const rel = `/uploads/${day}/smoke-photo-${Date.now()}.png`;
+  const abs = path.join(__dirname, '..', 'data', rel.replace(/^\/uploads\//, 'uploads/'));
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  // 1×1 的合法 PNG：内容无所谓，要的是「有个真文件可以被嵌进 Excel / 用 token 取回」
+  fs.writeFileSync(abs, Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ));
+  await req('/api/devices/' + target.id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photo_path: rel }),
+  });
+  return { id: target.id, path: rel };
+}
+const photoFix = await ensurePhotoDevice();
+if (photoFix) console.log(`  （库中设备都没照片，已给测试设备 ${photoFix.id.slice(0, 8)} 补了一张）\n`);
 
 await check('健康检查', async () => {
   const { body } = await req('/api/health');
@@ -145,7 +183,11 @@ await check('管理端页面', async () => {
 
 await check('移动端页面', async () => {
   const { body, ct } = await req('/m');
-  if (!body.includes('IT 资产录入')) throw new Error('缺少移动端标题');
+  // 标题从「IT 资产录入」改成了「IT 资产管理」：手机端首屏已是仪表盘，不只是录入
+  if (!body.includes('IT 资产管理')) throw new Error('缺少移动端标题');
+  if (!ct.includes('text/html')) throw new Error('不是 HTML');
+  // 底部导航要有仪表盘这一格，否则首屏没地方落
+  if (!body.includes('data-v="dashboard"')) throw new Error('底部导航缺少仪表盘入口');
 });
 
 await check('静态资源 CSS', async () => {
@@ -435,6 +477,108 @@ await check('资产二维码用短码：扫资产编号也能查到设备', asyn
   }
 });
 
+await check('服务端二维码兜底解码（/api/scan）：手机拍屏幕解不出来时的那条后路', async () => {
+  const { qrcodeEncode } = await import('../server/lib/qrcode.js');
+  const dev = (await req('/api/devices?page_size=5')).body.items.find((d) => d.asset_no);
+  if (!dev) return;
+  const { modules } = qrcodeEncode(dev.asset_no, 'M');
+
+  /** 把模块矩阵光栅化成前端会发上来的那种灰度字节（顺便撒点噪声，像拍屏幕） */
+  const raster = (scale, noiseAmp) => {
+    const n = modules.length; const quiet = 4;
+    const size = (n + quiet * 2) * scale;
+    const gray = Buffer.alloc(size * size, 255);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (!modules[y][x]) continue;
+        for (let dy = 0; dy < scale; dy++) {
+          for (let dx = 0; dx < scale; dx++) {
+            gray[((y + quiet) * scale + dy) * size + (x + quiet) * scale + dx] = 0;
+          }
+        }
+      }
+    }
+    let seed = 12345;
+    for (let i = 0; i < gray.length; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const v = gray[i] + Math.round((seed / 0x7fffffff - 0.5) * 2 * noiseAmp);
+      gray[i] = Math.max(0, Math.min(255, v));
+    }
+    return { gray, size };
+  };
+
+  for (const scale of [4, 6, 10]) {
+    const { gray, size } = raster(scale, 10);
+    const res = await rawReq(`/api/scan?w=${size}&h=${size}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: gray,
+    });
+    if (!res.ok) throw new Error(`每格 ${scale}px 时接口返回 ${res.status}`);
+    const body = await res.json();
+    if (!body.data?.ok) throw new Error(`每格 ${scale}px 时服务端没解出来`);
+    if (body.data.text !== dev.asset_no) {
+      throw new Error(`解出来的内容不对：期望 ${dev.asset_no}，实得 ${body.data.text}`);
+    }
+  }
+
+  // 手机真实发上来的那种帧：900×900 的画面里只有一小块是二维码（约 180px）。
+  // 顺带压一次体积上限：900×900 = 810KB，是这条接口最大档的请求体。
+  {
+    const W = 900;
+    const frame = Buffer.alloc(W * W, 232);          // 显示器白底偏灰
+    const n = modules.length;
+    const quiet = 3;
+    const px = 180;
+    const side = px + quiet * 2;
+    const mod = px / n;
+    const ox = Math.round((W - side) / 2);
+    const oy = Math.round((W - side) / 2);
+    for (let y = 0; y < side; y++) {
+      for (let x = 0; x < side; x++) {
+        const mx = Math.floor((x - quiet) / mod);
+        const my = Math.floor((y - quiet) / mod);
+        const dark = mx >= 0 && my >= 0 && mx < n && my < n ? modules[my][mx] : 0;
+        frame[(oy + y) * W + ox + x] = dark ? 16 : 240;
+      }
+    }
+    // 摩尔纹：拍屏幕必有，不加就测不出真实难度
+    for (let y = 0; y < W; y++) {
+      for (let x = 0; x < W; x++) {
+        const v = Math.sin(x / 1.6) * Math.sin(y / 1.8) * 18;
+        frame[y * W + x] = Math.max(0, Math.min(255, frame[y * W + x] + v));
+      }
+    }
+    const res = await rawReq(`/api/scan?w=${W}&h=${W}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: frame,
+    });
+    if (!res.ok) throw new Error(`900×900 大帧（810KB）被接口拒绝：HTTP ${res.status}`);
+    const body = await res.json();
+    if (body.data?.text !== dev.asset_no) {
+      throw new Error('大画面里那块 180px 的码没解出来（这正是对着显示器拍的实际情况）');
+    }
+  }
+
+  // 不是二维码的图：必须老老实实回 ok:false，不能 500，更不能瞎猜
+  const junk = Buffer.alloc(200 * 200);
+  for (let i = 0; i < junk.length; i++) junk[i] = (i * 37) % 256;
+  const bad = await rawReq('/api/scan?w=200&h=200', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: junk,
+  });
+  if (bad.status !== 200) throw new Error('噪声图不该报 ' + bad.status + '（那会把「没扫到」显示成「服务器错误」）');
+  if ((await bad.json()).data?.ok) throw new Error('噪声图居然解出了内容');
+
+  // 缺 w/h 或数据不够：明确 400
+  const noSize = await rawReq('/api/scan', { method: 'POST', body: junk });
+  if (noSize.status !== 400) throw new Error('缺 w/h 应返回 400，实得 ' + noSize.status);
+  const shortBody = await rawReq('/api/scan?w=200&h=200', { method: 'POST', body: Buffer.alloc(10) });
+  if (shortBody.status !== 400) throw new Error('灰度数据不足应返回 400，实得 ' + shortBody.status);
+});
+
 await check('导入批次列表', async () => {
   const { body } = await req('/api/excel/batches');
   if (!Array.isArray(body.items)) throw new Error('非数组');
@@ -462,7 +606,7 @@ await check('multipart Excel 导入（预览 + 试运行）', async () => {
   const { body: opts } = await req('/api/options');
   const catName = opts.categories[0].name;
   const sn = 'IMP' + Date.now();
-  const buf = buildXlsx({
+  const buf = await buildXlsx({
     sheets: [{
       name: '设备台账',
       columns: [

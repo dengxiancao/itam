@@ -11,9 +11,17 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "test": "node tests/all.js",
     "cert": "node server/make-cert.js",
     "reset-db": "node server/reset-db.js",
-    "selftest": "node tests/selftest.js"
+    "selftest": "node tests/selftest.js",
+    "qr": "node tests/qr-decode.js",
+    "charts": "node tests/charts.js",
+    "m-slim": "node tests/m-dashboard-slim.js",
+    "scan": "node tests/scan-verify.js",
+    "render": "node tests/render-smoke.js",
+    "ledger": "node tests/ledger-density.js",
+    "bulk-e2e": "node __patch/run-bulk-e2e.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

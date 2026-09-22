@@ -82,7 +82,13 @@ let state = {
   usersMeta: null,
   liveLinks: null,
   devicesQuery: { page: 1, page_size: 20, keyword: '', category_id: '', org_id: '', status: '', brand: '', supplier: '', sort: 'updated_at', order: 'desc' },
+  // ⚠️ 勾选状态必须**独立于 DOM 存活**：
+  //    以前 refreshSelection() 是「读当前页 DOM 里勾了几个」，于是翻页就把上一页的勾选全丢了，
+  //    用户只能操作当前页那 20 个。这里改成「Set 是唯一真相，DOM 只负责显示」。
   selection: new Set(),
+  // 「选中当前筛选下的全部 N 台」模式：勾了它就不逐个存 id，而是交给后端按筛选条件跑。
+  // 值 = 该筛选下的总台数（0 表示没开这个模式）。
+  selectAllMatching: 0,
 };
 
 /* ================= API ================= */
@@ -251,6 +257,7 @@ const NAV = [
   { id: 'devices', label: '设备台账', ico: 'devices', group: '资产管理', perm: 'device.read' },
   { id: 'orgs', label: '组织架构', ico: 'building', group: '资产管理', perm: 'device.read' },
   { id: 'categories', label: '设备分类', ico: 'folder', group: '资产管理', perm: 'device.read' },
+  { id: 'agent', label: '自动盘点', ico: 'refresh', group: '资产管理', perm: 'device.read' },
   { id: 'excel', label: 'Excel 对接', ico: 'sheet', group: '数据', perm: 'excel.export' },
   { id: 'trash', label: '回收站', ico: 'trash', group: '系统', perm: 'trash.manage' },
   { id: 'users', label: '用户管理', ico: 'users', group: '系统', perm: 'user.manage' },
@@ -286,6 +293,13 @@ function renderNav() {
 const TITLES = Object.fromEntries(NAV.map((n) => [n.id, n.label]));
 
 function switchView(view) {
+  // 离开设备台账时清空勾选：selection 现在活在 state 里（跨页存活），
+  // 不清就会带着上一批勾选跑去做别的事 —— 最坏情况是用户切到别的页再回来，
+  // 看到「批量操作 (37)」却完全不记得自己选过什么。
+  if (state.view === 'devices' && view !== 'devices') {
+    state.selection.clear();
+    state.selectAllMatching = 0;
+  }
   state.view = view;
   $('#pageTitle').textContent = TITLES[view];
   $('#globalSearch').value = '';
@@ -297,7 +311,7 @@ function switchView(view) {
   const fn = {
     dashboard: renderDashboard, devices: renderDevices, orgs: renderOrgs,
     categories: renderCategories, excel: renderExcel, trash: renderTrash,
-    users: renderUsers, settings: renderSettings,
+    users: renderUsers, settings: renderSettings, agent: renderAgent,
   }[view];
   fn();
 }
@@ -590,7 +604,7 @@ async function renderDashboard() {
     { l: '保修即将到期', v: kpi.warranty_expiring, i: 'clock', h: `已过期 ${kpi.warranty_expired} 台`, warn: kpi.warranty_expiring > 0 },
   ];
 
-  const donutData = d.byStatus.length ? d.byStatus : [{ name: '暂无', value: 1, color: '#e0e0e0' }];
+  const donutData = d.byStatus.length ? d.byStatus : [{ name: '暂无', value: 1, color: 'var(--surface-3)' }];
   const catBars = d.byCategory.slice(0, 8);
   const maxCat = Math.max(1, ...catBars.map((c) => c.value));
 
@@ -673,19 +687,36 @@ async function renderDashboard() {
 
 const palette = (i) => ['#2563eb', '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b', '#0f172a'][i % 10];
 
-function donutSVG(items) {
-  const total = items.reduce((s, x) => s + (x.value || 0), 0) || 1;
-  const R = 74, C = 2 * Math.PI * R;
+/* 环形图。
+ * 几何硬约束：外描边必须刚好贴住画布内沿，否则环会「穿模」出框。
+ *   r = (size - stroke) / 2   →   r + stroke/2 = size/2
+ * 半径绝不能再写死：以前 r=74 + stroke 22 的外沿是 85，而 180 画布的半宽是 90，
+ * 只剩 5px 余量，一旦外层容器换成 150px（窄屏媒体查询）就被切掉一圈。
+ * 圆心数字也改成 SVG <text>：DOM 浮层要跟 SVG 各自对尺寸，两边一改就错位。 */
+function donutSVG(items, opts = {}) {
+  const size = opts.size || 168;
+  const stroke = opts.stroke || 20;
+  const r = (size - stroke) / 2;
+  const cx = size / 2;
+  const C = 2 * Math.PI * r;
+  const total = items.reduce((s, x) => s + (x.value || 0), 0);
   let offset = 0;
-  const segs = items.map((x) => {
-    const frac = x.value / total;
-    const dash = frac * C;
-    const s = `<circle r="${R}" cx="90" cy="90" fill="none" stroke="${x.color || '#e0e0e0'}" stroke-width="22" stroke-dasharray="${dash} ${C - dash}" stroke-dashoffset="${-offset}"></circle>`;
-    offset += dash;
-    return s;
-  }).join('');
-  return `<div class="donut"><svg width="180" height="180" viewBox="0 0 180 180">${segs}</svg>
-    <div class="donut-center"><div><b>${total}</b><div class="muted" style="font-size:12px">台设备</div></div></div></div>`;
+  const segs = total > 0
+    ? items.map((x) => {
+        const dash = (x.value || 0) / total * C;
+        const s = `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${x.color || 'var(--line)'}"
+          stroke-width="${stroke}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}"
+          stroke-dashoffset="${(-offset).toFixed(2)}"></circle>`;
+        offset += dash;
+        return s;
+      }).join('')
+    : `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="${stroke}"></circle>`;
+  return `<div class="donut" style="width:${size}px;height:${size}px">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img"
+      aria-label="设备状态分布，共 ${total} 台">${segs}
+      <text class="dn-num" x="${cx}" y="${cx - 3}" text-anchor="middle" dominant-baseline="middle">${total}</text>
+      <text class="dn-cap" x="${cx}" y="${cx + 17}" text-anchor="middle" dominant-baseline="middle">台设备</text>
+    </svg></div>`;
 }
 function legendHTML(items) {
   const total = items.reduce((s, x) => s + (x.value || 0), 0) || 1;
@@ -714,14 +745,16 @@ async function devicesViewHTML() {
   <div class="card">
     <div class="toolbar">
       <input id="fKeyword" placeholder="搜索 编号/SN/品牌/型号/使用人…" value="${esc(state.devicesQuery.keyword)}" style="width:240px" />
-      <select id="fCategory" style="width:150px"><option value="">全部分类</option>${o.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
-      <select id="fOrg" style="width:210px"><option value="">全部组织</option>${orgOpts}</select>
-      <select id="fStatus" style="width:130px"><option value="">全部状态</option>${o.statuses.map((s) => `<option value="${s.id}">${s.label}</option>`).join('')}</select>
-      <select id="fBrand" style="width:130px"><option value="">全部品牌</option>${brandOpts}</select>
-      <select id="fSupplier" style="width:120px"><option value="">全部供应商</option>${supplierOpts}</select>
+      <div class="fbar">
+        <select id="fCategory" style="width:150px"><option value="">全部分类</option>${o.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+        <select id="fOrg" style="width:210px"><option value="">全部组织</option>${orgOpts}</select>
+        <select id="fStatus" style="width:130px"><option value="">全部状态</option>${o.statuses.map((s) => `<option value="${s.id}">${s.label}</option>`).join('')}</select>
+        <select id="fBrand" style="width:130px"><option value="">全部品牌</option>${brandOpts}</select>
+        <select id="fSupplier" style="width:120px"><option value="">全部供应商</option>${supplierOpts}</select>
+      </div>
       <button class="btn" id="fSearch">${svgIcon('search')} 查询</button>
       <button class="btn ghost" id="fReset">重置</button>
-      <span style="flex:1"></span>
+      <span class="grow"></span>
       ${hasPerm('device.write') ? '<button class="btn primary" id="btnAdd">＋ 新增设备</button>' : ''}
       ${hasPerm('excel.export') ? `<button class="btn" id="btnExport" title="导出全部设备，不受上方筛选影响">${svgIcon('download')} 全部导出</button>` : ''}
       ${(hasPerm('device.write') || hasPerm('device.delete') || hasPerm('excel.export')) ? `
@@ -734,7 +767,7 @@ async function devicesViewHTML() {
         </div>
       </div>` : ''}
     </div>
-    <div class="table-wrap">
+    <div class="table-wrap" id="deviceTableWrap">
       <table class="grid">
         <thead><tr>
           <th style="width:34px"><input type="checkbox" id="selAll" title="全选本页"></th>
@@ -769,7 +802,10 @@ function bindDeviceEvents() {
   on('#btnBulk', 'onclick', (e) => { e.stopPropagation(); const m = $('#bulkMenu'); if (m) m.classList.toggle('open'); });
   $$('#bulkMenu .dropdown-menu button').forEach((b) => b.onclick = () => { const m = $('#bulkMenu'); if (m) m.classList.remove('open'); bulkAction(b.dataset.act); });
   on('#selAll', 'onchange', (e) => {
-    $$('#devicesBody input.row-check').forEach((c) => c.checked = e.target.checked);
+    // 表头框只管**本页**这 20 行（跨页的一次性勾选走「选中全部 N 台」那条）。
+    $$('#devicesBody input.row-check').forEach((c) => { c.checked = e.target.checked; });
+    // 整页取消时顺手退出「全选匹配」模式 —— 用户点掉勾就是想重选，留着标记会让人误以为还是全选状态。
+    if (!e.target.checked) state.selectAllMatching = 0;
     refreshSelection();
   });
 }
@@ -789,24 +825,37 @@ async function loadDevices() {
   if (!data.items.length) {
     body.innerHTML = `<tr><td colspan="11"><div class="empty"><div class="big">${svgIcon('inbox', 24)}</div>暂无设备，点击右上角「新增设备」或使用 Excel 批量导入</div></td></tr>`;
   } else {
+    // 卡片在窄屏会被折成很多行，其中「所属组织 / 使用人 / 保修」最常是空值（破折号）。
+    // 空的加 .blank，CSS 在 760px 以下不渲染；有值的照常显示。
+    // 「三条都空」的兜底也交给 CSS（tr:has(td.blank) 那条），这里不需要额外标记 —— 
+    // 一旦把判定挪到 map 外面，d 就不在作用域里了（这里踩过：ReferenceError: d is not defined）。
     body.innerHTML = data.items.map((d) => `
       <tr data-id="${d.id}">
-        <td data-label=""><input type="checkbox" class="row-check" value="${d.id}"></td>
+        <td data-label="" class="keep"><input type="checkbox" class="row-check" value="${d.id}"${state.selection.has(String(d.id)) ? ' checked' : ''}></td>
         <td class="mono" style="font-weight:600" data-label="资产编号">${esc(d.asset_no)}</td>
         <td data-label="分类"><span class="chip">${iconOf(d.category_icon)} ${esc(d.category_name || '未分类')}</span></td>
         <td data-label="品牌 / 型号">${esc(d.brand || '—')} <span class="muted">${esc(d.model || '')}</span></td>
         <td class="mono muted" data-label="SN">${esc(d.sn || '—')}</td>
-        <td class="muted" data-label="所属组织">${esc(d.org_path || d.org_name || '—')}</td>
-        <td data-label="使用人">${esc(d.owner_name || '—')}</td>
+        <td class="muted${d.org_path || d.org_name ? '' : ' blank'}" data-label="所属组织">${esc(d.org_path || d.org_name || '—')}</td>
+        <td class="${d.owner_name ? '' : 'blank'}" data-label="使用人">${esc(d.owner_name || '—')}</td>
         <td data-label="状态">${statusBadge(d.status)}</td>
-        <td data-label="保修">${d.warranty_expired === true ? '<span class="tag" style="color:var(--red)">已过期</span>' : d.warranty_expired === false ? `<span class="muted">${fmtDate(d.warranty_until)}</span>` : '<span class="muted">—</span>'}</td>
+        <td class="mut" data-label="保修">${d.warranty_expired === true ? '<span class="tag" style="color:var(--red)">已过期</span>' : d.warranty_expired === false ? `<span class="muted">${fmtDate(d.warranty_until)}</span>` : '<span class="muted">—</span>'}</td>
         <td class="muted" data-label="更新时间">${esc((d.updated_at || '').replace('T', ' ').slice(0, 16))}</td>
-        <td data-label=""><div class="row-actions">
-          <button class="btn xs" onclick="openDeviceDetail('${d.id}')">查看</button>
-          ${hasPerm('device.write') ? `<button class="btn xs" onclick="openDeviceForm('${d.id}')">编辑</button>` : ''}
-          <button class="btn xs ghost" title="二维码" onclick="openQRModal('${d.id}')">${svgIcon('qr', 14)}</button>
+        <td data-label="" class="keep"><div class="row-actions">
+          <button type="button" class="btn xs" onclick="openDeviceDetail('${d.id}')">查看</button>
+          ${hasPerm('device.write') ? `<button type="button" class="btn xs" onclick="openDeviceForm('${d.id}')">编辑</button>` : ''}
+          <button type="button" class="btn xs ghost" title="二维码" onclick="openQRModal('${d.id}')">${svgIcon('qr', 14)}</button>
         </div></td>
       </tr>`).join('');
+    // 「选中本页 20 台」之外，再给一条「选中全部 N 台」的出路 ——
+    // 20 台一页时逐个翻页勾选很反人类，尤其是想对「筛选出来的这批」整体操作时。
+    if (data.total > data.items.length) {
+      body.insertAdjacentHTML('beforeend', `<tr class="sel-all-row"><td colspan="11">
+        <button type="button" class="link-btn" id="selAllMatching">选中当前筛选下的全部 ${data.total} 台</button>
+      </td></tr>`);
+      const sam = $('#selAllMatching');
+      if (sam) sam.onclick = () => { enterSelectAllMatching(data.total); };
+    }
   }
   $('#pageInfo').innerHTML = `共 <b>${data.total}</b> 台设备 · 第 ${data.page}/${data.pages} 页`;
   $('#pageBtns').innerHTML = pagerHTML(data.page, data.pages);
@@ -823,27 +872,154 @@ function pagerHTML(page, pages) {
   return html;
 }
 
+/**
+ * 逐行勾选变化 → **增量**合并进 state.selection。
+ *
+ * ⚠️ 方向很重要：**state 是真相，DOM 只是视图**。
+ *    2026-09-21 之前这里是反的 —— `state.selection = new Set($$('#devicesBody input.row-check:checked')...)`
+ *    拿「当前页 DOM 里勾了几个」整体覆盖 state，于是翻页就丢掉上一页的勾选。
+ *    用户看到的现象是「批量操作最多只能操作 20 个，就是当前这一页」：
+ *    20 既是页面尺寸、也是真实操作上限，因为它们共用同一个来源。
+ *    修法 = 这一份函数只做「本页这几行的增/删」，绝不整体重建；
+ *    loadDevices() 渲染新页时再按 state 把该勾的勾上（见那边 `state.selection.has(...)`）。
+ */
 function refreshSelection() {
-  const checks = $$('#devicesBody input.row-check:checked');
-  state.selection = new Set(checks.map((c) => c.value));
-  $('#btnBulk').disabled = state.selection.size === 0;
-  if (state.selection.size) $('#btnBulk').textContent = `批量操作 (${state.selection.size}) ▾`;
-  else $('#btnBulk').textContent = '批量操作 ▾';
+  // 逐行勾选变化 → 增量更新 state（不再整体覆盖）
+  $$('#devicesBody input.row-check').forEach((c) => {
+    if (c.checked) state.selection.add(c.value);
+    else state.selection.delete(c.value);
+  });
+  syncSelectionUI();
+}
+
+/** 只负责「把 state.selection 反映到界面上」：按钮数字、全选框三态、菜单文案 */
+function syncSelectionUI() {
+  const n = state.selectAllMatching || state.selection.size;
+  const btn = $('#btnBulk');
+  if (btn) {
+    btn.disabled = n === 0;
+    btn.textContent = n ? `批量操作 (${n}) ▾` : '批量操作 ▾';
+  }
   // 菜单里的「导出所选」跟着选中数量走，一眼知道会导出几台
   const exp = $('#bulkMenu .dropdown-menu button[data-act="export"]');
-  if (exp) exp.innerHTML = svgIcon('download') + (state.selection.size ? ` 导出所选 (${state.selection.size})` : ' 导出所选');
+  if (exp) exp.innerHTML = svgIcon('download') + (n ? ` 导出所选 (${n})` : ' 导出所选');
+
+  // 表头全选框三态：本页全勾 = 勾上，勾了一部分 = 半选
+  const selAll = $('#selAll');
+  const boxes = $$('#devicesBody input.row-check');
+  if (selAll && boxes.length) {
+    const onPage = boxes.filter((c) => c.checked).length;
+    selAll.checked = onPage === boxes.length;
+    selAll.indeterminate = onPage > 0 && onPage < boxes.length;
+  }
+
+  renderSelectionBar();
+}
+
+/**
+ * 选中数量 > 0 时，表格上方浮出一条「已选 N 台 · 清除」的提示条。
+ *
+ * 为什么必须有：跨页勾选之后，用户看不见自己到底选了多少、
+ * 也找不到「取消」的地方（勾选分散在好几页里，没法逐个点回来）。
+ */
+function renderSelectionBar() {
+  // 锚点只认 #deviceTableWrap（台账页独有的 id）。
+  // 拿不到就说明当前根本不在台账页 —— 直接不渲染，别 fallback 到 .table-wrap 之类的类选择器，
+  // 那会把提示条插到回收站/导入历史的表格上。
+  const host = $('#deviceTableWrap');
+  if (!host || !host.parentNode) return;
+  let bar = $('#selBar');
+  const n = state.selectAllMatching || state.selection.size;
+  if (!n) { if (bar) bar.remove(); return; }
+  const allMode = state.selectAllMatching > 0;
+  const text = allMode
+    ? `已选中当前筛选下的<b>全部 ${n} 台</b>（跨页生效）`
+    : `已选中 <b>${n}</b> 台${n > (state.devicesData?.items?.length || 0) ? '（含其他页）' : ''}`;
+  const html = `<div class="sel-bar-inner">
+      <span class="sel-bar-text">${text}</span>
+      <button type="button" class="btn xs ghost" id="selBarClear">清除选择</button>
+    </div>`;
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'selBar';
+    bar.className = 'sel-bar';
+    // 插在筛选条下方、表格上方（host 已经是 #deviceTableWrap，上面挡过 null）
+    host.parentNode.insertBefore(bar, host);
+  }
+  bar.innerHTML = html;
+  const clear = $('#selBarClear');
+  if (clear) clear.onclick = () => { clearSelection(); };
+}
+
+/** 清空所有勾选（state + DOM + 全选框） */
+function clearSelection() {
+  state.selection.clear();
+  state.selectAllMatching = 0;
+  $$('#devicesBody input.row-check').forEach((c) => { c.checked = false; });
+  const selAll = $('#selAll');
+  if (selAll) { selAll.checked = false; selAll.indeterminate = false; }
+  // 「选中全部 N 台」那条行也要撤掉，否则界面上还留着入口
+  $$('#devicesBody .sel-all-row').forEach((r) => r.remove());
+  syncSelectionUI();
+}
+
+/**
+ * 进入「选中当前筛选下的全部 N 台」模式。
+ *
+ * 为什么不让前端把 N 个 id 全存下来：设备上万台时，一个 Set 里塞几万个 uuid、
+ * 每次渲染都要遍历比对，纯属浪费；而且「全选匹配」的语义本来就是
+ * 「按这个筛选条件操作」，交给后端一条 SQL 更准（中途有人改了数据也不会漏/多）。
+ * 所以这里只记一个**标记 + 数量**，真正执行时把筛选条件发给后端。
+ *
+ * ⚠️ 函数名刻意叫 enterSelectAllMatching 而**不是** selectAllMatching：
+ *    state 里那个字段就叫 selectAllMatching，同名函数会让人（和静态检查）分不清
+ *    `selectAllMatching(20)` 到底是在调函数还是漏了 state. 前缀。名字撞车是自找的。
+ */
+function enterSelectAllMatching(total) {
+  state.selectAllMatching = Number(total) || 0;
+  // 本页的全勾上，视觉上呼应「全都选了」
+  $$('#devicesBody input.row-check').forEach((c) => { c.checked = true; });
+  const selAll = $('#selAll');
+  if (selAll) { selAll.checked = true; selAll.indeterminate = false; }
+  toast(`已选中当前筛选下的全部 ${state.selectAllMatching} 台`, 'ok');
+  syncSelectionUI();
+}
+
+/**
+ * 收集要操作的 id 列表。
+ * 开了「全选匹配」就返回 null，并把筛选条件带上 —— 让后端自己去查，避免前端存几十万个 id。
+ */
+function bulkSelectionPayload() {
+  if (state.selectAllMatching > 0) return { all_matching: true, query: devicesFilterQuery() };
+  return { ids: [...state.selection] };
+}
+
+/** 把当前筛选条件抽出来（不含分页），供「全选匹配」和服务端查询复用 */
+function devicesFilterQuery() {
+  const q = state.devicesQuery;
+  const out = {};
+  if (q.keyword) out.keyword = q.keyword;
+  if (q.category_id) out.category_id = q.category_id;
+  if (q.org_id) out.org_id = q.org_id;
+  if (q.status) out.status = q.status;
+  if (q.brand) out.brand = q.brand;
+  if (q.supplier) out.supplier = q.supplier;
+  return out;
 }
 
 async function bulkAction(action) {
-  const ids = [...state.selection];
-  if (!ids.length) return;
+  // 数量口径统一走 state：全选匹配模式下是「筛选结果总数」，否则是勾选集合大小。
+  // ⚠️ 以前这里写的是 `const ids = [...state.selection]`，而 state.selection 当年由当前页 DOM 重建，
+  //    于是「一页 20 个」既是显示上限也是真实上限。现在 ids 只作一种载荷形态，跨页勾选不会丢。
+  const count = state.selectAllMatching || state.selection.size;
+  if (!count) return;
   if (action === 'export') {
-    // 只导出勾选的这几台
-    doExport({ ids });
+    // 只导出勾选的这几台（全选匹配模式则由后端按筛选条件出）
+    doExport(bulkSelectionPayload());
     return;
   }
   if (action === 'delete') {
-    const ok = await confirmBox('删除设备', `确定删除选中的 ${ids.length} 台设备吗？此操作可恢复。`);
+    const ok = await confirmBox('删除设备', `确定删除选中的 ${count} 台设备吗？此操作可恢复。`);
     if (!ok) return;
   }
   if (action === 'status' || action === 'move' || action === 'handover') {
@@ -856,7 +1032,7 @@ async function bulkAction(action) {
         <div class="field"><label>目标组织</label><select id="bulkOrg">${state.options.orgs.map((o) => `<option value="${o.id}">${esc(o.path || o.name)}</option>`).join('')}</select></div>`,
     }[action];
     openModal(`<div class="modal-head"><h2>批量操作</h2><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="modal-body">${form}</div>
+      <div class="modal-body"><p class="hint">将对 <b>${count}</b> 台设备执行此操作${state.selectAllMatching ? '（当前筛选下的全部）' : ''}。</p>${form}</div>
       <div class="modal-foot"><button class="btn" onclick="closeModal()">取消</button><button class="btn primary" id="bulkDo">确定</button></div>`, { slim: true });
     $('#bulkDo').onclick = async () => {
       const payload = {
@@ -865,17 +1041,19 @@ async function bulkAction(action) {
         handover: () => ({ owner_name: $('#bulkOwner').value, owner_employee_no: $('#bulkEmp').value, owner_phone: $('#bulkPhone').value, org_id: $('#bulkOrg').value, status: 'in_use' }),
       }[action]();
       try {
-        const r = await api('/devices/bulk', { method: 'POST', body: JSON.stringify({ ids, action, payload }) });
+        const r = await api('/devices/bulk', { method: 'POST', body: JSON.stringify({ ...bulkSelectionPayload(), action, payload }) });
         toast(`完成：成功 ${r.ok} 条，失败 ${r.failed} 条`, r.failed ? 'warn' : 'ok');
         closeModal();
+        clearSelection();
         loadDevices();
       } catch (e) { toast(e.message, 'error'); }
     };
     return;
   }
   try {
-    const r = await api('/devices/bulk', { method: 'POST', body: JSON.stringify({ ids, action }) });
+    const r = await api('/devices/bulk', { method: 'POST', body: JSON.stringify({ ...bulkSelectionPayload(), action }) });
     toast(`完成：成功 ${r.ok} 条，失败 ${r.failed} 条`, r.failed ? 'warn' : 'ok');
+    clearSelection();
     loadDevices();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -1030,10 +1208,14 @@ function bindDeviceForm(dev) {
 /**
  * 设备「小码」里放的内容。
  *
- * **放什么直接决定能不能扫出来**：
- *   放网址 → 版本 5（37×37 模块），在屏幕上每格才 6 个像素，手机对着显示器拍基本解不出来；
- *   放资产编号 → 版本 1（21×21 模块），每格 11 像素，同样距离一眼就过。
- * 移动端扫码后走 /devices/lookup，资产编号和 SN 都能查到设备。
+ * **放什么直接决定好不好扫**（2026-09-19 实测各码型模块数，别凭印象写）：
+ *   资产编号（如 MON-2026-0010，13 字节）→ 版本 1，21×21 模块；150px 下每格 5.6px，240px 下 8.9px
+ *   网址（`http://ip:8080/m/#/device/<uuid>`，72 字节）→ **版本 5，37×37 模块**（接口默认 ec=M）；
+ *     同样是网址，显式传 ec=L 才会降到版本 4 / 33×33。150px 下每格只有 3.8px，很吃相机
+ * 两者在各自展示尺寸下都够手机扫。小码优先用**资产编号**：模块少、容错余量大、
+ * 而且不依赖「手机能不能访问那个地址」，贴标签印出来也不容易糊。
+ *
+ * 移动端扫到资产编号后走 `/devices/lookup?sn=`（该接口同时匹配 asset_no 与 sn）。
  */
 function qrShortCode(d) {
   return String((d && (d.asset_no || d.sn)) || '').trim();
@@ -1071,9 +1253,19 @@ async function openDeviceDetail(id) {
   try {
     const d = await api('/devices/' + id);
     const hist = await api(`/devices/${id}/history`);
-    // 详情里这个小码放**资产编号**而不是网址：网址码是 37×37 模块，缩到 150px 根本扫不出来；
-    // 资产编号只有 21×21，150px 下每格 7px，手机能扫。要网址码点「打开二维码」。
+    // 详情里这个小码放**资产编号**而不是网址：资产编号是 21×21 模块，150px 下每格 5.6px，
+    // 容错余量大、也不依赖「手机能不能访问那个地址」。要网址码点「打开二维码」。
     const qrCode = qrShortCode(d);
+    // 21 模块 + 两侧各 3 格留白 = 27 格；≥220px 才有 8px/格，
+    // 原来 150px 只有 5.6px/格 —— 对着屏幕拍偏紧，放大到 240px 是 8.9px/格。
+    // ⚠️ 这个尺寸是「手机对着一块屏幕拍照」的硬指标，不是排版偏好。
+    //    实测（2026-09-20 第三张截图）：弹窗里实际只渲染出 ~159px，21×21+quiet=27 格
+    //    → 5.9 px/格，低于「≥6 才稳」的判定阈，扫不出来是真扫不出来。
+    //    余量要按「手机镜头到屏幕 15~20cm + 摩尔纹」留，280 起步。
+    const vw = window.innerWidth || 1024;
+    const qrShortSide = vw < 380 ? 250 : vw < 520 ? 280 : 320;
+    // ⚠️ 这个常量在 openDeviceDetail（详情卡内联码）和 openQRModal（弹窗主码）**各自定义一份**，
+    //    因为它们不在同一个作用域里 —— 拆 shared 常量时要两边都改，别只改一处。
     const qrUrl = `/api/qrcode?text=${encodeURIComponent(qrCode)}&ec=M`;
     openModal(`
       <div class="modal-head"><h2>设备详情 · ${esc(d.asset_no)}</h2><button class="modal-close" onclick="closeModal()">×</button></div>
@@ -1116,9 +1308,14 @@ async function openDeviceDetail(id) {
             <div style="text-align:center">
               ${photoPanelHTML(d)}
               <div style="font-size:12px;color:var(--text-3);margin:14px 0 8px">资产二维码（手机端扫码核对）</div>
-              <img src="${qrUrl}" width="150" height="150" alt="二维码" style="border:1px solid var(--border);border-radius:10px;background:#fff">
+              <img src="${qrUrl}" width="${qrShortSide}" height="${qrShortSide}" alt="二维码" style="border:1px solid var(--border);border-radius:10px;background:#fff">
               <div class="muted mono" style="font-size:11.5px;margin-top:6px">${esc(qrCode)}</div>
-              <div style="margin-top:8px"><button class="btn sm" onclick="openQRModal('${d.id}')">打开二维码</button></div>
+              <div style="margin-top:8px">
+                <button class="btn sm" onclick="openQRModal('${d.id}')">打开二维码</button>
+                <!-- 手机上别在这条路上扫码：这个页面（电脑端）在手机浏览器里调不起摄像头取景，
+                     而且屏幕上的码会被页面缩放带走。直接把人送去手机版。 -->
+                <button class="btn sm ghost qr-go-mobile" onclick="goMobileScan()">用手机版扫码核对</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1156,9 +1353,9 @@ async function openDeviceDetail(id) {
 /**
  * 资产二维码。
  *
- * 关键点：**码里放什么直接决定能不能扫出来**。
- * 放网址 → 是版本 5（37×37 模块），在屏幕上每格才 6 个像素，手机对着显示器拍基本解不出来；
- * 放资产编号 → 版本 1（21×21 模块），每格 11 个像素，同样的距离一眼就过。
+ * 关键点：**码里放什么直接决定好不好扫**。
+ * 放网址 → **版本 5（37×37 模块）**，150px 下每格才 3.8 像素，手机对着显示器拍基本靠运气；
+ * 放资产编号 → 版本 1（21×21 模块），240px 下每格 8.9 像素，容错余量大得多，同样距离一眼就过。
  *
  * 所以这里两个码都给：
  *   大码 = 资产编号（手机 App 里「扫码核对」用，最准）
@@ -1172,20 +1369,39 @@ async function openQRModal(id) {
   const shortQR = `/api/qrcode?text=${encodeURIComponent(code)}&ec=M`;
   const urlQR = (base) => `/api/qrcode?text=${encodeURIComponent(`${base}/m/#/device/${d.id}`)}&ec=L`;
 
+  // ⚠️ 这个常量必须在本函数里**自己定义一份**：openDeviceDetail 里那个同名的
+  //    是另一个函数作用域里的局部变量，这里拿不到（曾因此报 qrShortSide is not defined，
+  //    被 render-smoke 的「管理端照片区渲染」抓到）。改尺寸时两处都要改。
+  //    尺寸依据见 admin.css 里 .qr-pair 那段注释（对着屏幕拍要 ≥6px/格，留余量取 250+）。
+  const vw = window.innerWidth || 1024;
+  const qrShortSide = vw < 380 ? 250 : vw < 520 ? 280 : 320;
+
   openModal(`<div class="modal-head"><h2>资产二维码</h2><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <div style="display:flex;gap:18px;flex-wrap:wrap;justify-content:center;align-items:flex-start">
-        <div style="text-align:center;flex:1 1 240px">
-          <img src="${shortQR}" width="240" height="240" style="border-radius:12px;border:1px solid var(--border);background:#fff">
-          <div style="margin-top:8px;font-weight:600">${esc(code)}</div>
+      <div id="qrMobileTip" class="qr-mobile-tip" hidden>
+        <b>你正在用手机浏览电脑端页面。</b>
+        这个页面本身不能调摄像头扫码 —— 请用<b>手机自带相机</b>扫下面任意一个码，
+        会直接打开这台设备的详情页；或者点下面的按钮切到手机版扫码核对页。
+      </div>
+      <div class="qr-pair">
+        <div class="qr-main">
+          <img src="${shortQR}" width="${qrShortSide}" height="${qrShortSide}"
+               alt="资产编号二维码" class="qr-main-img"
+               style="width:${qrShortSide}px;height:${qrShortSide}px;border-radius:12px;border:1px solid var(--border);background:#fff">
+          <div class="qr-main-code">${esc(code)}</div>
           <div class="hint" style="margin-top:4px">
-            <b>手机 App 里扫这个</b><br>「扫码核对」对准即可
+            <b>扫这张</b>（21×21 模块，全系统最好扫）<br>
+            手机自带相机扫 → 直接打开设备页；手机版 App 内「扫二维码」也认它
           </div>
         </div>
-        <div style="text-align:center;flex:1 1 200px">
-          <img id="qrImg" src="${urlQR(bases[0].base)}" width="180" height="180" style="border-radius:12px;border:1px solid var(--border);background:#fff">
-          <div class="hint" style="margin-top:8px">
-            <b>手机自带相机扫这个</b><br>会直接打开设备详情页
+        <div class="qr-alt">
+          <img id="qrImg" src="${urlQR(bases[0].base)}" width="150" height="150"
+               alt="设备网址二维码" class="qr-alt-img"
+               style="width:150px;height:150px;border-radius:10px;border:1px solid var(--border);background:#fff">
+          <div class="hint" style="margin-top:6px">
+            <b>备用：网址码</b>（37×37 模块，密得多）<br>
+            <b>只用手机自带相机扫</b>。别用 App 内的「扫二维码」对着屏幕拍它 ——
+            模块太密，10~20cm 也很难对上焦。
           </div>
         </div>
       </div>
@@ -1198,13 +1414,21 @@ async function openQRModal(id) {
 
       <div class="hint" style="margin-top:12px">
         左边的码比右边小得多（21×21 vs 37×37 模块），所以<b>好扫得多</b>。
-        贴在设备上的标签也建议印左边这个 + 把资产编号印成文字。
+        贴在设备上的标签也建议印左边这个 + 把资产编号印成文字。<br>
+        两个码手机端「扫码核对」都认：左码走资产编号查询，右码直接带设备号跳转。<br>
         手机连同一个 WiFi 就选「局域网」，手机在外面就选公网地址。
       </div>
     </div>
     <div class="modal-foot">
+      <button class="btn ghost" onclick="goMobileScan()">用手机版扫码核对</button>
+      <button class="btn ghost" onclick="printQRSheet('${d.id}')">打印标签</button>
       <button class="btn primary" onclick="closeModal()">关闭</button>
     </div>`, { wide: true });
+
+  // 手机浏览器打开电脑端页面时，直接把「这里扫不了码」说清楚，
+  // 省得用户对着这个页面反复按快门、以为是自己没对准。
+  const tip = $('#qrMobileTip');
+  if (tip) tip.hidden = !(window.innerWidth <= 900);
 
   $('#qrBase').onchange = (e) => {
     const u = `${e.target.value}/m/#/device/${d.id}`;
@@ -1212,6 +1436,51 @@ async function openQRModal(id) {
     $('#qrUrlText').textContent = u;
   };
 }
+
+/** 从电脑端页面切到手机版「扫码核对」—— 手机浏览器上这个页面调不了摄像头 */
+function goMobileScan() {
+  location.href = '/m#/scan';
+}
+// ⚠️ 必须挂 window：详情卡与二维码弹窗里都是内联 onclick="goMobileScan()"，
+//    漏掉就是两个按钮都点了没反应（不报错、控制台干净）。见 MEMORY.md 铁律 10。
+window.goMobileScan = goMobileScan;
+
+/**
+ * 打印「设备标签」用的独立页面。
+ * 存在的理由：管理端页面在手机上不能调摄像头，那就把码**印出来贴到设备上**，
+ * 之后用手机版「扫码核对」对着实体标签扫 —— 这条链路才是稳的。
+ * 标签里同时印二维码和资产编号文字（码糊了还能手输）。
+ */
+window.printQRSheet = async (id) => {
+  const d = await api('/devices/' + id);
+  const code = qrShortCode(d);
+  const short = `/api/qrcode?text=${encodeURIComponent(code)}&ec=M`;
+  const w = window.open('', '_blank');
+  if (!w) { toast('浏览器拦截了弹窗，请允许后重试', 'warn'); return; }
+  w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+    <title>设备标签 ${esc(code)}</title>
+    <style>
+      body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:24px}
+      .sheet{display:flex;gap:20px;align-items:center;border:1px solid #ddd;border-radius:12px;padding:18px;max-width:520px}
+      img{width:180px;height:180px}
+      .t{font-size:13px;color:#555;line-height:1.7}
+      .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;font-weight:600;color:#111}
+      @media print{ .noprint{display:none} }
+    </style></head><body>
+    <div class="sheet">
+      <img src="${short}" alt="二维码">
+      <div class="t">
+        <div class="code">${esc(code)}</div>
+        <div>${esc(d.brand || '')} ${esc(d.model || '')}</div>
+        <div>SN：${esc(d.sn || '—')}</div>
+        <div>使用人：${esc(d.owner_name || '—')}</div>
+        <div>用「IT 资产」手机版扫码核对，或手机自带相机扫码</div>
+      </div>
+    </div>
+    <p class="noprint" style="margin-top:16px"><button onclick="window.print()">打印</button></p>
+    </body></html>`);
+  w.document.close();
+};
 
 let qrBaseCache = null;
 
@@ -1321,9 +1590,14 @@ function downscaleBlob(img, maxSide, quality) {
  */
 async function doExport(opts = {}) {
   if (exporting) { toast('上一份还在生成，稍等一下…', 'warn'); return; }
-  const q = opts.all || opts.ids ? {} : (state.devicesQuery || {});
+  // 三种来源：{ all:true } 全部 / { ids:[...] } 勾选的若干台 / 啥都不传 = 当前筛选结果。
+  // ⚠️ 「全选匹配」模式下传进来的是 { all_matching:true, query:{...} } —— 语义上就是
+  //    「当前筛选结果」，所以这里必须**忽略 all_matching 的 query 而用页面上最新的 state.devicesQuery**，
+  //    否则用户在勾选之后又改了筛选（例如换了搜索词）导出的还是旧条件。
+  const hasIds = Array.isArray(opts.ids) && opts.ids.length > 0;
+  const q = opts.all || hasIds ? {} : (state.devicesQuery || {});
   const params = new URLSearchParams();
-  if (opts.ids?.length) {
+  if (hasIds) {
     params.set('ids', opts.ids.join(','));
   } else {
     if (q.keyword) params.set('keyword', q.keyword);
@@ -1335,12 +1609,16 @@ async function doExport(opts = {}) {
   }
   if (opts.split) params.set('split', '1');
   if (opts.photos === false) params.set('photos', '0');
+  // Excel 对接页把「不含说明页」收成了开关；这里必须转成查询参数，
+  // 否则开关是死的（服务端按 q.help !== '0' 判断）。
+  if (opts.help === false) params.set('help', '0');
 
   const url = `/api/excel/export?${params.toString()}`;
   const withPhotos = opts.photos !== false;
-  const scope = opts.ids?.length ? `所选 ${opts.ids.length} 台` : (opts.all ? '全部设备' : '当前筛选结果');
+  const withHelp = opts.help !== false;
+  const scope = hasIds ? `所选 ${opts.ids.length} 台` : (opts.all ? '全部设备' : '当前筛选结果');
   exporting = true;
-  const t = toast(`正在导出${scope}${withPhotos ? '（含照片，可能要几秒）' : ''}…`);
+  const t = toast(`正在导出${scope}${withPhotos ? '（含照片，可能要几秒）' : ''}${withHelp ? '' : '（不含说明页）'}…`);
 
   // 先自己拉一次：能拿到字节就说明服务端没问题，
   // 再用 Blob 触发下载。这样即使中途出问题也能给出明确提示，
@@ -1361,7 +1639,7 @@ async function doExport(opts = {}) {
     const plain = /filename="([^"]+)"/i.exec(cd);
     let name = star ? decodeURIComponent(star[1]) : (plain ? decodeURIComponent(plain[1]) : '');
     if (!name) {
-      const tag = opts.ids?.length ? '（所选）' : (opts.split ? '（分类分表）' : '');
+      const tag = hasIds ? '（所选）' : (opts.split ? '（分类分表）' : '');
       name = `IT资产台账${tag}_${new Date().toISOString().slice(0, 10)}.xlsx`;
     }
 
@@ -1590,8 +1868,122 @@ async function delCat(id, name) {
   }
 }
 
-/* ================= Excel 对接 ================= */
+/* ================= Excel 对接 =================
+ * 三个分区，一个分区一件事：**导出 / 导入 / 实时链接**，顺序按使用频率排。
+ *
+ * 三条精简原则（改这一块时请继续遵守）：
+ *   1. **长的步骤说明收进 <details>** —— 原生折叠、不依赖 JS，别让一屏铺几十行字；
+ *   2. **同一条提醒只写一遍** —— WPS 不认 CSV、每个分类一个工作表这类话，
+ *      两个弹窗都要用就抽成常量（见 WPS_WARN_HTML / MULTI_SHEET_TIP）；
+ *   3. **别把同一件事做成两个按钮** —— 导出原来 4 个平级按钮里有两个是重复入口，
+ *      现在收成「3 个开关 + 1 个按钮」。
+ */
+
+/** 「实时链接」相关的两条通用提醒 —— showLiveGuide / showMultiSheetGuide 共用，别再各写一遍 */
+const WPS_WARN_HTML = '<div class="hint" style="background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-text);padding:11px 13px;border-radius:10px">' +
+  'WPS 的「自网站」<b>只认网页里的表格，不认 CSV</b>，粘 CSV 链接会报「<b>无法获取数据</b>」。<br>' +
+  '请把「链接格式」保持为 <b>网页表格 · WPS / Excel 通用</b> 再复制链接。<br>' +
+  '若仍失败：把链接<b>先粘到浏览器地址栏回车</b> —— 能看到表格页说明链接没问题（是 WPS 取数方式的问题）；' +
+  '打不开则说明地址选错了，把「取数地址」换成 <b>本机</b> 或 <b>局域网</b> 那个。</div>';
+
+/** 弹窗里的小节标题样式 —— 原来 `font-size:15px;margin:22px 0 8px` 在弹窗里抄了 6 遍 */
+const H3_STEP = 'font-size:15px;margin:22px 0 8px';
+
+/** 弹窗里只读链接框的样式 —— showLiveGuide / showMultiSheetGuide 共用 */
+const TA_LINK = 'width:100%;height:70px;font-family:monospace;font-size:12px';
+
+/** 导出方式两种口径的对照 —— 只在导出卡片里出现一次 */
+const EXPORT_KINDS_HTML =
+  '<div class="table-wrap"><table class="grid">' +
+  '<thead><tr><th>做法</th><th>Excel 里的样子</th><th>数据会自动更新吗</th></tr></thead><tbody>' +
+  '<tr><td><b>快照导出</b><br><span class="muted" style="font-size:12px">本卡片的按钮</span></td>' +
+  '<td><b>照片直接嵌在单元格里</b>，打开就看到图，另带两个可点链接</td>' +
+  '<td>不会（导完就固定，要新的再导一次）</td></tr>' +
+  '<tr><td><b>实时数据链接</b><br><span class="muted" style="font-size:12px">本页第 3 个分区</span></td>' +
+  '<td>文字列「照片链接」= 点一下就打开浏览器看图</td>' +
+  '<td><b>会</b>（按 F5 / 打开文件自动拉最新）</td></tr>' +
+  '</tbody></table></div>' +
+  '<div class="hint" style="margin-top:10px"><b>既想自动更新又想看图</b>？用实时链接导入后，' +
+  '在表格里<b>自己加一列</b>填 <code>=IMAGE(照片链接所在单元格)</code> 即可' +
+  '（Excel 365 / 较新版 WPS 支持），刷新时图片会跟着变。</div>';
+
+/**
+ * 导出卡片。三个开关 + 一个按钮，取代原来 4 个平级按钮：
+ *   原来用户在「按分类分表 / 单表导出 / 不含照片 / 不含说明页」之间要自己组合，
+ *   而这四者其实是**两个维度**（是否分表、是否带照片、是否带说明页），
+ *   写成开关后语义直接对上，也不会再出现"导出了两次才发现点错"。
+ */
+function exportCardHTML() {
+  return `
+    <div class="card">
+      <h3>${svgIcon('upload')} 导出到 Excel${help('导出的是当前台账的快照，文件自带照片（图片直接嵌在单元格里）。适合打印、存档、发给别人。想让数据自动更新，用下面的「实时数据链接」。')}</h3>
+
+      <div class="opt-list" style="margin-bottom:12px">
+        <label><input type="checkbox" id="expSplit" checked> 按分类分表<span class="muted">台式主机 / 显示器…各一个工作表，另附数量汇总页</span></label>
+        <label><input type="checkbox" id="expPhotos" checked> 含照片<span class="muted">取消后文件小得多（几十台从几 MB 降到几十 KB）</span></label>
+        <label><input type="checkbox" id="expHelp" checked> 含说明页<span class="muted">附带「字段说明 / 设备分类 / 组织架构」三张辅助表</span></label>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn primary" onclick="doExportExcel()">${svgIcon('sheet')} 导出</button>
+        <button class="btn" id="btnBackfill" onclick="backfillThumbs()">${svgIcon('image')} 补缩略图</button>
+        ${help('「补缩略图」：早期录的设备只有 1600px 大图（每张约 150 KB），几十台就是好几 MB。\n点它在浏览器里批量生成 320px 小图，之后导出的体积能降到十分之一、下载也快得多。')}
+      </div>
+
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--text-2);font-weight:600">照片的两种给法有什么区别？</summary>
+        <div style="margin-top:10px">${EXPORT_KINDS_HTML}</div>
+      </details>
+    </div>`;
+}
+
+/** 导入卡片 */
+function importCardHTML() {
+  return `
+    <div class="card">
+      <h3>${svgIcon('download')} 从 Excel 导入</h3>
+      <p class="muted" style="margin-top:0">
+        下载模板填写后上传；系统按<b>表头</b>智能匹配列、按<b>名称</b>匹配组织与分类，同 SN 自动去重（走更新）。
+        模板主表本身不含数据（避免示例被误导入），填写格式参考「<b>填写示例</b>」页，数据填在「<b>设备台账</b>」页第 3 行起。
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn" onclick="location.href='/api/excel/template'">${svgIcon('download')} 下载导入模板</button>
+        <button class="btn primary" onclick="$('#importFile').click()">${svgIcon('upload')} 选择文件导入</button>
+        <input type="file" id="importFile" accept=".xlsx,.xls" hidden>
+      </div>
+      <div class="opt-list" style="margin-top:12px">
+        <label><input type="checkbox" id="impCreate" checked> 自动创建缺失的组织 / 分类
+          ${help('关掉后，表格里出现台账里没有的组织名或分类名时，该行会被跳过并记进「失败」，不会凭空建出新分类。')}</label>
+        <label><input type="checkbox" id="impUpdate" checked> 遇到同 SN 时更新已有设备
+          ${help('关掉后，同 SN 的行被当作重复直接忽略（既不新建也不更新）。\n想只补空字段、不动人工填过的值，保持开启即可。')}</label>
+      </div>
+    </div>`;
+}
+
+/** 导入历史（无记录时给一句空态，不再在 renderExcel 里写三元表达式） */
+function importHistoryHTML(batches) {
+  if (!batches.length) {
+    return '<div class="card" style="margin-top:16px"><h3>导入历史</h3><div class="muted">暂无导入记录</div></div>';
+  }
+  const rows = batches.map((b) => `<tr>
+    <td class="muted" data-label="时间">${esc((b.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+    <td data-label="文件">${esc(b.filename || '—')}</td>
+    <td class="num" data-label="总数">${b.total}</td>
+    <td class="num" data-label="成功" style="color:var(--green)">${b.success}</td>
+    <td class="num" data-label="失败" style="color:${b.failed ? 'var(--red)' : 'var(--text-3)'}">${b.failed}</td>
+    <td class="muted" data-label="错误摘要">${esc((b.errors || []).slice(0, 2).map((e) => `第${e.row}行: ${e.message}`).join('；'))}</td>
+  </tr>`).join('');
+  return `<div class="card" style="margin-top:16px">
+    <h3>导入历史</h3>
+    <div class="table-wrap"><table class="grid">
+      <thead><tr><th>时间</th><th>文件</th><th>总数</th><th>成功</th><th>失败</th><th>错误摘要</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+
 async function renderExcel() {
+  // 两个接口互不依赖，并发拉；任一失败都不该把整页打挂 —— 历史为空就当作「暂无记录」
   const [batches, live] = await Promise.all([
     api('/excel/batches?limit=20').then((d) => d.items).catch(() => []),
     api('/excel/live-links').catch(() => null),
@@ -1600,79 +1992,32 @@ async function renderExcel() {
 
   $('#content').innerHTML = `
     <div class="grid grid-2">
-      <div class="card">
-        <h3>${svgIcon('upload')} 导出到 Excel${help('导出的是当前台账的快照，文件自带照片（图片直接嵌在单元格里）。适合打印、存档、发给别人。想让数据自动更新，用下面的「实时数据链接」。')}</h3>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn primary" onclick="doExport({ split: true })">${svgIcon('sheet')} 按分类分表</button>
-          <button class="btn" onclick="doExport()">${svgIcon('download')} 单表导出</button>
-          <button class="btn" onclick="doExport({ photos: false })">${svgIcon('ban')} 不含照片</button>
-          <button class="btn" onclick="location.href='/api/excel/export?help=0'">不含说明页</button>
-          ${help('「按分类分表」= 台式主机 / 显示器 / 笔记本… 各自一个工作表，另附一张数量汇总页。\n「不含照片」导出的文件小得多（几十台从几 MB 降到几十 KB）。\n「不含说明页」= 不附「字段说明 / 设备分类 / 组织架构」三张辅助表。')}
-        </div>
-      </div>
-      <div class="card" style="border:1px solid var(--primary-border);background:var(--info-bg)">
-        <h3>${svgIcon('camera')} 想在 Excel 里直接看到照片？看这里</h3>
-        <p class="muted" style="margin-top:0;font-size:13px">
-          照片有两种给法，<b>先想清楚你要「数据自动更新」还是「表格里直接看图」</b>——两者不能同时满足：
-        </p>
-        <div class="table-wrap"><table class="grid">
-          <thead><tr><th>做法</th><th>Excel 里的样子</th><th>数据会不会自动更新</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><b>快照导出</b><br><span class="muted" style="font-size:12px">上面的按钮</span></td>
-              <td><b>照片直接嵌在单元格里</b>，打开就看到图，另带两个可点链接</td>
-              <td>不会（导完就固定，想要新的再导一次）</td>
-            </tr>
-            <tr>
-              <td><b>实时数据链接</b><br><span class="muted" style="font-size:12px">下面的卡片</span></td>
-              <td>文字列「照片链接」= <b>打开照片</b>（点一下就打开浏览器看图）</td>
-              <td>会（按 F5 / 打开文件自动拉最新）</td>
-            </tr>
-          </tbody>
-        </table></div>
-        <div class="hint" style="margin-top:10px">
-          <b>既想自动更新又想看图</b>？用实时链接导入后，在表格里<b>自己加一列</b>填
-          <code>=IMAGE(照片链接所在单元格)</code> 即可（Excel 365 / 较新版 WPS 支持），刷新时图片会跟着变。
-        </div>
-        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn primary" onclick="doExport({ split: true })">${svgIcon('camera')} 导出带照片</button>
-          <button class="btn" id="btnBackfill" onclick="backfillThumbs()">${svgIcon('image')} 补缩略图</button>
-          ${help('「补缩略图」：早期录的设备只有 1600px 大图（每张约 150 KB），几十台就是好几 MB。\n点它在浏览器里批量生成 320px 小图，之后导出的体积能降到十分之一、下载也快得多。')}
-        </div>
-      </div>
-      <div class="card">
-        <h3>${svgIcon('download')} 从 Excel 导入</h3>
-        <p class="muted" style="margin-top:0">下载标准模板填写后上传；系统会按表头智能匹配列、按名称匹配组织与分类，并自动去重（同 SN 走更新）。<br>
-        模板主表<b>本身不含数据</b>（避免示例被误导入），填写格式参考「<b>填写示例</b>」页，数据填在「<b>设备台账</b>」页第 3 行起。</p>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <button class="btn" onclick="location.href='/api/excel/template'">${svgIcon('download')} 下载导入模板</button>
-          <button class="btn primary" onclick="$('#importFile').click()">${svgIcon('upload')} 选择文件导入</button>
-          <input type="file" id="importFile" accept=".xlsx,.xls" hidden>
-        </div>
-        <label style="display:flex;gap:8px;margin-top:12px;font-size:12.5px;color:var(--text-2)">
-          <input type="checkbox" id="impCreate" checked> 自动创建缺失的组织/分类
-          <input type="checkbox" id="impUpdate" checked> 遇到同 SN 时更新已有设备
-        </label>
-      </div>
+      ${exportCardHTML()}
+      ${importCardHTML()}
     </div>
 
     ${live ? liveCardHTML(live) : ''}
 
-    <div class="card" style="margin-top:16px">
-      <h3>导入历史</h3>
-      ${batches.length ? `<div class="table-wrap"><table class="grid">
-        <thead><tr><th>时间</th><th>文件</th><th>总数</th><th>成功</th><th>失败</th><th>错误摘要</th></tr></thead>
-        <tbody>${batches.map((b) => `<tr>
-          <td class="muted" data-label="时间">${esc((b.created_at || '').replace('T', ' ').slice(0, 16))}</td>
-          <td data-label="文件">${esc(b.filename || '—')}</td><td class="num" data-label="总数">${b.total}</td>
-          <td class="num" data-label="成功" style="color:var(--green)">${b.success}</td>
-          <td class="num" data-label="失败" style="color:${b.failed ? 'var(--red)' : 'var(--text-3)'}">${b.failed}</td>
-          <td class="muted" data-label="错误摘要">${esc((b.errors || []).slice(0, 2).map((e) => `第${e.row}行: ${e.message}`).join('；'))}</td></tr>`).join('')}</tbody>
-      </table></div>` : '<div class="muted">暂无导入记录</div>'}
-    </div>`;
-  $('#importFile').onchange = (e) => handleImport(e.target.files[0]);
+    ${importHistoryHTML(batches)}`;
 
-  // 实时数据链接：地址/格式切换 + 按钮
+  bindExcelEvents();
+  renderLiveTable();
+}
+
+/** 导出卡片上三个开关 → doExport 的选项。**不改 doExport 签名**（它在设备列表页也被调用）。 */
+function doExportExcel() {
+  return doExport({
+    split: $('#expSplit')?.checked !== false,
+    photos: $('#expPhotos')?.checked !== false,
+    help: $('#expHelp')?.checked !== false,
+  });
+}
+
+/** renderExcel 之后的所有事件绑定集中一处（原来散在函数末尾） */
+function bindExcelEvents() {
+  const f = $('#importFile');
+  if (f) f.onchange = (e) => handleImport(e.target.files[0]);
+
   const baseSel = $('#liveBase');
   const fmtSel = $('#liveFmt');
   if (baseSel) baseSel.onchange = renderLiveTable;
@@ -1681,7 +2026,6 @@ async function renderExcel() {
   if (guideBtn) guideBtn.onclick = showLiveGuide;
   const resetBtn = $('#btnResetLive');
   if (resetBtn) resetBtn.onclick = resetLiveToken;
-  renderLiveTable();
 }
 
 /** 实时数据链接卡片（地址可选 + 格式可选） */
@@ -1690,13 +2034,14 @@ function liveCardHTML(live) {
   if (!bases.length) return '';
   return `
     <div class="card" style="margin-top:16px;border-color:var(--primary-border)">
-      <h3>${svgIcon('refresh')} Excel / WPS 实时数据链接 —— 打开表格点「刷新」即可，不用再导出</h3>
+      <h3>${svgIcon('refresh')} Excel / WPS 实时数据链接
+        ${help('链接里带一个只读令牌，拿到链接的人就能读到设备台账字段（不含密码、密钥、登录信息）。\n换电脑、换网络环境用不了，或者链接被发到了不该发的地方，点「重置链接」即可让所有旧链接立刻失效。')}</h3>
       <p class="muted" style="margin-top:0">
         把下面的链接接成数据源，之后<b>每次刷新就能拉到最新台账</b>（可设置「打开文件时刷新」）。
         只读、只暴露设备台账字段，不含任何密钥。
       </p>
       <div class="toolbar" style="margin-bottom:12px">
-        <label style="font-size:13px;color:var(--text-2);font-weight:600">取数地址</label>
+        <label style="font-size:13px;color:var(--text-2);font-weight:600">取数地址${help('Excel 装在另一台电脑时，必须选一个对方访问得到的地址（局域网 IP 或公网域名）。\n选错了的表现是表格里报「无法获取数据」——把链接粘到浏览器地址栏试试就知道是不是这个问题。')}</label>
         <select id="liveBase" style="width:330px">
           ${bases.map((b, i) => `<option value="${i}">${esc(b.label)}</option>`).join('')}
         </select>
@@ -1796,10 +2141,10 @@ function showMultiSheetGuide() {
         所以<b>显示器那张表只有屏幕尺寸 / 分辨率 / 接口类型</b>，不会冒出 CPU、内存、硬盘、IMEI。
       </div>
 
-      <textarea readonly style="width:100%;height:70px;font-family:monospace;font-size:12px">${esc(url)}</textarea>
+      <textarea readonly style="${TA_LINK}">${esc(url)}</textarea>
       <div style="margin-top:8px"><button class="btn sm primary" onclick="copyText('${esc(url)}','多表链接')">${svgIcon('copy')} 复制多表链接</button></div>
 
-      <h3 style="font-size:15px;margin:22px 0 8px">Excel 做法</h3>
+      <h3 style="${H3_STEP}">Excel 做法</h3>
       <ol style="margin:0;padding-left:22px;line-height:2">
         <li>新建空白工作簿</li>
         <li><b>数据</b> → <b>获取数据</b> → <b>自其他源</b> → <b>自网站</b> → 粘贴上面的链接</li>
@@ -1807,7 +2152,7 @@ function showMultiSheetGuide() {
         <li>点 <b>加载</b> → 选「<b>每个表放入新工作表</b>」（或先「转换数据」逐个调整）</li>
       </ol>
 
-      <h3 style="font-size:15px;margin:22px 0 8px">WPS 做法</h3>
+      <h3 style="${H3_STEP}">WPS 做法</h3>
       <ol style="margin:0;padding-left:22px;line-height:2">
         <li>新建空白工作簿</li>
         <li><b>数据</b> → <b>获取数据 / 自网站</b> → 粘贴上面的链接 → 确定</li>
@@ -1815,19 +2160,18 @@ function showMultiSheetGuide() {
         <li>如果 WPS 把多张表都塞进了一个工作表，改用下面的「<b>逐个导入</b>」方式</li>
       </ol>
 
-      <h3 style="font-size:15px;margin:22px 0 8px">逐个导入（最稳，一定能成）</h3>
-      <p style="margin:0 0 6px">回到实时链接列表，为<b>每个分类各建一次查询</b>，分别加载到不同工作表：</p>
-      <ol style="margin:0;padding-left:22px;line-height:2">
+      <details style="margin-top:22px">
+        <summary style="cursor:pointer;font-size:15px;font-weight:600;color:var(--text-1)">逐个导入（最稳，一定能成）</summary>
+        <p style="margin:6px 0">回到实时链接列表，为<b>每个分类各建一次查询</b>，分别加载到不同工作表：</p>
+        <ol style="margin:0;padding-left:22px;line-height:2">
         <li>在列表里点「台式主机」的 <b>复制链接</b></li>
         <li>数据 → 自网站 → 粘贴 → 加载 → 放到 <b>Sheet1</b>，并把 Sheet1 重命名为「台式主机」</li>
         <li>换成「显示器」的链接，重复一次，放到 <b>Sheet2</b>，重命名为「显示器」</li>
-        <li>以后按 <b>数据 → 全部刷新</b>，所有工作表一起更新</li>
-      </ol>
+          <li>以后按 <b>数据 → 全部刷新</b>，所有工作表一起更新</li>
+        </ol>
+      </details>
 
-      <div class="hint" style="margin-top:16px;background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-text);padding:11px 13px;border-radius:10px">
-        提醒：WPS 的「自网站」<b>不认 CSV</b>，请把上面的「链接格式」保持为
-        <b>「网页表格 · WPS / Excel 通用」</b>。
-      </div>
+      <div style="margin-top:16px">${WPS_WARN_HTML}</div>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="window.open('${esc(url)}','_blank')">${svgIcon('search')} 预览表格</button>
@@ -1881,31 +2225,28 @@ function showLiveGuide() {
       <p><b>2.</b> Excel：菜单 <b>数据</b> → <b>获取数据</b> → <b>自其他源</b> → <b>自网站</b><br>
          WPS：菜单 <b>数据</b> → <b>获取数据</b> / <b>自网站</b></p>
       <p><b>3.</b> 粘贴下面链接 → 确定 → 在导航器里选 <b>Table</b> → 点「加载」／「导入」</p>
-      <textarea readonly style="width:100%;height:70px;font-family:monospace;font-size:12px">${esc(link)}</textarea>
+      <textarea readonly style="${TA_LINK}">${esc(link)}</textarea>
       <div style="margin-top:8px"><button class="btn sm" onclick="copyText('${esc(link)}','链接')">${svgIcon('copy')} 复制链接</button></div>
 
-      <h3 style="font-size:15px;margin:22px 0 8px">让它自动刷新</h3>
+      <h3 style="${H3_STEP}">让它自动刷新</h3>
       <p style="margin:0 0 6px">在生成的数据表上右键 → <b>表格</b> → <b>外部数据属性</b>（或「数据范围属性」）→ 勾选：</p>
       <ul style="margin:0;padding-left:22px;line-height:2">
         <li>打开文件时刷新数据</li>
         <li>每 <b>30</b> 分钟刷新一次（按需调整）</li>
       </ul>
 
-      <h3 style="font-size:15px;margin:22px 0 8px">WPS 用户必看</h3>
-      <div class="hint" style="background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-text);padding:11px 13px;border-radius:10px">
-        WPS 的「自网站」<b>只认网页里的表格，不认 CSV</b>，所以直接粘 CSV 链接会报「<b>无法获取数据</b>」。<br>
-        请在上面把「链接格式」改成 <b>「网页表格 · WPS / Excel 通用」</b>，再复制链接。<br>
-        如果仍失败：把链接<b>先粘到浏览器地址栏回车</b>——若能看到一个表格页面说明链接没问题，是 WPS 的取数方式问题；
-        若打不开，说明地址选错了，把「取数地址」换成 <b>本机</b> 或 <b>局域网</b> 那个。
-      </div>
-
-      <h3 style="font-size:15px;margin:22px 0 8px">每个分类一个工作表</h3>
-      <p style="margin:0">把链接换成对应分类的链接（在列表里点「复制」），每个分类重复一次第 2~3 步，然后分别设置刷新即可。</p>
-
-      <div class="hint" style="margin-top:16px">
-        选 <b>CSV 格式</b> 时 Excel 的数字/日期会更规整，但纯数字 SN 可能被识别成科学计数法
-        （遇到就在 Power Query 里把那列类型改成「文本」）。网页表格格式不会有这个问题，但所有列都会是文本。
-      </div>
+      <details style="margin-top:22px">
+        <summary style="cursor:pointer;font-size:15px;font-weight:600;color:var(--text-1)">WPS 用户必看 / 每个分类一个工作表</summary>
+        <div style="margin-top:10px">
+          ${WPS_WARN_HTML}
+          <h3 style="${H3_STEP}">每个分类一个工作表</h3>
+          <p style="margin:0">把链接换成对应分类的链接（在列表里点「复制」），每个分类重复一次第 2~3 步，然后分别设置刷新即可。</p>
+          <div class="hint" style="margin-top:16px">
+            选 <b>CSV 格式</b> 时 Excel 的数字/日期会更规整，但纯数字 SN 可能被识别成科学计数法
+            （遇到就在 Power Query 里把那列类型改成「文本」）。网页表格格式不会有这个问题，但所有列都会是文本。
+          </div>
+        </div>
+      </details>
     </div>
     <div class="modal-foot">
       <button class="btn" onclick="window.open('${esc(link)}','_blank')">${svgIcon('search')} 浏览器打开</button>
@@ -2445,6 +2786,491 @@ async function showMyLogins() {
     <div class="modal-foot"><button class="btn primary" onclick="closeModal()">关闭</button></div>`, { wide: true });
 }
 
+/* ================= 自动盘点（GLPI Agent） ================= *
+ * 这一页解决的是「56 台机器不想一台台举着手机拍」。
+ * 页面结构：顶部四张数字卡 + 四个页签（待认领机器 / 显示器 / 上报令牌 / 上报历史）+ 安装指引。
+ *
+ * ⚠️ 一条设计原则贯穿全页：**agent 报上来的东西一律先「待认领」，绝不自动进台账**。
+ *    agent 只知道机器序列号（如 640HP72），不知道企业的资产编号（PC-2026-0017）；
+ *    自动入库只会把台账搞成一锅粥。所以这里全是「人点一下才生效」。
+ * ========================================================= */
+
+state.agentTab = 'machines';
+state.agentOverview = null;
+
+/** 认领弹窗：先给推荐（按 SN 命中），再给「新建设备」和「在台账里搜一台」 */
+async function openAgentClaim(machineId, kind = 'machine') {
+  const isMon = kind === 'monitor';
+  const detail = isMon ? null : await api(`/agent/machines/${machineId}`);
+  const m = detail?.machine;
+  const cands = isMon ? await api(`/agent/monitors/${machineId}/candidates`) : (detail?.candidates || []);
+  const title = isMon ? '认领这台显示器' : `认领「${m?.hostname || m?.deviceid || ''}」`;
+
+  const candHTML = cands.length ? cands.map((c) => `
+    <button class="agent-cand" onclick="doAgentClaim('${machineId}','${c.id}','${kind}')">
+      <span class="ac-main"><b>${esc(c.asset_no)}</b> ${esc(c.sn || '无 SN')}</span>
+      <span class="ac-sub">${esc([c.brand, c.model].filter(Boolean).join(' ') || '—')} · ${esc(c.reason)}</span>
+      <span class="ac-go">认领</span>
+    </button>`).join('') : '<p class="muted" style="margin:0">台账里没有明显对得上的设备（按序列号没找到）。可以新建一台。</p>';
+
+  openModal(`
+    <div class="modal-head"><h2>${esc(title)}</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      ${m ? `<div class="agent-summary">
+        <div><span class="k">主机名</span><span class="v">${esc(m.hostname || '—')}</span></div>
+        <div><span class="k">序列号</span><span class="v mono">${esc(m.sn || m.sn_alt || '—')}</span></div>
+        <div><span class="k">品牌型号</span><span class="v">${esc([m.manufacturer, m.model].filter(Boolean).join(' ') || '—')}</span></div>
+        <div><span class="k">机型</span><span class="v">${esc(agentKindLabel(m))}</span></div>
+        <div><span class="k">系统</span><span class="v">${esc(m.os_name || '—')}</span></div>
+        <div><span class="k">CPU / 内存</span><span class="v">${esc(m.cpu || '—')}${m.ram_mb ? ' · ' + Math.round(m.ram_mb / 1024) + 'GB' : ''}</span></div>
+        <div><span class="k">MAC / IP</span><span class="v mono">${esc(m.mac_primary || '—')} ${esc(m.ip_primary || '')}</span></div>
+        <div><span class="k">最后上报</span><span class="v">${esc(agentTime(m.last_seen_at))}</span></div>
+      </div>` : ''}
+
+      <h3 style="margin:16px 0 8px;font-size:14px">① 认领到台账里已有的设备${help('按机器序列号自动找的。认领后只补空字段，人工填过的值不会被覆盖。')}</h3>
+      <div class="agent-cands">${candHTML}</div>
+
+      <h3 style="margin:18px 0 8px;font-size:14px">② 或者用盘点结果新建一台</h3>
+      ${isMon
+        ? `<p class="muted" style="margin:0 0 10px">会新建到「显示器」分类，序列号、品牌、尺寸都按 EDID 填好。</p>
+           <button class="btn primary" onclick="doAgentClaim('${machineId}','', 'monitor', true)">新建设备并认领</button>`
+        : `<p class="muted" style="margin:0 0 10px">分类按机箱类型自动选（Laptop→笔记本、Desktop→台式主机、Server→服务器）。</p>
+           <button class="btn primary" onclick="doAgentClaim('${machineId}','', 'machine', true)">新建设备并认领</button>`}
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeModal()">取消</button></div>
+  `, { wide: true });
+}
+
+async function doAgentClaim(id, deviceId, kind, create = false) {
+  const path = kind === 'monitor' ? `/agent/monitors/${id}/claim` : `/agent/machines/${id}/claim`;
+  try {
+    const r = await api(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deviceId ? { device_id: deviceId } : { create: {} }),
+    });
+    closeModal();
+    toast(`已认领到 ${r.device.asset_no}`);
+    renderAgent();
+  } catch (e) {
+    // SN 冲突是最常见的：台账里已经有这台机器了，引导去认领那一台
+    if (e.status === 409) toast(e.message, 'warn');
+    else toast(e.message, 'error');
+  }
+}
+
+async function doAgentUnclaim(id, kind) {
+  const ok = await confirmBox('解除认领', kind === 'monitor'
+    ? '只断开这台显示器与自动盘点记录的绑定，台账里的设备不会被删除。'
+    : '只断开绑定关系，台账里的设备会原样保留。之后它继续上报也不会再自动同步。');
+  if (!ok) return;
+  try {
+    await api(kind === 'monitor' ? `/agent/monitors/${id}/unclaim` : `/agent/machines/${id}/unclaim`, { method: 'POST' });
+    toast('已解除认领');
+    renderAgent();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function doAgentDelete(id) {
+  const ok = await confirmBox('删除自动盘点记录', '只是把这个上报副本删掉，之后它再上报会重新出现。台账设备不受影响。');
+  if (!ok) return;
+  try {
+    await api(`/agent/machines/${id}/delete`, { method: 'POST' });
+    toast('已删除');
+    renderAgent();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function doAgentSync(id) {
+  try {
+    const r = await api(`/agent/machines/${id}/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    toast(r.changes ? `已同步 ${r.changes} 个字段` : '没有需要更新的字段');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function toggleAgentAutoSync(id, on) {
+  try {
+    await api(`/agent/machines/${id}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_sync: on }),
+    });
+    toast(on ? '已开启自动同步' : '已关闭自动同步');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function agentKindLabel(m) {
+  const k = m.machine_kind;
+  const base = { pc: '台式主机', nb: '笔记本', srv: '服务器', vm: '虚拟机', other: m.chassis_type || '未知' }[k] || (m.chassis_type || '未知');
+  return !m.is_physical ? `${base}（${m.vmsystem || '虚拟'}）` : base;
+}
+
+function agentTime(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  const diff = (Date.now() - d.getTime()) / 1000;
+  const rel = diff < 60 ? '刚刚' : diff < 3600 ? `${Math.floor(diff / 60)} 分钟前`
+    : diff < 86400 ? `${Math.floor(diff / 3600)} 小时前` : `${Math.floor(diff / 86400)} 天前`;
+  return `${String(s).replace('T', ' ').slice(0, 16)}（${rel}）`;
+}
+
+async function renderAgent() {
+  const ov = await api('/agent/overview');
+  state.agentOverview = ov;
+  const s = ov.stats;
+  const tab = state.agentTab;
+
+  const stat = (label, value, hint, cls = '') => `
+    <div class="agent-stat ${cls}">
+      <div class="as-v">${value}</div>
+      <div class="as-l">${esc(label)}</div>
+      ${hint ? `<div class="as-h">${esc(hint)}</div>` : ''}
+    </div>`;
+
+  $('#content').innerHTML = `
+    <div class="agent-stats">
+      ${stat('已盘点机器', s.machines, s.last_report_at ? '最近上报 ' + agentTime(s.last_report_at).split('（')[1]?.replace('）', '') : '还没有机器上报过')}
+      ${stat('待认领机器', s.unclaimed, s.unclaimed ? '需要你确认后才能进台账' : '都处理完了', s.unclaimed ? 'warn' : 'ok')}
+      ${stat('识别的显示器', s.monitors, s.monitors_unclaimed ? `${s.monitors_unclaimed} 台待认领` : '全部已认领')}
+      ${stat('上报次数', s.reports, `启用中的令牌 ${s.tokens} 个`)}
+    </div>
+
+    <div class="tabs">
+      ${[['machines', `待认领机器${s.unclaimed ? ` <span class="tab-num">${s.unclaimed}</span>` : ''}`],
+    ['monitors', `显示器${s.monitors_unclaimed ? ` <span class="tab-num">${s.monitors_unclaimed}</span>` : ''}`],
+    ['tokens', '上报令牌'], ['reports', '上报历史'], ['guide', '安装指引']]
+    .map(([id, label]) => `<button class="tab ${tab === id ? 'active' : ''}" onclick="switchAgentTab('${id}')">${label}</button>`).join('')}
+    </div>
+
+    <div id="agentPane"></div>`;
+  renderAgentPane();
+}
+
+function switchAgentTab(id) {
+  state.agentTab = id;
+  renderAgent();
+}
+
+async function renderAgentPane() {
+  const pane = $('#agentPane');
+  if (!pane) return;
+  const tab = state.agentTab;
+  try {
+    if (tab === 'machines') pane.innerHTML = await agentMachinesHTML();
+    else if (tab === 'monitors') pane.innerHTML = await agentMonitorsHTML();
+    else if (tab === 'tokens') pane.innerHTML = agentTokensHTML();
+    else if (tab === 'reports') pane.innerHTML = await agentReportsHTML();
+    else pane.innerHTML = agentGuideHTML();
+    bindAgentPane();
+  } catch (e) {
+    pane.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+async function agentMachinesHTML() {
+  const q = state.agentQuery || { only: 'unclaimed', q: '' };
+  const data = await api(`/agent/machines?only=${encodeURIComponent(q.only)}&q=${encodeURIComponent(q.q)}&page_size=200`);
+  if (!data.items.length) {
+    return `<div class="card"><h3>${svgIcon('check-circle')} 没有待认领的机器</h3>
+      <p class="muted" style="margin:0">${q.q || q.only !== 'unclaimed' ? '换个筛选条件看看。' : 'agent 装好并上报之后，新机器会出现在这里，人工确认一下就能进台账。'}</p>
+      ${agentInstallHintHTML()}</div>`;
+  }
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3 style="margin:0">自动盘点到的机器${help('这些机器还没进台账。认领之后才会成为正式资产，之后上报会自动同步 MAC/IP/系统等机器信息。')}</h3>
+        <div class="agent-filters">
+          <select id="agentOnly" class="mini">
+            <option value="unclaimed" ${q.only === 'unclaimed' ? 'selected' : ''}>待认领</option>
+            <option value="claimed" ${q.only === 'claimed' ? 'selected' : ''}>已认领</option>
+            <option value="" ${q.only === '' ? 'selected' : ''}>全部</option>
+            <option value="physical" ${q.only === 'physical' ? 'selected' : ''}>只看实体机</option>
+          </select>
+          <input id="agentQ" class="mini" placeholder="搜主机名 / SN / 型号 / 使用人" value="${esc(q.q)}">
+          <button class="btn sm" id="agentSearch">搜索</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="grid">
+        <thead><tr>
+          <th>主机名</th><th>序列号</th><th>品牌 / 型号</th><th>机型</th><th>系统</th>
+          <th>使用人</th><th>MAC / IP</th><th>最后上报</th><th style="width:190px">操作</th>
+        </tr></thead>
+        <tbody>${data.items.map((m) => `
+          <tr>
+            <td><b>${esc(m.hostname || '(无主机名)')}</b>${m.tag ? `<span class="muted"> · ${esc(m.tag)}</span>` : ''}</td>
+            <td class="mono">${esc(m.sn || m.sn_alt || '—')}${m.sn && m.sn_alt && m.sn !== m.sn_alt ? help('主板序列号：' + m.sn_alt) : ''}</td>
+            <td>${esc([m.manufacturer, m.model].filter(Boolean).join(' ') || '—')}</td>
+            <td>${esc(agentKindLabel(m))}</td>
+            <td class="muted">${esc(m.os_name || '—')}</td>
+            <td>${esc(m.last_user || '—')}</td>
+            <td class="mono muted">${esc(m.mac_primary || '—')}<br>${esc(m.ip_primary || '')}</td>
+            <td class="muted">${esc(agentTime(m.last_seen_at))}
+              ${m.partial_count ? `<br><span class="muted">部分上报 ${m.partial_count} 次</span>` : ''}</td>
+            <td>
+              ${m.claimed ? `
+                <span class="badge" style="color:var(--green)">已认领</span>
+                <button class="btn sm ghost" onclick="doAgentSync('${m.id}')">同步</button>
+                <button class="btn sm ghost" onclick="doAgentUnclaim('${m.id}','machine')">解除</button>
+              ` : `
+                <button class="btn sm primary" onclick="openAgentClaim('${m.id}')">认领</button>
+                <button class="btn sm ghost" onclick="doAgentDelete('${m.id}')">忽略</button>
+              `}
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div>
+      <p class="muted" style="margin:10px 0 0">共 ${data.total} 台${data.total > data.items.length ? '（只显示前 200 台）' : ''}</p>
+    </div>`;
+}
+
+async function agentMonitorsHTML() {
+  const only = state.agentMonOnly === undefined ? 'unclaimed' : state.agentMonOnly;
+  const items = await api(`/agent/monitors?only=${encodeURIComponent(only)}`);
+  if (!items.length) {
+    return `<div class="card"><h3>${svgIcon('check-circle')} 没有待认领的显示器</h3>
+      <p class="muted" style="margin:0">agent 会把主机上接着的显示器连同 <b>EDID 里的序列号、尺寸、生产年份</b>一起报上来。
+      这是最省事的一项——不用再拍显示器背面的标签了。</p></div>`;
+  }
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3 style="margin:0">自动识别到的显示器${help('序列号来自显示器 EDID。个别显示器厂商不写序列号，或者走 DDC/CI 读不出来，那种情况这里会是空的，仍需人工录一次。')}</h3>
+        <div class="agent-filters">
+          <select id="agentMonOnly" class="mini">
+            <option value="unclaimed" ${only === 'unclaimed' ? 'selected' : ''}>待认领</option>
+            <option value="claimed" ${only === 'claimed' ? 'selected' : ''}>已认领</option>
+            <option value="" ${only === '' ? 'selected' : ''}>全部</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="grid">
+        <thead><tr><th>序列号</th><th>型号</th><th>厂商</th><th>尺寸</th><th>生产年份</th><th>接在哪台机器上</th><th>最后上报</th><th style="width:170px">操作</th></tr></thead>
+        <tbody>${items.map((m) => `
+          <tr>
+            <td class="mono">${m.serial ? esc(m.serial) : '<span class="muted">EDID 未提供</span>'}</td>
+            <td>${esc(m.caption || m.name || '—')}</td>
+            <td>${esc(m.manufacturer || '—')}</td>
+            <td>${m.size_inch ? m.size_inch + ' 英寸' : '—'}</td>
+            <td>${m.made_year || '—'}</td>
+            <td>${esc(m.hostname || '—')}${m.machine_sn ? ` <span class="muted mono">${esc(m.machine_sn)}</span>` : ''}</td>
+            <td class="muted">${esc(agentTime(m.last_seen_at))}</td>
+            <td>
+              ${m.claimed ? `
+                <span class="badge" style="color:var(--green)">已认领</span>
+                <button class="btn sm ghost" onclick="doAgentUnclaim('${m.id}','monitor')">解除</button>
+              ` : `<button class="btn sm primary" onclick="openAgentClaim('${m.id}','monitor')">认领</button>`}
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function agentTokensHTML() {
+  const tokens = state.agentOverview?.tokens || [];
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3 style="margin:0">上报令牌${help('agent 那边把它当 HTTP Basic 的用户名和密码填。令牌只在生成时显示一次，库里只存哈希，忘了就重新生成一个。')}</h3>
+        ${hasPerm('settings.write') ? `<button class="btn sm primary" onclick="openAgentTokenForm()">${svgIcon('plus', 14)} 生成令牌</button>` : ''}
+      </div>
+      ${tokens.length ? `<div class="table-wrap"><table class="grid">
+        <thead><tr><th>名称</th><th>令牌前缀</th><th>状态</th><th>用过</th><th>最近使用</th><th>来源 IP</th><th>创建</th><th style="width:150px">操作</th></tr></thead>
+        <tbody>${tokens.map((t) => `
+          <tr>
+            <td><b>${esc(t.name)}</b>${t.note ? `<br><span class="muted">${esc(t.note)}</span>` : ''}</td>
+            <td class="mono">${esc(t.prefix || '')}…</td>
+            <td>${t.enabled ? '<span class="badge" style="color:var(--green)">启用</span>' : '<span class="badge" style="color:var(--text-3)">已停用</span>'}</td>
+            <td>${t.use_count || 0} 次</td>
+            <td class="muted">${esc(agentTime(t.last_used_at))}</td>
+            <td class="mono muted">${esc(t.last_ip || '—')}</td>
+            <td class="muted">${esc(fmtDate(t.created_at))}</td>
+            <td>${hasPerm('settings.write') ? `
+              <button class="btn sm ghost" onclick="toggleAgentToken('${t.id}',${t.enabled ? 'false' : 'true'})">${t.enabled ? '停用' : '启用'}</button>
+              <button class="btn sm ghost" onclick="delAgentToken('${t.id}')">删除</button>` : '—'}
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div>` : `<p class="muted" style="margin:0">还没有令牌。要先有一个令牌，agent 才能上报。</p>`}
+    </div>`;
+}
+
+function openAgentTokenForm() {
+  openModal(`
+    <div class="modal-head"><h2>生成上报令牌</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>名称（用来辨认是给谁的）</label>
+        <input id="tkName" placeholder="如：办公区电脑批量安装"></div>
+      <div class="field"><label>备注（可选）</label>
+        <input id="tkNote" placeholder="如：2026-09 新装 30 台"></div>
+      <p class="muted" style="margin:0">建议给不同批次/区域用不同令牌，这样以后要停用某一批，直接停那一个就行。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="createAgentToken()">生成</button>
+    </div>`);
+}
+
+async function createAgentToken() {
+  const name = $('#tkName')?.value.trim() || '未命名';
+  const note = $('#tkNote')?.value.trim() || '';
+  try {
+    const r = await api('/agent/tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, note }),
+    });
+    // ⚠️ 明文只出现这一次，弹窗里给足复制和醒目提示
+    openModal(`
+      <div class="modal-head"><h2>令牌已生成（只显示这一次）</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="modal-body">
+        <div class="notice warn">这串令牌<b>关掉窗口就再也看不到了</b>（库里只存哈希）。现在复制走，或者直接用下面的安装命令。</div>
+        <div class="copy-box" id="tkPlain">${esc(r.token)}</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn" onclick="copyText('${esc(r.token)}')">复制令牌</button>
+          <button class="btn" onclick="copyText(agentInstallCmd('${esc(r.token)}'))">复制安装命令</button>
+        </div>
+        <p class="muted" style="margin:14px 0 0">装的时候要填：<span class="mono">user</span> 和 <span class="mono">password</span> 都填这串令牌。</p>
+      </div>
+      <div class="modal-foot"><button class="btn primary" onclick="closeModal();renderAgent()">我记下了</button></div>`);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function toggleAgentToken(id, on) {
+  try {
+    await api(`/agent/tokens/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: on }) });
+    toast(on ? '已启用' : '已停用（该令牌的 agent 会立刻上报失败）');
+    renderAgent();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function delAgentToken(id) {
+  const ok = await confirmBox('删除令牌', '用这个令牌的 agent 会立刻上报失败（401）。如果只是想临时停一下，用「停用」更合适。');
+  if (!ok) return;
+  try {
+    await api(`/agent/tokens/${id}`, { method: 'DELETE' });
+    toast('已删除');
+    renderAgent();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function agentReportsHTML() {
+  const onlyErr = state.agentRepErr ? '&only=error' : '';
+  const data = await api(`/agent/reports?page_size=100${onlyErr}`);
+  if (!data.items.length) return `<div class="card"><p class="muted" style="margin:0">还没有上报记录。</p></div>`;
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3 style="margin:0">上报历史${help('每次 agent 联系服务器都会记一条：打招呼（CONTACT）、交盘点（INVENTORY）、注册、以及被拒绝的请求。')}</h3>
+        <label class="sw-inline"><input type="checkbox" id="agentRepErr" ${state.agentRepErr ? 'checked' : ''}> 只看失败</label>
+      </div>
+      <div class="table-wrap"><table class="grid">
+        <thead><tr><th>时间</th><th>机器</th><th>动作</th><th>内容</th><th>大小</th><th>令牌</th><th>来源 IP</th><th>结果</th></tr></thead>
+        <tbody>${data.items.map((r) => `
+          <tr>
+            <td class="muted">${esc(String(r.created_at || '').replace('T', ' ').slice(0, 19))}</td>
+            <td class="mono">${esc(r.deviceid || '—')}</td>
+            <td>${esc({ contact: '打招呼', inventory: '交盘点', register: '注册', prolog: '老式打招呼', auth: '鉴权', parse: '解析', delete: '人工删除' }[r.action] || r.action || '—')}</td>
+            <td class="muted">${r.partial ? '<span class="badge" style="color:var(--amber)">部分</span> ' : ''}${esc((r.sections || []).join(', ') || r.message || '—')}</td>
+            <td class="muted">${r.bytes ? (r.bytes / 1024).toFixed(1) + ' KB' : '—'}</td>
+            <td class="muted">${esc(r.token_name || '—')}</td>
+            <td class="mono muted">${esc(r.ip || '—')}</td>
+            <td>${r.result === 'ok' ? '<span class="badge" style="color:var(--green)">成功</span>' : `<span class="badge" style="color:var(--red)">失败</span> <span class="muted">${esc(r.message || '')}</span>`}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>
+      <p class="muted" style="margin:10px 0 0">共 ${data.total} 条${data.total > data.items.length ? '（只显示最近 100 条）' : ''}</p>
+    </div>`;
+}
+
+function agentInstallHintHTML() {
+  return `<div style="margin-top:12px"><button class="btn ghost sm" onclick="switchAgentTab('guide')">${svgIcon('book', 14)} 看安装指引</button></div>`;
+}
+
+/** 生成给某个令牌的安装命令（页面上「复制安装命令」用它） */
+function agentInstallCmd(token) {
+  const url = state.agentOverview?.endpoint_lan || state.agentOverview?.endpoint || '';
+  return `powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 -Server "${url}" -Token "${token}"`;
+}
+
+function agentGuideHTML() {
+  const ov = state.agentOverview || {};
+  const token = (ov.tokens || []).find((t) => t.enabled);
+  const shown = token ? `${token.prefix}…（生成时复制的那串完整令牌）` : '<span style="color:var(--amber)">还没有启用中的令牌，先去「上报令牌」生成一个</span>';
+  const lanUrl = ov.endpoint_lan || 'http://192.168.110.138:8080/api/agent';
+  const pubUrl = 'https://itam.dengxc.cloud:40259/api/agent';
+  return `
+    <div class="card">
+      <h3>① 先有个令牌</h3>
+      <p class="muted" style="margin:0 0 8px">到「上报令牌」页签生成。当前：<span class="mono">${shown}</span></p>
+
+      <h3 style="margin-top:18px">② 在每台电脑上装 GLPI Agent</h3>
+      <p class="muted" style="margin:0 0 8px">把项目里的 <span class="mono">scripts\\install-glpi-agent.ps1</span> 拷到目标机器（或用共享目录），
+      用管理员 PowerShell 跑：</p>
+      <div class="copy-box">${esc(`powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 \`
+  -Server "${lanUrl}" \`
+  -Token "你的令牌"`)}</div>
+      <p class="muted" style="margin:8px 0 0">脚本会自动下载安装 MSI、写好服务器地址与令牌、启动服务，并<b>立刻做一次盘点</b>，不用等定时任务。</p>
+
+      <h3 style="margin-top:18px">③ 选哪个地址？${help('agent 只能填一个地址。填两个会导致同一份盘点执行两次、重复上报。')}</h3>
+      <div class="table-wrap"><table class="grid">
+        <thead><tr><th>机器在哪</th><th>用哪个地址</th><th>要额外配什么</th></tr></thead>
+        <tbody>
+          <tr><td>公司局域网内（绝大多数）</td><td class="mono">${esc(lanUrl)}</td><td>不用，走 HTTP 不碰证书</td></tr>
+          <tr><td>要带回家的笔记本</td><td class="mono">${esc(pubUrl)}</td><td>装脚本时带上 <span class="mono">-UsePublic</span>，它会配好 CA 证书</td></tr>
+        </tbody>
+      </table></div>
+      <p class="muted" style="margin:8px 0 0">
+        ⚠️ 内网机器<b>不要</b>填公网地址：数据要绕到外网再回来，白占穿透流量还慢。穿透只服务你在外网打开网页。
+      </p>
+
+      <h3 style="margin-top:18px">④ 然后回来这里认领</h3>
+      <p class="muted" style="margin:0">机器上报后会出现在「待认领机器」里。点「认领」→ 按序列号自动匹配台账里的设备，
+      匹配不到就用盘点结果新建一台。认领之后，以后每次上报都会自动刷新 MAC / IP / 系统 / CPU / 内存 / 硬盘。</p>
+
+      <h3 style="margin-top:18px">出错怎么查</h3>
+      <ul class="steps">
+        <li>agent 侧看日志：<span class="mono">C:\\Program Files\\GLPI-Agent\\var\\log\\glpi-agent.log</span>，或运行 <span class="mono">glpi-agent --debug --force</span></li>
+        <li>本页「上报历史」里「只看失败」，能看到是<b>鉴权失败</b>（令牌不对/被停用）还是<b>格式不对</b></li>
+        <li>手工验证通道：<span class="mono">curl -u user:令牌 ${esc(lanUrl).replace('/api/agent', '/api/health')}</span> 能通说明网络没问题</li>
+        <li>手边没有 agent 也能测：<span class="mono">glpi-agent --local - --json</span> 会直接把盘点打到屏幕上，可拿来存成文件后导入排查</li>
+      </ul>
+
+      <h3 style="margin-top:18px">这台服务器的对接信息</h3>
+      <dl class="kv">
+        <dt>上报入口</dt><dd class="mono">${esc(ov.endpoint || '')}</dd>
+        <dt>局域网入口</dt><dd class="mono">${esc(lanUrl)}</dd>
+        <dt>公网入口</dt><dd class="mono">${esc(pubUrl)}</dd>
+        <dt>CA 证书指纹</dt><dd class="mono" style="font-size:11px;word-break:break-all">${esc(ov.ca_fingerprint || '—')}</dd>
+        <dt>单次上限</dt><dd>${ov.max_bytes ? `${(ov.max_bytes / 1024 / 1024).toFixed(0)} MB` : '—'}</dd>
+      </dl>
+    </div>`;
+}
+
+function bindAgentPane() {
+  const only = $('#agentOnly');
+  if (only) only.onchange = () => { state.agentQuery = { ...(state.agentQuery || {}), only: only.value }; renderAgentPane(); };
+  const q = $('#agentQ');
+  const go = () => { state.agentQuery = { only: $('#agentOnly')?.value ?? 'unclaimed', q: $('#agentQ')?.value.trim() || '' }; renderAgentPane(); };
+  if (q) q.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  const sb = $('#agentSearch');
+  if (sb) sb.onclick = go;
+  const monOnly = $('#agentMonOnly');
+  if (monOnly) monOnly.onchange = () => { state.agentMonOnly = monOnly.value; renderAgentPane(); };
+  const repErr = $('#agentRepErr');
+  if (repErr) repErr.onchange = () => { state.agentRepErr = repErr.checked; renderAgentPane(); };
+}
+
+window.renderAgent = renderAgent;
+window.switchAgentTab = switchAgentTab;
+window.openAgentClaim = openAgentClaim;
+window.doAgentClaim = doAgentClaim;
+window.doAgentUnclaim = doAgentUnclaim;
+window.doAgentDelete = doAgentDelete;
+window.doAgentSync = doAgentSync;
+window.toggleAgentAutoSync = toggleAgentAutoSync;
+window.openAgentTokenForm = openAgentTokenForm;
+window.createAgentToken = createAgentToken;
+window.toggleAgentToken = toggleAgentToken;
+window.delAgentToken = delAgentToken;
+window.agentInstallCmd = agentInstallCmd;
+
 // 暴露给内联 onclick
 window.openDeviceDetail = openDeviceDetail;
 // m.js 也用了 openDeviceDetail 这个名字（移动端页面），自动化测试同时加载两个脚本时会被覆盖，
@@ -2478,9 +3304,17 @@ window.resetLiveToken = resetLiveToken;
 window.doLogout = doLogout;
 window.switchView = switchView;
 window.doExport = doExport;
+// 导出卡片上的按钮走 doExportExcel（读 3 个开关 → 转交 doExport）。
+// ⚠️ 必须挂在 window 上：内联 onclick="doExportExcel()" 只看全局作用域，
+//    漏掉就是「按钮点了没反应」——不报错、控制台也干净。
+window.doExportExcel = doExportExcel;
 window.backfillThumbs = backfillThumbs;
 window.closeModal = closeModal;
 // 便于自动化测试
+window.renderExcel = renderExcel;
+window.bindExcelEvents = bindExcelEvents;
 window.photoPanelHTML = photoPanelHTML;
+window.donutSVG = donutSVG;
+window.legendHTML = legendHTML;
 
 boot();

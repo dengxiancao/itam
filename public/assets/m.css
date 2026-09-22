@@ -404,6 +404,17 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 }
 .qr-card { text-align: center; }
 .qr-img { width: 150px; height: 150px; border-radius: var(--radius-btn); border: 1px solid var(--border); background: #fff; }
+/* 详情页的双码：主码（资产编号，21×21）给足尺寸，备用码（网址，37×37）小一点并弱化。
+   主码 240px 是有意为之 —— 21 模块 + 两侧各 3 模块留白 = 27 格，240/27 ≈ 8.9px/格，
+   对着屏幕拍照也稳；缩回 150px 会掉到 5.6px/格，余量就没了。
+   备用码 37 模块在 150px 下只有 3.8px/格，只适合手机自带相机（它会自动对焦拉近），
+   不适合 App 内对着屏幕拍 —— 所以它只作备用，且文案里写清楚了。 */
+.qr-card .qr-item { display: inline-block; vertical-align: top; margin: 0 6px 14px; }
+/* 主码放大到 240px：21 模块 + 两侧留白 = 27 格，240/27 ≈ 8.9px/格。 */
+.qr-img.lg { width: 240px; height: 240px; }
+.qr-card .qr-item .qr-cap { margin-top: 8px; font-size: 12.5px; line-height: 1.5; color: var(--text-2); max-width: 250px; }
+.qr-card .qr-item.sm { opacity: .92; }
+.qr-card .qr-item.sm .qr-cap { max-width: 170px; font-size: 12px; color: var(--text-3); }
 .warn-flag { color: var(--red); font-weight: 600; margin-left: 4px; }
 
 /* 键值表 */
@@ -460,10 +471,16 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 /* ================= 相机 ================= */
 .cam-overlay { position: fixed; inset: 0; background: #000; z-index: 100; }
 .cam-overlay video { width: 100%; height: 100%; object-fit: cover; }
+/* 取景框：**尺寸一律由 JS 给**（inline style 才能保证正方形）。
+   这里只写不带尺寸的定位与外观。
+   · transform 同时含 translateY(-50%)，配合 JS 的 top:50% 做垂直居中 ——
+     以前用 top 百分比手调（22% / 36% / 41%），二维码那档 36% 明显偏上。
+   · transition 带上 width，两个入口切换时不会跳变。
+   · 二维码入口给的是正方形（见 openCamera）：二维码是方的，扁框对位时容易把码推出画面。 */
 .cam-frame {
-  position: absolute; left: 50%; top: 22%; transform: translateX(-50%); width: 82%; height: 26%;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   border: 3px solid rgba(255,255,255,.85); border-radius: 16px; box-shadow: 0 0 0 2000px rgba(0,0,0,.35);
-  transition: height .2s ease, top .2s ease;
+  transition: width .2s ease, height .2s ease, top .2s ease;
 }
 .cam-top {
   position: absolute; top: 0; left: 0; right: 0;
@@ -573,3 +590,123 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .empty { text-align: center; padding: 44px 16px; color: var(--text-3); font-size: 14px; }
 .empty .em { display: inline-flex; color: var(--ink-4); margin-bottom: 10px; }
 .empty .em .ic { width: 38px; height: 38px; }
+
+/* ==================================================================
+ *  概览（tab: dashboard）
+ * ------------------------------------------------------------------
+ *  这一页是**录入端**的首页，不是管理端仪表盘。
+ *
+ *  历史教训（改之前先读）：
+ *  曾经把 admin.js 的仪表盘整页搬进移动端 —— 6 张 KPI 卡 + 状态分布环
+ *  + 分类柱状图 + 品牌条，首屏要翻三屏才到底。App 的名字叫「资产录入」，
+ *  用户打开它是为了拍照录设备，却先撞上一整页报表，反馈「太繁琐」。
+ *
+ *  所以这一节现在只服务一件事：**用一行数字交代库房现状，然后把屏幕让给主行动**。
+ *  - 4 个数字（总数 / 在用 / 库存闲置 / 维修中），有行动含义；
+ *  - 「资产总值」「保修到期」不上首屏：不影响录入动作，去电脑端看更准；
+ *  - 环形图 / 柱状图 / 品牌条**不要再加回来**，那是电脑端管理后台的职责。
+ *
+ *  环形图的穿模修复曾是这一节的由来（几何必须由 size 推导，见 m.js 的
+ *  donutChart）。环删掉之后，那条几何约定依然适用于任何新增图形的场合。
+ * ================================================================== */
+
+/* ---- 概览块：大数字 + 一行三格 ---- */
+.ov {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 15px 15px 13px; box-shadow: var(--shadow-xs);
+}
+.ov-hd { display: flex; align-items: baseline; gap: 7px; }
+/* 等宽数字：切页面回来时数字宽度不变，不会左右抖 */
+.ov-num {
+  font-size: 32px; font-weight: 600; letter-spacing: -1px; line-height: 1.1;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.ov-cap { font-size: 13px; color: var(--text-3); }
+/* 三格等分，中间用竖发丝线分栏：比三张卡片省一半高度 */
+.ov-row {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px; margin-top: 13px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.ov-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ov-v {
+  font-size: 19px; font-weight: 600; letter-spacing: -.3px; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-l { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.ov-cell.warn .ov-v { color: var(--amber); }
+.ov-cell.ok .ov-v { color: var(--green); }
+
+/* 窄屏（<360px，例如 iPhone SE）：三格并排会挤，缩字号而不是换行 —— 换行会让首屏又变高 */
+@media (max-width: 359px) {
+  .ov { padding: 13px 13px 11px; }
+  .ov-num { font-size: 28px; }
+  .ov-v { font-size: 17px; }
+  .ov-l { font-size: 11px; }
+}
+
+/* ---- 筛选片（最近设备：按状态过滤） ---- */
+.fchips {
+  display: flex; gap: 7px; overflow-x: auto; padding: 1px 1px 3px;
+  margin: 0 -1px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.fchips::-webkit-scrollbar { display: none; }
+.fchip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 11px;
+  border: 1px solid var(--border); border-radius: var(--pill); background: #fff;
+  color: var(--text-2); font-size: 12.5px; font-weight: 600; font-family: inherit;
+  cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, color .15s;
+}
+.fchip .n { color: var(--text-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.fchip:active { background: var(--surface-2); }
+.fchip.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-600); }
+.fchip.on .n { color: var(--primary); }
+
+/* ==================================================================
+ *  更多菜单（右上角「⋯」）
+ * ------------------------------------------------------------------
+ *  为什么要有它：「回到电脑端管理后台」「使用手册」原本在两个主页面
+ *  各摆了一遍，加上底部 tab 的重复入口，整页到处是交叉链接，主行动
+ *  反而不突出。收进这里之后，两个主页面都不再出现这两个入口。
+ *
+ *  层级：mask 78 / sheet 80。要盖住 header(30) 和 tabbar(45)，
+ *  但必须低于相机遮罩(100)、预览(90)、看图(95) —— 这样拍照流程里
+ *  弹出的浮层永远压住菜单，不会出现「菜单浮在相机上」。
+ * ================================================================== */
+.more-mask { position: fixed; inset: 0; z-index: 78; background: rgba(15, 23, 42, .18); }
+.more-sheet {
+  position: fixed; z-index: 80; top: calc(56px + var(--safe-t)); right: 12px;
+  width: calc(100% - 24px); max-width: 300px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg, 0 8px 28px rgba(15, 23, 42, .16));
+  overflow: hidden; animation: moreIn .16s cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes moreIn { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
+/* 菜单里的行复用 .m-row，但去掉圆角/分隔（整块是一个卡片） */
+.more-sheet .m-row { border-radius: 0; }
+.more-sheet .m-row + .m-row { border-top: 1px solid var(--border); }
+
+/* ---- 最近设备：概览页里的紧凑列表（只读，点进详情） ---- */
+.rec-list { display: flex; flex-direction: column; }
+.rec-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 2px; background: none; border: none; border-top: 1px solid var(--border);
+  font-family: inherit; text-align: left; cursor: pointer; color: inherit;
+}
+.rec-row:first-child { border-top: none; }
+.rec-row:active { background: var(--surface-2); }
+.rec-ico {
+  width: 30px; height: 30px; flex: none; border-radius: 9px; display: grid; place-items: center;
+  background: var(--surface-3); color: var(--ink-3);
+}
+.rec-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.rec-t {
+  font-size: 13.5px; font-weight: 600; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rec-s {
+  font-size: 11.5px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rec-b { flex: none; }

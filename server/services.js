@@ -2,7 +2,7 @@
  * 业务服务层：组织、分类、设备、统计
  */
 import {
-  all, get, run, scalar, tx, insert, update, nextAssetNo, deviceLog, allP, getP, scalarP, getSetting, setSetting,
+  all, get, run, scalar, tx, insert, update, nextAssetNo, deviceLog, allP, getP, scalarP, getSetting, setSetting, audit,
 } from './db.js';
 import { buildTree, flattenTree, HttpError, bad, notFound, nowISO, uuid, str, normalizeDate, uniq } from './util.js';
 import { snCandidates } from './lib/recognize.js';
@@ -183,7 +183,7 @@ export function categoryCreate(input) {
     name,
     code: str(input.code, 30) || null,
     icon: input.icon || 'box',
-    color: input.color || '#4f8cff',
+    color: input.color || '#2563eb',
     code_prefix: str(input.code_prefix || input.code, 20) || null,
     has_sn: input.has_sn === false || input.has_sn === 0 ? 0 : 1,
     tracking_fields: JSON.stringify(normalizeFields(input.tracking_fields)),
@@ -249,14 +249,22 @@ function normalizeFields(fields) {
  * 设备
  * ================================================================== */
 
+/**
+ * 设备状态及其图表配色。
+ *
+ * 这几个颜色是「全站图表调色板」的唯一来源（环形图 / 图例 / 状态徽标都读它），
+ * 所以必须和前端 v3 的企业色阶一致：不再用 iOS 系统色（#4f8cff / #2bd67b / #ff9f43 …），
+ * 那套颜色自带高饱和度和塑料感，跟 slate 灰阶 + #2563eb 的克制基调放一起很跳。
+ * 语义上保持直觉：在用=绿、库存=蓝、维修=琥珀、报废/丢失=红。
+ */
 export const DEVICE_STATUS = [
-  { id: 'in_use', label: '在用', color: '#2bd67b' },
-  { id: 'in_stock', label: '库存', color: '#4f8cff' },
-  { id: 'idle', label: '闲置', color: '#8a94a6' },
-  { id: 'lent', label: '借出', color: '#a06bff' },
-  { id: 'repair', label: '维修中', color: '#ff9f43' },
-  { id: 'scrapped', label: '已报废', color: '#ff5c8a' },
-  { id: 'lost', label: '丢失', color: '#e5484d' },
+  { id: 'in_use', label: '在用', color: '#22c55e' },
+  { id: 'in_stock', label: '库存', color: '#2563eb' },
+  { id: 'idle', label: '闲置', color: '#64748b' },
+  { id: 'lent', label: '借出', color: '#0ea5e9' },
+  { id: 'repair', label: '维修中', color: '#f59e0b' },
+  { id: 'scrapped', label: '已报废', color: '#ef4444' },
+  { id: 'lost', label: '丢失', color: '#b91c1c' },
 ];
 
 const DEVICE_FIELDS = [
@@ -273,6 +281,17 @@ export const COLUMN_TRACKING_KEYS = [
   'ip_address', 'mac_address', 'os_name', 'cpu', 'memory', 'disk', 'screen_size',
   'location', 'owner_name', 'owner_employee_no', 'owner_phone', 'supplier', 'remark',
 ];
+
+/**
+ * 单次批量操作的条数上限。
+ *
+ * 批量操作是在**一个事务里逐条**跑的（每条都要过 deviceUpdate 的校验 + 写 device_log），
+ * 所以这个数字本质上是「一次 HTTP 请求愿意阻塞多久」的取舍，不是数据库限制。
+ * 放这么大是因为「选中当前筛选下的全部 N 台」是常见诉求；
+ * 但也不能无上限 —— 拿到 10 万条就该让用户先缩小筛选范围，而不是让请求挂在那儿。
+ */
+const BULK_MAX = 1000;
+
 
 /** 把 API 输入规范化成数据库字段 */
 function normalizeDeviceInput(input, cur = null) {
@@ -684,9 +703,31 @@ export function devicePurgeAll(ids = []) {
   return { purged: n };
 }
 
+/**
+ * 把设备列表的筛选条件翻译成 id 查询（只取 id，不分页）。
+ *
+ * ⚠️ 这里**故意复用 deviceList 的 where 构造**，而不是在别处再写一遍 ——
+ *    筛选口径一旦分叉，「全选匹配」勾中的数量就和列表页显示的总数对不上，
+ *    用户会看到「选中 137 台」却只改了 120 台，且完全无法自查。
+ *    所以：改 deviceList 的筛选条件时，这里自动跟着变（同一个函数）。
+ */
+export function deviceIdsByQuery(q = {}) {
+  const { total } = deviceList({ ...q, page: 1, page_size: 1 });
+  // 上限对齐批量接口的 1000 条硬限制，超了宁可明确报错也不静默截断
+  if (total > BULK_MAX) {
+    throw bad(`当前筛选条件下有 ${total} 台设备，超过单次批量操作上限 ${BULK_MAX} 台，请先缩小筛选范围`);
+  }
+  if (!total) return [];
+  const res = deviceList({ ...q, page: 1, page_size: total });
+  return res.items.map((d) => d.id);
+}
+
 export function deviceBulk(ids, action, payload = {}, operator = '') {
+  // `ids` 到这里必须已经是「具体的 id 列表」。
+  // 路由层会把 { all_matching:true, query:{...} } 用 deviceIdsByQuery() 展开成 id 再进来，
+  // 所以本函数不需要知道「全选匹配」这回事 —— 只有一种执行路径，行为好推理。
   if (!Array.isArray(ids) || !ids.length) throw bad('请选择要操作的设备');
-  if (ids.length > 1000) throw bad('单次批量操作不能超过 1000 条');
+  if (ids.length > BULK_MAX) throw bad(`单次批量操作不能超过 ${BULK_MAX} 条`);
   const result = { ok: 0, failed: 0, errors: [] };
   tx(() => {
     for (const id of ids) {
@@ -729,6 +770,270 @@ export function deviceLogAdd(id, action, note, operator, changes = []) {
 /* ================================================================== *
  * 品牌 / 选项
  * ================================================================== */
+
+/* ================================================================== *
+ * GLPI Agent 自动盘点：认领 / 同步 / 取消认领
+ *
+ * ⚠️ 核心原则：**agent 只能往台账里填「机器事实」，永远不碰「人的决定」**。
+ *    机器事实 = SN / 品牌 / 型号 / 系统 / CPU / 内存 / 硬盘 / MAC / IP
+ *    人的决定 = 资产编号 / 分类 / 组织 / 使用人 / 状态 / 采购信息 / 照片 / 备注
+ *    所以每次同步都是显式列字段，绝不整行 UPDATE。
+ * ================================================================== */
+
+/** 自动同步会覆盖的字段（都是机器事实） */
+const AGENT_SYNC_FIELDS = ['os_name', 'cpu', 'memory', 'disk', 'mac_address', 'ip_address'];
+
+/** 从 agent_machine 取「该写进台账什么」 */
+function agentDevicePatch(machine) {
+  const mem = machine.ram_mb
+    ? (machine.ram_mb >= 1024 ? `${Math.round(machine.ram_mb / 1024)}GB` : `${machine.ram_mb}MB`)
+    : null;
+  return {
+    sn: machine.sn || machine.sn_alt || null,
+    brand: machine.manufacturer || null,
+    model: machine.model || null,
+    os_name: machine.os_name || null,
+    cpu: machine.cpu || null,
+    memory: mem,
+    disk: machine.disk_summary || null,
+    mac_address: machine.mac_primary || null,
+    ip_address: machine.ip_primary || null,
+  };
+}
+
+/** 机器上报的机型 → 默认分类 code */
+function agentCategoryCode(machine) {
+  const kind = machine.machine_kind || 'other';
+  if (kind === 'nb') return 'NB';
+  if (kind === 'srv') return 'SRV';
+  if (kind === 'pc') return 'PC';
+  return null;
+}
+
+function agentExtra(machine, prevExtra = {}) {
+  return {
+    ...prevExtra,
+    agent: {
+      machine_id: machine.id,
+      deviceid: machine.deviceid,
+      hostname: machine.hostname || null,
+      uuid: machine.uuid || null,
+      chassis: machine.chassis_type || null,
+      vmsystem: machine.vmsystem || null,
+      agent_version: machine.agent_version || null,
+      first_seen_at: machine.first_seen_at || null,
+      last_seen_at: machine.last_seen_at || null,
+      synced_at: nowISO(),
+    },
+  };
+}
+
+/**
+ * 认领一台自动盘点机器。
+ * @param {string} machineId
+ * @param {{deviceId?:string, actor?:string, create?:{category_id?:string, org_id?:string}}} opts
+ *   deviceId 给了就关联到那台已有设备（只补空字段）；没给就按盘点结果新建一台。
+ */
+export function agentClaimMachine(machineId, opts = {}) {
+  const machine = getP('SELECT * FROM agent_machine WHERE id=?', [machineId]);
+  if (!machine) throw notFound('自动盘点记录不存在');
+  const actor = opts.actor || 'system';
+  const patch = agentDevicePatch(machine);
+
+  let device;
+  if (opts.deviceId) {
+    device = getP('SELECT * FROM device WHERE id=? AND deleted_at IS NULL', [opts.deviceId]);
+    if (!device) throw notFound('要认领的设备不存在');
+    const fill = {};
+    for (const k of Object.keys(patch)) {
+      // 只补空字段：已经有人工填过的值一律不动
+      if (!device[k] && patch[k]) fill[k] = patch[k];
+    }
+    // 机器身份写进 extra，后续靠它认「还是那台机器」
+    let prev = {};
+    try { prev = JSON.parse(device.extra || '{}'); } catch { prev = {}; }
+    fill.extra = JSON.stringify(agentExtra(machine, prev));
+    if (Object.keys(fill).length) {
+      update('device', device.id, { ...fill, updated_at: nowISO() });
+      deviceLog(device.id, 'update', Object.keys(fill).filter((k) => k !== 'extra')
+        .map((k) => ({ field: k, old: null, next: fill[k] })), actor, `自动盘点认领（${machine.hostname || machine.deviceid}）`);
+    }
+  } else {
+    // 新建设备：分类按机型推，推不出来就用调用方给的 / 第一台有的分类
+    const wantCode = agentCategoryCode(machine);
+    const cats = categoryList();
+    const cat = (opts.create?.category_id && cats.find((c) => c.id === opts.create.category_id))
+      || cats.find((c) => c.code === wantCode)
+      || cats.find((c) => c.has_sn)
+      || cats[0];
+    if (!cat) throw bad('还没有任何设备分类，请先到「设备分类」里建一个');
+    if (patch.sn) {
+      const dup = getP('SELECT id,asset_no FROM device WHERE sn=? COLLATE NOCASE AND deleted_at IS NULL', [patch.sn]);
+      if (dup) throw new HttpError(409, `SN「${patch.sn}」已经属于资产 ${dup.asset_no}，请改为认领到那台设备`, { conflict_device_id: dup.id });
+    }
+    device = deviceCreate({
+      category_id: cat.id,
+      org_id: opts.create?.org_id || null,
+      status: opts.create?.status || 'in_use',
+      ...patch,
+      extra: agentExtra(machine),
+      sn_source: 'agent',
+    }, actor);
+  }
+
+  update('agent_machine', machineId, { claimed_device_id: device.id, last_sync_at: nowISO() });
+  deviceLogAdd(device.id, 'agent', `已与自动盘点机器「${machine.hostname || machine.deviceid}」绑定，之后上报会自动同步`, actor);
+  audit({ actor, action: 'agent.claim', detail: `${machine.hostname || machine.deviceid} → ${device.asset_no}`, status: 200 });
+  return { device: deviceGet(device.id), machine: getP('SELECT * FROM agent_machine WHERE id=?', [machineId]) };
+}
+
+/** 把最新一次盘点结果同步进已认领的台账设备 */
+export function agentSyncMachine(machineId, actor = 'agent') {
+  const machine = getP('SELECT * FROM agent_machine WHERE id=?', [machineId]);
+  if (!machine || !machine.claimed_device_id) return { changes: 0 };
+  if (!machine.auto_sync) return { changes: 0, skipped: 'auto_sync 已关闭' };
+  const device = getP('SELECT * FROM device WHERE id=? AND deleted_at IS NULL', [machine.claimed_device_id]);
+  if (!device) return { changes: 0 };
+
+  const patch = agentDevicePatch(machine);
+  const next = {};
+  for (const k of AGENT_SYNC_FIELDS) {
+    if (patch[k] && patch[k] !== device[k]) next[k] = patch[k];
+  }
+  let prev = {};
+  try { prev = JSON.parse(device.extra || '{}'); } catch { prev = {}; }
+  next.extra = JSON.stringify(agentExtra(machine, prev));
+
+  update('device', device.id, { ...next, updated_at: nowISO() });
+  update('agent_machine', machineId, { last_sync_at: nowISO() });
+  const changed = Object.keys(next).filter((k) => k !== 'extra');
+  if (changed.length) {
+    deviceLog(device.id, 'agent', changed.map((k) => ({ field: k, old: device[k], next: next[k] })), actor, '自动盘点同步');
+  }
+  return { changes: changed.length, fields: changed };
+}
+
+export function agentSetSync(machineId, on) {
+  return update('agent_machine', machineId, { auto_sync: on ? 1 : 0 });
+}
+
+/**
+ * 删掉一条自动盘点记录（连同它的显示器行；外键 CASCADE 会一起清）。
+ * 只清「上报副本」，绝不动已经认领过去的那台台账设备 —— 那是正式资产。
+ */
+export function agentDeleteMachine(machineId) {
+  const m = getP('SELECT * FROM agent_machine WHERE id=?', [machineId]);
+  if (!m) throw notFound('自动盘点记录不存在');
+  run('DELETE FROM agent_monitor WHERE machine_id=?', [machineId]);
+  run('DELETE FROM agent_machine WHERE id=?', [machineId]);
+  // 上报日志里留个痕：这台机器被人工删过，以后它再上报就是新记录了
+  run(
+    `INSERT INTO agent_report (id,deviceid,action,result,message,created_at) VALUES (?,?,?,?,?,?)`,
+    [uuid(), m.deviceid, 'delete', 'ok', `人工删除自动盘点记录（${m.hostname || ''}）`, nowISO()],
+  );
+  return { ok: true };
+}
+
+export function agentUnclaimMachine(machineId, actor = 'system') {
+  const machine = getP('SELECT * FROM agent_machine WHERE id=?', [machineId]);
+  if (!machine) throw notFound('自动盘点记录不存在');
+  if (machine.claimed_device_id) {
+    deviceLogAdd(machine.claimed_device_id, 'agent', `已解除与自动盘点机器「${machine.hostname || machine.deviceid}」的绑定`, actor);
+  }
+  update('agent_machine', machineId, { claimed_device_id: null });
+  return { ok: true };
+}
+
+/**
+ * 认领显示器（EDID 报上来的那台）。
+ * 典型场景：主机报上来"我接着一台 27 寸的 XXX，序列号 ABC123"，
+ * 而台账里正好有一台还没填 SN 的显示器资产 —— 这一步就是把它俩对上。
+ */
+export function agentClaimMonitor(monitorId, opts = {}) {
+  const mon = getP('SELECT * FROM agent_monitor WHERE id=?', [monitorId]);
+  if (!mon) throw notFound('显示器记录不存在');
+  const actor = opts.actor || 'system';
+  const machine = getP('SELECT * FROM agent_machine WHERE id=?', [mon.machine_id]);
+
+  let device;
+  if (opts.deviceId) {
+    device = getP('SELECT * FROM device WHERE id=? AND deleted_at IS NULL', [opts.deviceId]);
+    if (!device) throw notFound('要认领的设备不存在');
+    const fill = {};
+    if (mon.serial && !device.sn) fill.sn = mon.serial;
+    if (mon.manufacturer && !device.brand) fill.brand = mon.manufacturer;
+    if (mon.caption && !device.model) fill.model = mon.caption;
+    if (mon.size_inch && !device.screen_size) fill.screen_size = `${mon.size_inch} 英寸`;
+    if (Object.keys(fill).length) {
+      update('device', device.id, { ...fill, updated_at: nowISO() });
+      deviceLog(device.id, 'update', Object.keys(fill).map((k) => ({ field: k, old: null, next: fill[k] })), actor,
+        `显示器 EDID 认领（主机 ${machine?.hostname || '-'}）`);
+    }
+  } else {
+    const cats = categoryList();
+    const cat = (opts.create?.category_id && cats.find((c) => c.id === opts.create.category_id))
+      || cats.find((c) => c.code === 'MON') || cats[0];
+    if (!cat) throw bad('还没有任何设备分类，请先到「设备分类」里建一个');
+    if (mon.serial) {
+      const dup = getP('SELECT id,asset_no FROM device WHERE sn=? COLLATE NOCASE AND deleted_at IS NULL', [mon.serial]);
+      if (dup) throw new HttpError(409, `SN「${mon.serial}」已经属于资产 ${dup.asset_no}，请改为认领到那台设备`, { conflict_device_id: dup.id });
+    }
+    device = deviceCreate({
+      category_id: cat.id,
+      org_id: opts.create?.org_id || null,
+      status: 'in_use',
+      sn: mon.serial || null,
+      brand: mon.manufacturer || null,
+      model: mon.caption || mon.name || null,
+      screen_size: mon.size_inch ? `${mon.size_inch} 英寸` : null,
+      remark: machine ? `由自动盘点识别（接在 ${machine.hostname || machine.deviceid} 上）` : null,
+      extra: { agent_monitor: { monitor_id: mon.id, machine_id: mon.machine_id, edid: mon.edid_seen ? 1 : 0 } },
+      sn_source: 'agent',
+    }, actor);
+  }
+  update('agent_monitor', monitorId, { claimed_device_id: device.id });
+  deviceLogAdd(device.id, 'agent', `显示器已认领（来自主机 ${machine?.hostname || '-'} 的 EDID）`, actor);
+  return { device: deviceGet(device.id) };
+}
+
+export function agentUnclaimMonitor(monitorId) {
+  return update('agent_monitor', monitorId, { claimed_device_id: null });
+}
+
+/** 认领显示器时，按序列号/型号推荐可能对应的显示器资产 */
+export function agentMonitorCandidates(monitorId) {
+  const mon = getP('SELECT * FROM agent_monitor WHERE id=?', [monitorId]);
+  if (!mon) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (row, reason) => {
+    if (!row || seen.has(row.id)) return;
+    seen.add(row.id);
+    out.push({ id: row.id, asset_no: row.asset_no, sn: row.sn, brand: row.brand, model: row.model, screen_size: row.screen_size, reason });
+  };
+  if (mon.serial) {
+    for (const r of allP(
+      "SELECT * FROM device WHERE deleted_at IS NULL AND sn IS NOT NULL AND UPPER(sn)=UPPER(?) LIMIT 5",
+      [mon.serial],
+    )) push(r, `显示器序列号一致（${mon.serial}）`);
+  }
+  // 没有 SN 的显示器资产：按型号/尺寸猜，标成「待确认」
+  const monCats = categoryList().filter((c) => c.code === 'MON').map((c) => c.id);
+  if (monCats.length) {
+    const ph = monCats.map(() => '?').join(',');
+    for (const r of allP(
+      `SELECT * FROM device WHERE deleted_at IS NULL AND category_id IN (${ph})
+         AND (sn IS NULL OR sn = '') LIMIT 8`,
+      monCats,
+    )) {
+      let reason = '同分类、台账里还没填 SN';
+      if (mon.caption && r.model && r.model.toUpperCase().includes(String(mon.caption).toUpperCase())) reason = `型号对得上（${mon.caption}）`;
+      else if (mon.size_inch && r.screen_size && String(r.screen_size).includes(String(mon.size_inch))) reason = `尺寸对得上（${mon.size_inch} 寸）`;
+      push(r, reason);
+    }
+  }
+  return out;
+}
 
 export function brandOptions() {
   const rows = all(`

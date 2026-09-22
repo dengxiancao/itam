@@ -21,8 +21,7 @@ const gfMul = (a, b) => (a === 0 || b === 0 ? 0 : EXP[LOG[a] + LOG[b]]);
 
 /* ---------------- 版本容量表 ---------------- */
 // [每块纠错码字数, 块1数据码字, 块1块数, 块2数据码字, 块2块数]
-const EC_TABLE = {
-  L: [null,
+export const EC_TABLE = {  L: [null,
     [7, 19, 1, 0, 0], [10, 34, 1, 0, 0], [15, 55, 1, 0, 0], [20, 80, 1, 0, 0], [26, 108, 1, 0, 0],
     [18, 68, 2, 0, 0], [20, 78, 2, 0, 0], [24, 97, 2, 0, 0], [30, 116, 2, 0, 0], [18, 68, 2, 69, 2],
     [20, 81, 4, 0, 0], [24, 92, 2, 93, 2], [26, 107, 4, 0, 0], [30, 115, 3, 116, 1], [22, 87, 5, 88, 1],
@@ -312,6 +311,47 @@ function applyMask(m, reserved, fn) {
       if (fn(r, c)) m[r][c] ^= 1;
     }
   }
+}
+
+/** 8 个数据掩码（解码时按格式信息里那一位选一个） */
+export const MASK_FNS = [
+  (r, c) => (r + c) % 2 === 0,
+  (r) => r % 2 === 0,
+  (r, c) => c % 3 === 0,
+  (r, c) => (r + c) % 3 === 0,
+  (r, c) => (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0,
+  (r, c) => ((r * c) % 2) + ((r * c) % 3) === 0,
+  (r, c) => (((r * c) % 2) + ((r * c) % 3)) % 2 === 0,
+  (r, c) => (((r + c) % 2) + ((r * c) % 3)) % 2 === 0,
+];
+
+export const EC_BITS_TO_LEVEL = { [EC_LEVEL_BITS.L]: 'L', [EC_LEVEL_BITS.M]: 'M', [EC_LEVEL_BITS.Q]: 'Q', [EC_LEVEL_BITS.H]: 'H' };
+
+/**
+ * 重建「哪些格子是功能图案（不存数据）」的地图 —— 解码时要靠它跳过功能区。
+ * 和编码时的布置顺序完全一致，改动这里必须同步改 qrcodeEncode。
+ */
+export function reservedMap(version) {
+  const size = version * 4 + 17;
+  const m = makeMatrix(size);
+  const reserved = Array.from({ length: size }, () => new Int8Array(size));
+  placeFinder(m, reserved, 0, 0);
+  placeFinder(m, reserved, 0, size - 7);
+  placeFinder(m, reserved, size - 7, 0);
+  placeAlignment(m, reserved, version);
+  placeTiming(m, reserved);
+  reserveFormatAreas(m, reserved);
+  if (version >= 7) {
+    for (let i = 0; i < 18; i++) {
+      const r = Math.floor(i / 3);
+      const c = i % 3;
+      m[r][size - 11 + c] = 0;
+      reserved[r][size - 11 + c] = 1;
+      m[size - 11 + c][r] = 0;
+      reserved[size - 11 + c][r] = 1;
+    }
+  }
+  return { size, reserved };
 }
 
 function drawFormat(m, reserved, ecLevel, mask) {

@@ -24,6 +24,38 @@ const DB_FILE = process.env.ITAM_DB || path.join(DATA_DIR, 'itam.db');
 export const db = new DatabaseSync(DB_FILE);
 
 /* ------------------------------------------------------------------ *
+ * PRAGMA —— 三条都是「不设就迟早出事」的
+ *
+ * 1) journal_mode = WAL
+ *    默认的 rollback journal 每次写都要拿排他锁 + fsync，读写互斥。
+ *    这个服务是「多个手机端 + 电脑端」并发写的场景，改 WAL 后读不阻塞写、
+ *    写不阻塞读，是并发下最划算的一行。WAL 是持久化设置（写进库文件），
+ *    设一次以后一直有效，但重复执行无害。
+ *
+ * 2) busy_timeout = 5000
+ *    并发写撞锁时，SQLite 默认立刻抛 SQLITE_BUSY。给 5 秒重试窗口，
+ *    避免「两个手机同时提交」这种正常操作直接报错。
+ *
+ * 3) foreign_keys = ON
+ *    ⚠️ SQLite 的默认值是 **OFF**（出于向后兼容），也就是说 schema.sql 里
+ *    写的 ON DELETE RESTRICT / SET NULL / CASCADE 之前**实际都没生效**。
+ *    打开后：
+ *      - device_log.device_id  ON DELETE CASCADE  → 删设备自动清历史
+ *      - org_unit.parent_id    ON DELETE RESTRICT → 挡住「删掉还有子节点的组织」
+ *      - device.org_id / category_id  SET NULL    → 删组织/分类自动置空引用
+ *    现有业务代码（services.js 的 orgDelete / categoryDelete / devicePurge）
+ *    本来就在手动做 SET NULL 和先删子表，与声明是**一致**的，所以打开它
+ *    不会破坏成功路径，只是把「代码写漏了」的情况兜住。
+ *    已用真实库副本实测：foreign_key_check 无违规，CASCADE / RESTRICT /
+ *    SET NULL 三条行为都符合预期。
+ *
+ * 注意：foreign_keys 是「每个连接」的设置，进程重启要重新打开。
+ * ------------------------------------------------------------------ */
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA busy_timeout = 5000');
+db.exec('PRAGMA foreign_keys = ON');
+
+/* ------------------------------------------------------------------ *
  * 迁移
  * ------------------------------------------------------------------ */
 export function migrate() {
@@ -34,7 +66,39 @@ export function migrate() {
     photo_original_path: 'TEXT',   // 原图
     photo_thumb_path: 'TEXT',      // 缩略图（导出 Excel 嵌入用）
   });
+  upgradeSeedColors();
   logger.info(`数据库就绪: ${DB_FILE}`);
+}
+
+/**
+ * 把「出厂配色」从老的 iOS 系统色换成 v3 企业色阶。
+ *
+ * 分类色是种子里写进 device_category 的，老库不会因为改了 DEFAULT_CATEGORIES 而自动更新，
+ * 结果就是一个库上跑着两套调色板（新装的库是 v3，老库还是 #4f8cff 那套），图表看着很不统一。
+ *
+ * 只改「颜色还等于某个老色值」的行 —— 用户自己调过的颜色（不管是改成别的还是又改回老色值）
+ * 一律不动，避免覆盖人家的设置。幂等，跑多少次都一样。
+ */
+const LEGACY_SEED_COLORS = [
+  { code: 'PC', from: '#4f8cff', to: '#2563eb' },   // 台式主机
+  { code: 'NB', from: '#22c4a0', to: '#0ea5e9' },   // 笔记本电脑
+  { code: 'MON', from: '#a06bff', to: '#8b5cf6' },  // 显示器
+  { code: 'PRT', from: '#ff9f43', to: '#f59e0b' },  // 打印机
+  { code: 'NET', from: '#00b8d9', to: '#14b8a6' },  // 网络设备
+  { code: 'SRV', from: '#ff5c8a', to: '#ef4444' },  // 服务器
+  { code: 'MB', from: '#2bd67b', to: '#ec4899' },   // 手机/平板
+  { code: 'ACC', from: '#8a94a6', to: '#64748b' },  // 外设配件
+];
+
+function upgradeSeedColors() {
+  // 逐条「按 code + 老色值」精确匹配：只有当这个分类还挂着出厂色时才改。
+  // 用 code 收窄是为了不误伤用户自建分类；用老色值收窄是为了不覆盖用户手动调过的颜色。
+  const stmt = db.prepare('UPDATE device_category SET color = ? WHERE code = ? AND color = ?');
+  let changed = 0;
+  for (const { code, from, to } of LEGACY_SEED_COLORS) {
+    changed += Number(stmt.run(to, code, from).changes || 0);
+  }
+  if (changed) logger.info(`数据库升级：${changed} 个默认分类的颜色已更新为 v3 企业色阶`);
 }
 
 /**
@@ -223,7 +287,7 @@ const DEFAULT_ORG = [
 
 const DEFAULT_CATEGORIES = [
   {
-    name: '台式主机', code: 'PC', code_prefix: 'PC', icon: 'pc', color: '#4f8cff', sort_order: 10,
+    name: '台式主机', code: 'PC', code_prefix: 'PC', icon: 'pc', color: '#2563eb', sort_order: 10,
     tracking_fields: [
       { key: 'cpu', label: 'CPU', type: 'text' },
       { key: 'memory', label: '内存', type: 'text' },
@@ -234,7 +298,7 @@ const DEFAULT_CATEGORIES = [
     ],
   },
   {
-    name: '显示器', code: 'MON', code_prefix: 'MON', icon: 'monitor', color: '#a06bff', sort_order: 30,
+    name: '显示器', code: 'MON', code_prefix: 'MON', icon: 'monitor', color: '#8b5cf6', sort_order: 30,
     tracking_fields: [
       { key: 'screen_size', label: '屏幕尺寸', type: 'select', options: ['24寸', '27寸'] },
       { key: 'resolution', label: '分辨率', type: 'text' },
@@ -242,7 +306,7 @@ const DEFAULT_CATEGORIES = [
     ],
   },
   {
-    name: '笔记本电脑', code: 'NB', code_prefix: 'NB', icon: 'laptop', color: '#22c4a0', sort_order: 20,
+    name: '笔记本电脑', code: 'NB', code_prefix: 'NB', icon: 'laptop', color: '#0ea5e9', sort_order: 20,
     tracking_fields: [
       { key: 'cpu', label: 'CPU', type: 'text' },
       { key: 'memory', label: '内存', type: 'text' },
@@ -253,7 +317,7 @@ const DEFAULT_CATEGORIES = [
     ],
   },
   {
-    name: '打印机', code: 'PRT', code_prefix: 'PRT', icon: 'printer', color: '#ff9f43', sort_order: 40,
+    name: '打印机', code: 'PRT', code_prefix: 'PRT', icon: 'printer', color: '#f59e0b', sort_order: 40,
     tracking_fields: [
       { key: 'print_type', label: '打印类型', type: 'text' },
       { key: 'ip_address', label: 'IP 地址', type: 'text' },
@@ -268,7 +332,7 @@ const DEFAULT_CATEGORIES = [
     ],
   },
   {
-    name: '服务器', code: 'SRV', code_prefix: 'SRV', icon: 'server', color: '#ff5c8a', sort_order: 60,
+    name: '服务器', code: 'SRV', code_prefix: 'SRV', icon: 'server', color: '#ef4444', sort_order: 60,
     tracking_fields: [
       { key: 'cpu', label: 'CPU', type: 'text' },
       { key: 'memory', label: '内存', type: 'text' },
@@ -278,14 +342,14 @@ const DEFAULT_CATEGORIES = [
     ],
   },
   {
-    name: '手机/平板', code: 'MB', code_prefix: 'MB', icon: 'phone', color: '#2bd67b', sort_order: 70,
+    name: '手机/平板', code: 'MB', code_prefix: 'MB', icon: 'phone', color: '#ec4899', sort_order: 70,
     tracking_fields: [
       { key: 'imei', label: 'IMEI', type: 'text' },
       { key: 'phone_no', label: '手机号', type: 'text' },
     ],
   },
   {
-    name: '外设配件', code: 'ACC', code_prefix: 'ACC', icon: 'box', color: '#8a94a6', sort_order: 80,
+    name: '外设配件', code: 'ACC', code_prefix: 'ACC', icon: 'box', color: '#64748b', sort_order: 80,
     tracking_fields: [],
   },
 ];

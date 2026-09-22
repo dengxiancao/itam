@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS device_category (
   name               TEXT NOT NULL,
   code               TEXT,
   icon               TEXT NOT NULL DEFAULT 'box',
-  color              TEXT NOT NULL DEFAULT '#4f8cff',
+  color              TEXT NOT NULL DEFAULT '#2563eb',
   code_prefix        TEXT,                            -- 资产编号前缀，如 PC / MON
   has_sn             INTEGER NOT NULL DEFAULT 1,      -- 是否有 SN
   tracking_fields    TEXT NOT NULL DEFAULT '[]',      -- 额外字段定义(JSON)
@@ -201,4 +201,122 @@ CREATE TABLE IF NOT EXISTS login_log (
 );
 CREATE INDEX IF NOT EXISTS idx_loginlog_time ON login_log(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_loginlog_user ON login_log(username, created_at DESC);
+
+-- ============================================================
+-- 11. GLPI Agent 上报令牌
+--     agent 那侧配的是 user / password 做 HTTP Basic，所以令牌就是密码。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_token (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  token_hash   TEXT NOT NULL,                        -- SHA-256；令牌是高熵随机串，慢哈希反而拖慢每次上报
+  prefix       TEXT,                                 -- 明文前 8 位，只为人工辨认「是哪一个」
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  note         TEXT,
+  created_by   TEXT,
+  created_at   TEXT NOT NULL,
+  last_used_at TEXT,
+  last_ip      TEXT,
+  use_count    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_agent_token_hash ON agent_token(token_hash);
+
+-- ============================================================
+-- 12. Agent 自动盘点上来的机器
+--     ⚠️ 刻意**不直接写进 device**：agent 报的是机器自己的 SN，
+--     和企业资产编号没有任何关系，直接入库会污染台账。
+--     先落在这里，人工认领之后才和正式台账建关联。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_machine (
+  id                TEXT PRIMARY KEY,
+  deviceid          TEXT NOT NULL,                   -- agent 自己的 deviceid（同一台机器稳定不变）
+  tag               TEXT,                            -- agent 配置的 tag
+  hostname          TEXT,
+  domain            TEXT,
+  sn                TEXT,                            -- bios.ssn ← 主匹配键
+  sn_alt            TEXT,                            -- bios.msn 清洗后的备选
+  assettag          TEXT,                            -- bios.assettag（部分厂商把资产标签放这儿）
+  uuid              TEXT,                            -- hardware.uuid ← 第二匹配键（比 SN 更稳）
+  manufacturer      TEXT,
+  model             TEXT,
+  chassis_type      TEXT,                            -- Laptop / Desktop / Server / Tower ...
+  machine_kind      TEXT,                            -- pc / nb / srv / other（我们判出来的分类建议）
+  vmsystem          TEXT,                            -- Physical / VMware / VirtualBox ...
+  os_name           TEXT,
+  os_version        TEXT,
+  os_arch           TEXT,
+  cpu               TEXT,
+  cpu_cores         INTEGER,
+  cpu_threads       INTEGER,
+  ram_mb            INTEGER,
+  disk_summary      TEXT,
+  last_user         TEXT,
+  mac_primary       TEXT,
+  ip_primary        TEXT,
+  networks_json     TEXT NOT NULL DEFAULT '[]',
+  software_count    INTEGER,
+  software_top      TEXT NOT NULL DEFAULT '[]',      -- 只留前 20 个名字：几百条软件塞进库毫无意义还拖慢查询
+  sections_json     TEXT NOT NULL DEFAULT '{}',      -- 按段合并后的快照（部分盘点就靠它）
+  agent_name        TEXT,
+  agent_version     TEXT,
+  first_seen_at     TEXT NOT NULL,
+  last_seen_at      TEXT NOT NULL,
+  report_count      INTEGER NOT NULL DEFAULT 0,
+  partial_count     INTEGER NOT NULL DEFAULT 0,
+  claimed_device_id TEXT,                            -- 认领后指向 device.id
+  auto_sync         INTEGER NOT NULL DEFAULT 1,      -- 认领后是否把盘点结果同步进台账
+  last_sync_at      TEXT,
+  remark            TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_machine_deviceid ON agent_machine(deviceid);
+CREATE INDEX IF NOT EXISTS idx_agent_machine_sn ON agent_machine(sn);
+CREATE INDEX IF NOT EXISTS idx_agent_machine_uuid ON agent_machine(uuid);
+CREATE INDEX IF NOT EXISTS idx_agent_machine_claimed ON agent_machine(claimed_device_id);
+CREATE INDEX IF NOT EXISTS idx_agent_machine_seen ON agent_machine(last_seen_at DESC);
+
+-- ============================================================
+-- 13. Agent 报上来的显示器（EDID）
+--     monitors[].serial 才是序列号；description 是「尺寸/年份」（如 "32/2015"），别当成 SN。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_monitor (
+  id                TEXT PRIMARY KEY,
+  machine_id        TEXT NOT NULL REFERENCES agent_machine(id) ON DELETE CASCADE,
+  edid_key          TEXT NOT NULL,                   -- 同机去重用的稳定键
+  serial            TEXT,
+  caption           TEXT,                            -- 型号代号，如 DJCP6
+  name              TEXT,
+  manufacturer      TEXT,
+  size_inch         INTEGER,                         -- 从 description 解出来
+  made_year         INTEGER,
+  edid_seen         INTEGER NOT NULL DEFAULT 0,
+  first_seen_at     TEXT NOT NULL,
+  last_seen_at      TEXT NOT NULL,
+  claimed_device_id TEXT                               -- 认领到哪台显示器资产
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_monitor_key ON agent_monitor(machine_id, edid_key);
+
+-- ============================================================
+-- 14. Agent 上报日志（谁、什么时候、用哪个令牌、报了什么）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_report (
+  id            TEXT PRIMARY KEY,
+  deviceid      TEXT,
+  machine_id    TEXT,
+  action        TEXT,
+  itemtype      TEXT,
+  partial       INTEGER NOT NULL DEFAULT 0,
+  sections      TEXT NOT NULL DEFAULT '[]',
+  bytes         INTEGER,
+  format        TEXT,                                -- json / gzip / zlib / br / xml
+  token_id      TEXT,
+  token_name    TEXT,
+  ip            TEXT,
+  agent_name    TEXT,
+  agent_version TEXT,
+  result        TEXT,                                -- ok / error
+  message       TEXT,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_report_time ON agent_report(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_report_dev ON agent_report(deviceid, created_at DESC);
 

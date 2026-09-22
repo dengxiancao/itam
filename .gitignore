@@ -23,8 +23,17 @@ _redesign-preview/
 _redesign-preview.html
 _mobile-redesign.html
 
-# ---- 本地快照备份目录 ----
+# ---- 本地快照备份目录 / 工作草稿 ----
 _backup-*/
+__patch/
+_patch/
+
+# ---- 手工备份副本（版本管理交给 git，这些不入库）----
+*.bak
+*.bak[0-9]*
+*.bak-*
+*.orig
+*.old
 
 # ---- 操作系统噪音 ----
 .DS_Store

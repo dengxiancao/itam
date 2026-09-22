@@ -2,7 +2,12 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- ⚠️ 这几个参数一个都不能少：管理端有些页面（二维码弹窗）要在手机上打开，
+       缺了 maximum-scale / user-scalable 时移动浏览器不认它是响应式页面，
+       会按桌面默认 980px 布局再整体缩小 —— 屏幕上的二维码会缩到 150px 都不到，
+       取景框、按钮的位置也全乱。2026-09-20 用户截图回报的「扫不出来」就是这个。
+       如果不想要缩放锁定，至少要保留 width=device-width 且给它一个能生效的响应式布局。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#f7f8fa" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />

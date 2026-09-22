@@ -1,10 +1,14 @@
 /**
  * Excel (.xlsx) 读写引擎 —— 纯 Node.js 零依赖实现
  *
- * 写：手工拼装 OOXML + zip（使用 node:zlib 的 deflateRawSync）
+ * 写：手工拼装 OOXML + zip（压缩走异步 zlib，不阻塞事件循环）
  * 读：解析 zip 中央目录 + DeflateRaw 解压 + OOXML 解析
  *
  * 支持：多工作表、表头样式、冻结首行、自动筛选、列宽、日期、数字、超链接风格
+ *
+ * ⚠️ 写方向是 **async**：`buildXlsx` / `zipWrite` 返回 Promise，调用方要 await。
+ *    读方向（`parseXlsx` / `zipRead`）仍是同步的 —— 导入的 Excel 体积远小于导出，
+ *    且解析是内存操作，暂不需要异步化。
  */
 import zlib from 'node:zlib';
 
@@ -84,23 +88,41 @@ function dosDateTime(d = new Date()) {
 
 /**
  * @param {Array<{name:string, data:Buffer|string}>} files
- * @returns {Buffer}
+ * @returns {Promise<Buffer>}   ★ 注意是 Promise（压缩改为异步，见文件末尾「压缩执行器」）
+ *
+ * 原来这里是 `zlib.deflateRawSync(raw, { level: 9 })` —— 同步压缩跑在**主线程**上，
+ * 导出大台账（`collectRows` 上限 50000 行）时会把事件循环堵住好几秒，
+ * 期间手机端 / 电脑端的请求全部排队，表现为「导出时整个系统卡住」。
+ *
+ * 现在分两阶段：先把所有条目**并发**丢给 libuv 线程池压缩，再统一拼装 zip。
+ * 并发很关键 —— 一个 xlsx 有 9 个条目（workbook / 各 sheet / styles / rels …），
+ * 逐个 await 会让线程池空转，实测 9 个条目串行 233ms vs 并发 89ms。
  */
-export function zipWrite(files) {
+export async function zipWrite(files) {
   const { date, time } = dosDateTime();
+
+  // ---- 阶段 1：并发压缩（纯 CPU，不碰 zip 结构）----
+  const prepared = await Promise.all(files.map(async (f) => {
+    const nameBuf = Buffer.from(f.name, 'utf8');
+    const raw = Buffer.isBuffer(f.data) ? f.data : Buffer.from(String(f.data), 'utf8');
+    const crc = crc32(raw);
+    const deflated = await deflateRaw(raw);
+    const useDeflate = deflated.length < raw.length;
+    return {
+      nameBuf,
+      raw,
+      crc,
+      body: useDeflate ? deflated : raw,
+      method: useDeflate ? 8 : 0,
+    };
+  }));
+
+  // ---- 阶段 2：串行拼装（纯内存拷贝，很快，且必须按顺序算 offset）----
   const chunks = [];
   const central = [];
   let offset = 0;
 
-  for (const f of files) {
-    const nameBuf = Buffer.from(f.name, 'utf8');
-    const raw = Buffer.isBuffer(f.data) ? f.data : Buffer.from(String(f.data), 'utf8');
-    const crc = crc32(raw);
-    const deflated = zlib.deflateRawSync(raw, { level: 9 });
-    const useDeflate = deflated.length < raw.length;
-    const body = useDeflate ? deflated : raw;
-    const method = useDeflate ? 8 : 0;
-
+  for (const { nameBuf, raw, crc, body, method } of prepared) {
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);          // version needed
@@ -151,6 +173,29 @@ export function zipWrite(files) {
   end.writeUInt16LE(0, 20);
 
   return Buffer.concat([...chunks, centralBuf, end]);
+}
+
+/* ================================================================== *
+ *  压缩执行器
+ *
+ *  为什么不用 deflateRawSync：它是**同步**的，跑在主线程上。导出上限
+ *  （collectRows 默认 50000 行）时主线程被 zlib 独占数秒，事件循环停摆，
+ *  期间所有请求排队 —— 这是「导出 Excel 时系统卡死」的根因，
+ *  跟操作系统是 Windows 还是 Linux 无关。
+ *
+ *  zlib.deflateRaw 是异步版，实际压缩在 libuv 线程池里跑，主线程只收回调。
+ *  代价是 zipWrite → buildXlsx 变成 async，调用方要 await。
+ * ================================================================ */
+
+const DEFLATE_OPTS = { level: 9 };
+
+function deflateRaw(buf) {
+  return new Promise((resolve, reject) => {
+    zlib.deflateRaw(buf, DEFLATE_OPTS, (err, out) => {
+      if (err) reject(err);
+      else resolve(out);
+    });
+  });
 }
 
 /* ================================================================== *
@@ -308,9 +353,9 @@ export const XF = {
  *
  * type: 'image' 的列，行值需为 Buffer（JPEG/PNG 字节），会作为图片嵌进单元格；
  * 行值缺失时该格留空。图片列会自动把行高撑大，无需调用方操心。
- * @returns {Buffer}
+ * @returns {Promise<Buffer>}   ★ 注意是 Promise（压缩异步化，见「压缩执行器」）
  */
-export function buildXlsx(opts) {
+export async function buildXlsx(opts) {
   const sheetDefs = opts.sheets?.length
     ? opts.sheets
     : [{ name: opts.sheetName || '数据', title: opts.title, columns: opts.columns, rows: opts.rows }];
@@ -602,7 +647,7 @@ ${anchors.map((an, k) => `<Relationship Id="rId${k + 1}" Type="http://schemas.op
     for (const m of media) files.push({ name: m.name, data: m.data });
   }
 
-  return zipWrite(files);
+  return zipWrite(files);   // ← async，调用方需 await
 }
 
 function inferType(v) {

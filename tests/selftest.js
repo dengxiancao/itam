@@ -32,8 +32,8 @@ migrate();
 seedIfEmpty({ withDemo: true });
 
 console.log('[1] Excel 引擎');
-await t('写入并读回 xlsx（中文 / 数字 / 日期 / 空值）', () => {
-  const buf = buildXlsx({
+await t('写入并读回 xlsx（中文 / 数字 / 日期 / 空值）', async () => {
+  const buf = await buildXlsx({
     sheets: [{
       name: '测试表',
       title: '标题行',
@@ -61,8 +61,8 @@ await t('写入并读回 xlsx（中文 / 数字 / 日期 / 空值）', () => {
   assert.strictEqual(parsed.data[1].备注, null);
 });
 
-await t('多工作表写入/读取', () => {
-  const buf = buildXlsx({
+await t('多工作表写入/读取', async () => {
+  const buf = await buildXlsx({
     sheets: [
       { name: 'A表', columns: [{ header: 'X', key: 'x' }], rows: [{ x: 'a1' }] },
       { name: 'B表', columns: [{ header: 'Y', key: 'y' }], rows: [{ y: 'b1' }] },
@@ -75,9 +75,9 @@ await t('多工作表写入/读取', () => {
   assert.deepStrictEqual(p0.sheets, ['A表', 'B表']);
 });
 
-await t('图片嵌入单元格（drawing / media / 关系链完整）', () => {
+await t('图片嵌入单元格（drawing / media / 关系链完整）', async () => {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-  const buf = buildXlsx({
+  const buf = await buildXlsx({
     sheets: [
       // 第 1 张表没有图：不该被挂上 drawing
       { name: '汇总', columns: [{ header: '名称', key: 'n' }], rows: [{ n: 'x' }] },
@@ -298,8 +298,8 @@ await t('统计看板数据结构完整', () => {
 });
 
 console.log('\n[5] Excel 导入导出往返');
-await t('导出模板可被解析且表头可识别', () => {
-  const { buffer, filename } = buildTemplate();
+await t('导出模板可被解析且表头可识别', async () => {
+  const { buffer, filename } = await buildTemplate();
   assert.ok(filename.endsWith('.xlsx'));
   const parsed = parseXlsx(buffer);
   assert.ok(parsed.headers.includes('资产编号'));
@@ -307,8 +307,8 @@ await t('导出模板可被解析且表头可识别', () => {
   assert.ok(parsed.headers.includes('所属组织'));
 });
 
-await t('导出真实台账并读回', () => {
-  const { buffer, count } = exportDevices({}, { withHelp: true });
+await t('导出真实台账并读回', async () => {
+  const { buffer, count } = await exportDevices({}, { withHelp: true });
   assert.ok(count > 0);
   const parsed = parseXlsx(buffer, { sheet: '设备台账' });
   assert.strictEqual(parsed.data.length, count);
@@ -318,9 +318,9 @@ await t('导出真实台账并读回', () => {
   assert.ok(sheets.includes('设备分类'));
 });
 
-await t('导入新设备（自动建组织，SN 去重）', () => {
+await t('导入新设备（自动建组织，SN 去重）', async () => {
   const sn = `IMP${Date.now()}`;
-  const buf = buildXlsx({
+  const buf = await buildXlsx({
     sheets: [{
       name: '设备台账',
       columns: [
@@ -350,10 +350,10 @@ await t('导入新设备（自动建组织，SN 去重）', () => {
   assert.ok(dev.org_path.includes('运维组'));
 });
 
-await t('再次导入同一文件会走更新而不是重复新增', () => {
+await t('再次导入同一文件会走更新而不是重复新增', async () => {
   const before = svc.deviceList({ page_size: 1 }).total;
   const sn = `IMP2${Date.now()}`;
-  const buf = buildXlsx({
+  const buf = await buildXlsx({
     sheets: [{
       name: '台账',
       columns: [
@@ -369,7 +369,7 @@ await t('再次导入同一文件会走更新而不是重复新增', () => {
   });
   const r1 = importDevices(buf, { operator: 'selftest' });
   assert.strictEqual(r1.created, 1, JSON.stringify(r1.errors));
-  const buf2 = buildXlsx({
+  const buf2 = await buildXlsx({
     sheets: [{
       name: '台账',
       columns: [{ header: 'SN', key: 'sn' }, { header: '分类', key: 'cat' }, { header: '品牌', key: 'brand' }, { header: '使用人', key: 'owner' }],
@@ -383,10 +383,10 @@ await t('再次导入同一文件会走更新而不是重复新增', () => {
   assert.strictEqual(svc.deviceList({ page_size: 1 }).total, before + 1);
 });
 
-await t('dry-run 不写入数据库', () => {
+await t('dry-run 不写入数据库', async () => {
   const before = svc.deviceList({ page_size: 1 }).total;
   const sn = `DRY${Date.now()}`;
-  const buf = buildXlsx({
+  const buf = await buildXlsx({
     sheets: [{
       name: 'S',
       columns: [{ header: 'SN', key: 'sn' }, { header: '分类', key: 'c' }],
@@ -398,8 +398,8 @@ await t('dry-run 不写入数据库', () => {
   assert.strictEqual(svc.deviceList({ page_size: 1 }).total, before);
 });
 
-await t('无法识别的表头给出明确错误', () => {
-  const buf = buildXlsx({
+await t('无法识别的表头给出明确错误', async () => {
+  const buf = await buildXlsx({
     sheets: [{ name: 'S', columns: [{ header: '无关列1', key: 'a' }, { header: '无关列2', key: 'b' }], rows: [{ a: 1, b: 2 }] }],
   });
   const r = importDevices(buf, {});
@@ -407,8 +407,8 @@ await t('无法识别的表头给出明确错误', () => {
   assert.ok(r.errors[0].message.includes('表头无法识别'));
 });
 
-await t('导入模板主表不含示例数据，示例单独成页', () => {
-  const { buffer } = buildTemplate();
+await t('导入模板主表不含示例数据，示例单独成页', async () => {
+  const { buffer } = await buildTemplate();
   const main = parseXlsx(buffer);
   assert.strictEqual(main.sheetName, '设备台账');
   assert.strictEqual(main.data.length, 0, '主表不应含任何数据行');
@@ -417,9 +417,9 @@ await t('导入模板主表不含示例数据，示例单独成页', () => {
   assert.ok(sample.data.length >= 1, '示例页应有内容');
 });
 
-await t('备注标了「示例行」的行导入时自动忽略', () => {
+await t('备注标了「示例行」的行导入时自动忽略', async () => {
   const sn = `SAMPLE${Date.now()}`;
-  const buf = buildXlsx({
+  const buf = await buildXlsx({
     sheets: [{
       name: '设备台账',
       columns: [
@@ -439,8 +439,8 @@ await t('备注标了「示例行」的行导入时自动忽略', () => {
 });
 
 console.log('\n[6] 数据导入后一致性');
-await t('导出 -> 导入到空表能完全还原（抽样字段）', () => {
-  const { buffer } = exportDevices({ category_id: svc.categoryList().find((c) => c.code === 'MON').id });
+await t('导出 -> 导入到空表能完全还原（抽样字段）', async () => {
+  const { buffer } = await exportDevices({ category_id: svc.categoryList().find((c) => c.code === 'MON').id });
   const parsed = parseXlsx(buffer, { sheet: '设备台账' });
   assert.ok(parsed.data.length > 0);
   const sample = parsed.data[0];

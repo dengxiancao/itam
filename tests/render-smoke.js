@@ -53,7 +53,7 @@ class FakeEl {
   remove() {}
 }
 
-const NAV_IDS = ['dashboard', 'devices', 'orgs', 'categories', 'excel', 'trash', 'users', 'settings'];
+const NAV_IDS = ['dashboard', 'devices', 'orgs', 'categories', 'agent', 'excel', 'trash', 'users', 'settings'];
 let navItems = null;
 function navItemsFor(sel) {
   if (!String(sel).includes('nav-item')) return [];
@@ -182,6 +182,31 @@ if (settingsErr) {
   assert(set.includes('识别服务'), '系统设置页包含「识别服务」');
   assert(set.includes('ocrProvider'), '包含识别服务下拉框');
   assert(set.includes('saveOcr'), '包含保存识别配置按钮');
+}
+
+/* ---------- 2b0. 切到自动盘点（GLPI Agent） ---------- */
+let agentErr = null;
+try {
+  const agentTab = navItems.find((e) => e.dataset.view === 'agent');
+  assert(!!agentTab, '侧边栏含「自动盘点」入口');
+  await agentTab.onclick();
+  await wait(900);
+} catch (e) { agentErr = e; }
+
+if (agentErr) {
+  console.log('  \x1b[31m✘\x1b[0m 自动盘点页渲染抛错：' + agentErr.message);
+  console.log(agentErr.stack);
+  failures.push('agent');
+} else {
+  const a = els.get('#content')?._innerHTML || '';
+  assert(a.length > 300, '自动盘点页有内容（长度 ' + a.length + '）');
+  // 四张数字卡 + 五个页签
+  assert(a.includes('已盘点机器') && a.includes('待认领机器'), '顶部有数字卡');
+  for (const tab of ['待认领机器', '显示器', '上报令牌', '上报历史', '安装指引']) {
+    assert(a.includes(tab), `页签「${tab}」存在`);
+  }
+  // 待认领区（新库里没有机器，应该给空态 + 去安装指引的路，而不是一片空白）
+  assert(a.includes('待认领') , '待认领区域已渲染');
 }
 
 /* ---------- 2b. 切到回收站 ---------- */
@@ -326,34 +351,47 @@ try {
   globalThis.renderScan();
   await wait(120);
   const scanHTML = els.get('#main')?._innerHTML || '';
-  assert(scanHTML.includes('扫码核对') || scanHTML.includes('扫描资产二维码') || scanHTML.includes('不能网页内扫码'),
+  assert(scanHTML.includes('扫二维码') || scanHTML.includes('扫码核对') || scanHTML.includes('扫描资产二维码'),
     '扫码页渲染出来了');
-  // 本测试环境没有 BarcodeDetector，应给出「用手机自带相机」的兜底说明，而不是死路
-  assert(scanHTML.includes('手机自带相机'), '没有扫码 API 时提示改用手机自带相机');
+  // 本测试环境没有 BarcodeDetector。**二维码入口必须照样给**（点它会走服务端解码，
+  // 这是 iPhone / Safari 唯一能在网页里扫码的路），不能因为本机没 API 就把入口藏掉 ——
+  // 这条正是「iPhone 上点扫码直接被告知不能扫」那个老毛病的看门断言。
+  assert(/openCamera\('scan','qr'\)/.test(scanHTML), '本机没有扫码 API 时，二维码入口依然保留（走服务端解码）');
+  assert(scanHTML.includes('服务端'), '界面说清了二维码是交给服务器解的');
+  // 一维条码没有服务端兜底，本机没 API 时要老实说明并给手动输入的路
+  assert(scanHTML.includes('不能网页内扫条码'), '本机没有扫码 API 时，条码入口明确说明不可用');
   assert(scanHTML.includes('manualSN'), '扫码页始终保留手动输入 SN');
+  assert(scanHTML.includes('手机自带相机'), '没有扫码 API 时提示改用手机自带相机');
 
-  // 扫码模式下按快门，绝不能掉进「识别入库」的预览流程
+  // 扫码模式下按快门，绝不能掉进「识别入库」的预览流程。
+  // 本机没识别器、服务端也没解出这一帧 → 应该落到手动输入页，而不是卡在相机里报错。
   els.get('#main').innerHTML = '';
   await globalThis.captureForScan({ videoWidth: 640, videoHeight: 480 });
   await wait(120);
   const afterShutter = els.get('#main')?._innerHTML || '';
   assert(!afterShutter.includes('id="btnSave"'), '扫码模式按快门不会进「保存入库」页');
   assert(!afterShutter.includes('综合置信度'), '扫码模式按快门不会进识别结果页');
-  assert(afterShutter.includes('手动输入'), '没有扫码能力时落到手动输入页');
+  assert(afterShutter.includes('手动输入'), '本机无扫码能力 + 服务端没解出时落到手动输入页');
   globalThis.mobileState.scanMode = 'lookup';
 
-  // 移动端 ⇄ 管理端 必须能双向走：管理端有「打开移动端录入」，反过来也得能回去
+  // 移动端 ⇄ 管理端 必须能双向走：管理端有「打开移动端录入」，反过来也得能回去。
+  // 注意（第六轮改版）：回管理端 / 使用手册 **不再摆在首页正文里**，已收进顶栏右上角「更多」菜单，
+  // 两个主页面共用一份。所以这里不再查 renderHome() 的产出，改查 m/index.html 里的菜单结构
+  // —— 页面上的「该不该出现」由 tests/m-dashboard-slim.js 专门看住。
   globalThis.renderHome();
   await wait(150);
   const homeHTML = els.get('#main')?._innerHTML || '';
-  assert(/href="\/"/.test(homeHTML), '移动端首页有「回到电脑端管理后台」的链接');
-  assert(homeHTML.includes('回到电脑端管理后台'), '移动端首页的入口有文字说明');
-  assert(/href="\/manual"/.test(homeHTML), '移动端首页有使用手册入口');
+  assert(homeHTML.length > 0, '移动端识别入库页渲染出了内容');
+  assert(!/回到电脑端管理后台/.test(homeHTML), '识别入库页正文不再重复摆「回管理后台」（已收进右上角菜单）');
+  assert(!/使用手册/.test(homeHTML), '识别入库页正文不再重复摆「使用手册」（已收进右上角菜单）');
 
-  // 顶栏那个小按钮是写在 HTML 里的（JS 不重建顶栏），所以直接查源文件
+  // 顶栏那个「更多」按钮和菜单是写在 HTML 里的（JS 不重建顶栏），所以直接查源文件
   const mIndexHtml = fs.readFileSync(path.join(process.cwd(), 'public', 'm', 'index.html'), 'utf8');
-  assert(/class="m-icon-btn"\s+href="\/"/.test(mIndexHtml), '移动端顶栏有回管理端的图标按钮');
-  assert(mIndexHtml.includes('返回电脑端管理后台'), '顶栏按钮带无障碍/悬浮文案');
+  assert(mIndexHtml.includes('id="moreBtn"'), '移动端顶栏有「更多」菜单按钮');
+  assert(/id="moreBtn"[\s\S]{0,400}aria-label="更多"/.test(mIndexHtml), '「更多」按钮带无障碍文案');
+  assert(mIndexHtml.includes('id="moreSheet"'), '「更多」菜单面板已渲染进 HTML');
+  assert(/id="moreSheet"[\s\S]{0,600}href="\/"/.test(mIndexHtml), '菜单里有回管理端的链接（href="/"）');
+  assert(/id="moreSheet"[\s\S]{0,900}href="\/manual"/.test(mIndexHtml), '菜单里有使用手册入口（href="/manual"）');
   assert(mIndexHtml.includes('m-head-act'), '顶栏右侧容器存在（图标按钮才不会被挤掉）');
 
   // 反方向：管理端侧边栏要有去移动端的入口
@@ -477,7 +515,8 @@ try {
   assert(empty.includes('还没有照片'), '没有照片时给出空态提示');
   assert(!empty.includes('<img'), '空态不应输出 img 标签');
 
-  // 设备详情里的二维码必须是「短码」（资产编号），网址码 37×37 模块缩到 150px 根本扫不出
+  // 设备详情里的二维码必须是「短码」（资产编号）：21×21 模块，150px 下每格 5.6px，
+  // 比网址码（33×33 模块）容错余量大得多，也不依赖手机能否访问那个地址。
   assert(globalThis.qrShortCode({ asset_no: 'MON-2026-0010', sn: 'XXX' }) === 'MON-2026-0010',
     '小码内容取资产编号');
   assert(globalThis.qrShortCode({ sn: 'SNONLY' }) === 'SNONLY', '没有资产编号时退回用 SN');
@@ -498,6 +537,21 @@ try {
       assert(!/^https?:/.test(payload), '详情二维码放的是短码而不是网址：' + payload);
       assert(payload.length <= 24, '短码要够短才好扫（≤24 字符）：' + payload);
     }
+    globalThis.closeModal();
+
+    // 「打开二维码」弹窗要同时给两种码：短码（资产编号）+ 网址码（带设备号）。
+    // 移动端「扫码核对」两种都必须认 —— 系统生成的就是这两种，扫不了等于功能不可用。
+    await globalThis.openQRModal(anyDev.id);
+    await wait(400);
+    const qrModal = els.get('#modal')?._innerHTML || '';
+    assert(qrModal.includes('资产二维码'), '二维码弹窗已渲染');
+    const texts = [...qrModal.matchAll(/qrcode\?text=([^"&]+)/g)].map((x) => decodeURIComponent(x[1]));
+    assert(texts.length >= 2, '二维码弹窗给出两种码（实得 ' + texts.length + ' 个）');
+    assert(texts.some((t) => /#\/device\//.test(t)), '其中有网址码（含 #/device/<uuid>）');
+    // 移动端 handleScanned 靠这个正则从网址码里抠设备号，抠不到就会去查 SN 而失败
+    const urlPayload = texts.find((t) => /#\/device\//.test(t)) || '';
+    assert(/#\/device\/[0-9a-fA-F-]{6,}/.test(urlPayload),
+      '网址码里的设备号能被扫码正则认出来：' + urlPayload.slice(0, 60));
     globalThis.closeModal();
   }
 } catch (e) { photoPanelErr = e; }
@@ -570,6 +624,23 @@ try {
   assert(x.includes('落在不同的工作表'), '有「每个分类落在不同工作表」的说明');
   assert(typeof globalThis.showMultiSheetGuide === 'function', '多工作表引导函数已暴露');
 
+  // 分区结构：导出 / 导入 / 实时链接，各一张卡片，顺序按使用频率
+  assert(x.includes('导出到 Excel'), '分区①：导出卡片');
+  assert(x.includes('从 Excel 导入'), '分区②：导入卡片');
+  assert(x.includes('实时数据链接'), '分区③：实时链接卡片（在上面的断言里也提过一次）');
+  const iExport = x.indexOf('导出到 Excel');
+  const iImport = x.indexOf('从 Excel 导入');
+  const iLive = x.indexOf('实时数据链接');
+  // 注意：不能用 indexOf('实时数据链接') 判位置 —— 导出卡片的 help 文案里也提过
+  // 「实时数据链接」，那会让顺序判断误报。用各卡片自己的标题锚点。
+  const iLiveCard = x.indexOf('Excel / WPS 实时数据链接');
+  assert(iExport >= 0 && iExport < iImport, '卡片顺序：导出 → 导入');
+  assert(iImport >= 0 && iLiveCard >= 0 && iImport < iLiveCard, '卡片顺序：导入 → 实时链接');
+  assert(iLive >= 0, '页面里提到了实时数据链接（标题或帮助说明）');
+  // 长说明收进 <details> 原生折叠，不再一屏铺开
+  assert((x.match(/<details/g) || []).length >= 1, '长说明收进 <details> 折叠区');
+  assert(x.includes('导入历史'), '导入历史表已渲染');
+
   // 按钮/标签文案精简：长说明收进「?」里，不再堆在按钮上
   assert(typeof globalThis.help === 'function', 'help 组件已暴露');
   const h = globalThis.help('这是一段比较长的说明文字，不该出现在按钮上');
@@ -582,7 +653,15 @@ try {
     '先看看页面里有几张表', '先在浏览器里试一下', '修改资料 / 密码', '多工作表怎么配']) {
     assert(!x.includes(long), `按钮文案已精简：不再出现「${long}」`);
   }
-  assert(x.includes('按分类分表') && x.includes('单表导出'), '精简后按钮仍然看得懂');
+  // 重构后：导出不再有「单表导出」平级按钮，改用「按分类分表」开关表达两种口径。
+  // 保留原意图 —— 页面必须仍能让用户看懂「分表 / 单表」这件事。
+  assert(x.includes('按分类分表'), '精简后仍能看懂分表口径（「按分类分表」开关）');
+  assert(x.includes('id="expSplit"') && x.includes('id="expPhotos"') && x.includes('id="expHelp"'),
+    '导出卡片有 3 个开关：分表 / 照片 / 说明页');
+  assert(typeof globalThis.doExportExcel === 'function', 'doExportExcel 已暴露（3 开关 → doExport）');
+  assert(typeof globalThis.bindExcelEvents === 'function' || typeof globalThis.renderExcel === 'function',
+    'Excel 页事件绑定函数存在');
+  assert(!x.includes('onclick="doExport(') , '导出按钮改走 doExportExcel，不再直接调 doExport');
   assert((x.match(/class="help"/g) || []).length >= 3, 'Excel 页至少放了 3 个帮助点');
 
   // 帮助点的样式必须在 CSS 里（否则点了没反应）
@@ -631,6 +710,23 @@ if (excelErr) {
   console.log(excelErr.stack);
   failures.push('excel-page');
 }
+
+/* ---------- 2h-1b. 内联 onclick 的目标必须挂在 window 上（静默失效的经典坑） ----------
+ * 页面里写 onclick="foo()" 时，浏览器只在**全局作用域**里找 foo。
+ * admin.js 是 ES module，顶层函数默认**不是**全局的 —— 忘了 window.foo = foo，
+ * 按钮就是「点了没反应」：不抛错、控制台干净、node --check 也全绿。
+ * 2026-09-21 实测漏过两个：doExportExcel、goMobileScan。这里对整个文件做一次全量核对。 */
+try {
+  const src = fs.readFileSync(path.join(process.cwd(), 'public', 'assets', 'admin.js'), 'utf8');
+  // 抓 onclick="name(" / onchange="name(" 这类内联处理器
+  const names = new Set();
+  for (const m of src.matchAll(/on(?:click|change|input|keydown)="([A-Za-z_$][\w$]*)\s*\(/g)) names.add(m[1]);
+  // 这些是浏览器/全局内建的，不需要导出
+  const builtins = new Set(['location', 'window', 'document', 'alert', 'confirm', 'print', '$']);
+  const missing = [...names].filter((n) => !builtins.has(n) && !new RegExp(`window\\.${n}\\s*=`).test(src));
+  assert(missing.length === 0,
+    `内联处理器全都挂了 window（检查 ${names.size} 个；未挂：${missing.join(', ') || '无'}）`);
+} catch (e) { console.log('  \x1b[31m✘\x1b[0m 内联处理器核对失败：' + e.message); failures.push('inline-handlers'); }
 
 /* ---------- 2h-2. 导出下载：必须自己拿到字节再触发下载，文件名要带 .xlsx ---------- */
 let dlErr = null;

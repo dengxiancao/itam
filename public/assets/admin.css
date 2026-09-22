@@ -278,10 +278,19 @@ a:hover { text-decoration: underline; }
 
 /* ---------- 图表 ---------- */
 .chart-wrap { display: flex; flex-wrap: wrap; gap: 28px; align-items: center; }
-.donut { position: relative; width: 168px; height: 168px; flex: none; }
-.donut svg { transform: rotate(-90deg); }
-.donut-center { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
-.donut-center b { font-size: 26px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--ink); }
+.donut { position: relative; flex: none; }
+.donut svg { display: block; overflow: visible; }
+/* 只把环本身转到 12 点方向起笔。整块 svg 转的话圆心那两行 <text> 会跟着歪。
+   半径由 JS 依 size/stroke 算出（r+stroke/2 === size/2），所以外沿永远贴框、不会穿模。 */
+.donut svg > circle {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+.donut .dn-num {
+  font-size: 26px; font-weight: 600; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; fill: var(--ink);
+}
+.donut .dn-cap { font-size: 12px; fill: var(--ink-3); }
 .legend { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 200px; }
 .legend-item { display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 6px 8px; border-radius: var(--radius-sm); }
 .legend-item:hover { background: var(--surface-2); }
@@ -297,6 +306,9 @@ a:hover { text-decoration: underline; }
 
 /* ---------- 表格 ---------- */
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+/* 撑开剩余宽度，把右侧的动作按钮推到行尾。
+   以前是内联 <span style="flex:1">，窄屏没法单独改它的 flex-basis，所以收成类 */
+.toolbar .grow { flex: 1; }
 .toolbar h3 { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
 .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; box-shadow: var(--shadow-xs); }
 table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
@@ -316,6 +328,28 @@ table.grid td.mono, table.grid th.mono { font-family: var(--mono); font-size: 12
 .pagination { display: flex; align-items: center; justify-content: space-between; padding: 14px 2px 0; flex-wrap: wrap; gap: 10px; }
 .pagination .info { color: var(--ink-4); font-size: 12.5px; }
 .page-btns { display: flex; gap: 4px; align-items: center; }
+
+/* ---------- 跨页选择提示条 ---------- */
+/* 勾选可以跨页存活之后，用户必须能一眼看见「我一共选了多少」，以及一个明确的「取消」出口
+   —— 勾选散在好几页里，没法逐个点回来，没有这条就只能刷页面。 */
+.sel-bar { margin-bottom: 10px; }
+.sel-bar-inner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  font-size: 12.5px; color: var(--ink-2);
+}
+.sel-bar-text b { color: var(--primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* 表格末尾那条「选中全部 N 台」——做成文字链接而不是按钮，避免和表头的全选框抢注意力 */
+tr.sel-all-row td { padding: 10px 16px; background: var(--surface-2); }
+tr.sel-all-row:hover td { background: var(--surface-2); }
+.link-btn {
+  border: none; background: none; padding: 0; cursor: pointer;
+  color: var(--primary); font-size: 13px; font-weight: 600; font-family: inherit;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--primary-600); }
 
 /* ---------- 按钮 ---------- */
 /* 方形圆角（8px）是「商业软件」；胶囊（999px）是「消费级 App」*/
@@ -375,6 +409,49 @@ input::placeholder, textarea::placeholder { color: var(--ink-4); }
 .chip .ic { color: var(--ink-3); }
 
 /* ---------- 弹窗 ---------- */
+.qr-mobile-tip {
+  margin-bottom: 14px; padding: 11px 13px;
+  border-left: 3px solid #f59e0b; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #f59e0b 10%, #fff);
+  color: var(--text-2); font-size: 12.5px; line-height: 1.75;
+}
+.qr-mobile-tip b { color: var(--ink); }
+
+/* ---------- 资产二维码弹窗：主码必须够大 ----------
+   尺寸依据（实测）：手机对着一块屏幕拍二维码，≥6 px/格才稳。
+   21×21 模块 + 两侧各 3 格留白 = 27 格 → 27 × 6 = 162px 是**理论下限**，
+   但要留摩尔纹/对焦余量，实际要 280px 以上。
+   ⚠️ 不能让 flex 把它压小：下面给了 flex:0 0 auto + 硬宽高，
+      否则在窄屏上会被并排的备用码挤到 ~160px（2026-09-20 用户截图就是这个数）。 */
+.qr-pair {
+  display: flex; gap: 22px; flex-wrap: wrap;
+  justify-content: center; align-items: flex-start;
+}
+.qr-main {
+  flex: 0 0 auto; text-align: center; max-width: 100%;
+}
+.qr-main-img { display: block; margin: 0 auto; }
+.qr-main-code {
+  margin-top: 8px; font-weight: 600; font-size: 14px;
+  font-family: var(--mono); word-break: break-all;
+}
+.qr-alt {
+  flex: 0 0 auto; text-align: center; align-self: flex-end;
+  opacity: .95; max-width: 100%;
+}
+.qr-alt-img { display: block; margin: 0 auto; }
+
+/* 手机上「用手机版扫码核对」是主要出路，把它显眼一点 */
+.qr-go-mobile { display: none; }
+@media (max-width: 900px) {
+  .qr-pair { flex-direction: column; align-items: center; gap: 16px; }
+  .qr-alt { align-self: center; }
+  /* 窄屏时主码独占一行，硬保 250px（屏幕短边通常 ≥360，放得下） */
+  .qr-main-img { width: 250px !important; height: 250px !important; }
+  .qr-go-mobile { display: inline-flex; }
+}
+.qr-mobile-tip[hidden] { display: none; }
+
 .modal-mask {
   position: fixed; inset: 0; background: rgba(16, 24, 40, .45);
   backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
@@ -532,11 +609,32 @@ input::placeholder, textarea::placeholder { color: var(--ink-4); }
     font-size: 16px; height: 44px;
   }
 
-  /* ---- 筛选栏整行排布 ---- */
+  /* ---- 筛选栏：搜索独占一行，下拉两列，按钮成网格 ----
+     窄屏上把每个控件都拉满宽（原来的 width:100% !important）会让 5 个下拉各占一行，
+     光筛选区就吃掉 400px，一屏只看得到 1 张设备卡。改成按控件类型分档：
+       搜索 / 标题 → 独占一行
+       下拉（.fbar）→ 两列
+       按钮 → 40px 高的网格，单行放得下 3 个 */
   .toolbar { gap: 8px; }
-  .toolbar > input, .toolbar > select { width: 100% !important; }
-  .toolbar > .btn { flex: 1; min-width: 108px; }
-  .toolbar h3 { width: 100%; }
+  .toolbar > input,
+  .toolbar > .fbar,
+  .toolbar > .dropdown,
+  .toolbar > h3 { flex-basis: 100%; width: 100%; }
+  /* 搜索框在 DOM 里排第 1，本来就够，不用 order；高度统一到 42px */
+  .toolbar > input { height: 42px; }
+
+  .toolbar .fbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .toolbar .fbar > select { width: 100% !important; min-width: 0; }
+
+  /* 「批量操作」在下拉全部展开后才有意义，跟主按钮挤一行反而添乱 */
+  .toolbar > .dropdown { order: 9; flex: 1 1 132px; }
+  .toolbar > .dropdown > .btn { width: 100%; }
+
+  .toolbar > .btn { flex: 1 1 88px; min-width: 0; padding: 0 10px; }
+  .toolbar > .btn.primary { flex: 2 1 140px; }
+  .toolbar > .grow { display: none; }
+
+  .toolbar h3 { text-align: left; }
 
   /* ---- 分页 ---- */
   .pagination { flex-direction: column; align-items: stretch; gap: 8px; }
@@ -560,7 +658,8 @@ input::placeholder, textarea::placeholder { color: var(--ink-4); }
 
   /* ---- 其它 ---- */
   .kv { grid-template-columns: 96px 1fr; row-gap: 9px; font-size: 13.5px; }
-  .donut { width: 150px; height: 150px; }
+  .donut .dn-num { font-size: 23px; }
+  .donut .dn-cap { font-size: 11px; }
   .brand { padding: 0 16px; }
   .sidebar-foot { padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); }
   .row-actions { flex-wrap: wrap; }
@@ -569,6 +668,9 @@ input::placeholder, textarea::placeholder { color: var(--ink-4); }
 }
 
 /* ---------- 更窄的手机：表格改成卡片 ---------- */
+/* 目标：设备多的时候要能「扫」。所以卡片只留一行标题 + 三条关键信息 + 一行操作，
+   值为空的「所属组织 — / 使用人 — / 保修 —」直接不渲染（见 .blank），
+   否则 9 行里有 3 行是破折号，白占一屏。 */
 @media (max-width: 760px) {
   .table-wrap { border: none; background: transparent; box-shadow: none; overflow: visible; }
   table.grid { display: block; font-size: 14px; }
@@ -576,16 +678,21 @@ input::placeholder, textarea::placeholder { color: var(--ink-4); }
   table.grid tbody { display: block; }
   table.grid tr {
     display: block; background: #fff; border: 1px solid var(--line);
-    border-radius: var(--radius); margin-bottom: 10px; padding: 4px 16px 6px;
+    border-radius: var(--radius); margin-bottom: 10px; padding: 10px 14px 4px;
     box-shadow: var(--shadow-xs);
   }
   table.grid tr:hover { background: #fff; }
   table.grid td {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     border: none; border-bottom: 1px solid var(--line-2); height: auto;
-    padding: 9px 0; white-space: normal; text-align: right;
+    padding: 8px 0; white-space: normal; text-align: right;
   }
+  /* 卡片第一行 = 资产编号 + 行内操作（勾选框留在左侧，操作挤到右端）：一眼看到「这是哪台 + 能干什么」 */
+  table.grid td.keep { padding: 2px 0 10px; border-bottom-color: var(--line); }
+  table.grid td.keep > .row-actions { margin-left: auto; }
+  /* 末格是操作区又整行右对齐时，上面那条分隔线只是多余的横线 —— 摘掉 */
   table.grid tr td:last-child { border-bottom: none; }
+  table.grid tr > td.keep:last-child { padding-top: 0; border-bottom: none; }
   table.grid td::before {
     content: attr(data-label);
     flex: none; color: var(--ink-4); font-size: 12px; font-weight: 600;
@@ -593,6 +700,12 @@ input::placeholder, textarea::placeholder { color: var(--ink-4); }
   }
   table.grid td:not([data-label])::before,
   table.grid td[data-label=""]::before { content: none; }
+  /* 空值行不占位；但「三条都空」时至少要露一条，否则卡片只剩编号，
+     会让人以为数据丢了。所以只摘「至少还有一条有值」的行 —— 三个都没值的行保留第一条。 */
+  table.grid td.blank { display: none; }
+  table.grid tr:has(td.blank) td:not(.blank) ~ td.blank { display: flex; }
+  table.grid tr:has(td.blank) td:not(.blank) ~ td.blank ~ td.blank { display: none; }
+
   table.grid td.num { text-align: right; }
   .table-wrap + .pagination { padding-top: 10px; }
 }
@@ -601,6 +714,28 @@ input::placeholder, textarea::placeholder { color: var(--ink-4); }
 
 /* ================= 「?」帮助点 =================
    长说明收进小圆点，悬停/点击才弹出来，按钮和标签就能只留几个字 */
+/* 开关列表（Excel 导出/导入卡片用）—— 一行一个选项，说明文字靠右弱化 */
+.opt-list { display: flex; flex-direction: column; gap: 2px; }
+.opt-list > label {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; color: var(--text-2);
+  cursor: pointer; transition: background .15s;
+}
+.opt-list > label:hover { background: var(--line-2); }
+.opt-list > label > input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
+.opt-list > label > .muted {
+  font-weight: 400; font-size: 12px; color: var(--text-3);
+  margin-left: auto; padding-left: 12px; text-align: right;
+}
+@media (max-width: 760px) {
+  /* 窄屏说明文字换行，别把复选框挤瘪 */
+  .opt-list > label { align-items: flex-start; }
+  .opt-list > label > input[type="checkbox"] { margin-top: 2px; }
+  .opt-list > label > .muted { margin-left: 0; text-align: left; display: block; }
+  .opt-list > label { flex-wrap: wrap; }
+}
+
 .help {
   width: 16px; height: 16px; flex: none; padding: 0;
   margin: 0 0 0 5px; vertical-align: -2px;
@@ -633,3 +768,95 @@ label > .help, .sw-txt > .help { vertical-align: -2px; }
 }
 .help-tip.on { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .help-tip { transition: none; } }
+
+/* ============================================================
+ * 自动盘点（GLPI Agent）页
+ * 只补这一页要用的东西，配色全部沿用上面的变量，不引入新色。
+ * ============================================================ */
+
+/* 顶上四张数字卡 */
+.agent-stats {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px; margin-bottom: 16px;
+}
+.agent-stat {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px 16px;
+}
+.agent-stat .as-v { font-size: 26px; font-weight: 650; letter-spacing: -.02em; line-height: 1.1; }
+.agent-stat .as-l { font-size: 13px; color: var(--text-2); margin-top: 4px; }
+.agent-stat .as-h { font-size: 12px; color: var(--text-3); margin-top: 6px; line-height: 1.5; }
+.agent-stat.warn { border-color: var(--amber-border); background: var(--amber-soft); }
+.agent-stat.warn .as-v { color: var(--amber); }
+.agent-stat.ok { border-color: var(--green-border); background: var(--green-soft); }
+.agent-stat.ok .as-v { color: var(--green); }
+
+/* 页签上的数字小标 */
+.tab-num {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 5px;
+  background: var(--primary); color: #fff; border-radius: 9px;
+  font-size: 11px; line-height: 18px; text-align: center; vertical-align: 1px;
+}
+
+/* 卡片标题行：左标题右筛选 */
+.card-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.agent-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mini {
+  height: 32px; padding: 0 10px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--card); color: var(--text);
+}
+.mini:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); }
+
+/* 认领弹窗里的推荐列表 */
+.agent-cands { display: flex; flex-direction: column; gap: 8px; }
+.agent-cand {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center;
+  text-align: left; width: 100%; cursor: pointer;
+  padding: 10px 12px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font: inherit; color: inherit;
+}
+.agent-cand:hover { border-color: var(--primary); background: var(--primary-soft); }
+.agent-cand .ac-main { font-size: 13.5px; }
+.agent-cand .ac-sub { grid-column: 1 / 2; font-size: 12px; color: var(--text-3); }
+.agent-cand .ac-go { grid-row: 1 / 3; grid-column: 2; color: var(--primary); font-size: 13px; font-weight: 600; }
+
+/* 认领弹窗顶部的机器摘要 */
+.agent-summary {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px;
+  padding: 12px 14px; background: var(--surface-2);
+  border: 1px solid var(--border-soft); border-radius: var(--radius-md);
+}
+.agent-summary .k { display: block; font-size: 11.5px; color: var(--text-3); }
+.agent-summary .v { display: block; font-size: 13px; margin-top: 1px; word-break: break-all; }
+
+/* 一行命令 / 一串令牌的展示框 */
+.copy-box {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.7;
+  padding: 10px 12px; margin: 8px 0 0;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap; word-break: break-all;
+  user-select: all;
+}
+
+/* 弹窗里的提醒条（admin.css 原本没有 notice，这页自己补一个，配色沿用 warn 变量） */
+.notice {
+  padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.65;
+  background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text);
+  margin-bottom: 12px;
+}
+.notice.warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
+
+@media (max-width: 980px) {
+  .agent-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .agent-stats { grid-template-columns: 1fr; }
+  .agent-summary { grid-template-columns: 1fr; }
+}

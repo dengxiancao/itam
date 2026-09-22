@@ -23,6 +23,15 @@ import { exportDevices, buildTemplate, previewImport, importDevices, importBatch
 import { recognize, ocrStatus } from './lib/ocr.js';
 import { interpret } from './lib/recognize.js';
 import { qrcodeSvg } from './lib/qrcode.js';
+import { decodeQR } from './lib/qrdecode.js';
+import { decodeBarcode } from './lib/bardecode.js';
+import {
+  decodeAgentBody, parseBasicAuth, parseProlog, contactAnswer,
+  tokenVerify, tokenCreate, tokenList, tokenSetEnabled, tokenDelete,
+  ingest, logReport as logAgentReport, machineList as agentMachineList, machineGet as agentMachineGet,
+  machineReports as agentMachineReports, reportList as agentReportList, monitorList as agentMonitorList,
+  stats as agentStats, matchCandidates as agentMatchCandidates,
+} from './lib/agent.js';
 import { readBody, readJson, parseMultipart, mimeOf, extOf } from './lib/http-util.js';
 import {
   ensureAdminUser, authenticate, verifyPassword, signSession, setSessionCookie, clearSessionCookie,
@@ -46,6 +55,9 @@ const ENABLE_HTTP = process.env.DISABLE_HTTP !== '1';
 
 /** 一次最多收多少照片数据（原图 + 压缩图 + 缩略图一起） */
 const MAX_PHOTO_BYTES = 48 * 1024 * 1024;
+
+/** 一帧灰度图最多多大（服务端兜底扫码用）。1100×1100 = 1.16 MB，留一倍余量 */
+const MAX_SCAN_BYTES = 4 * 1024 * 1024;
 
 /**
  * 把内存里的图片写到 data/uploads/<日期>/<uuid>.<ext>，返回可访问的相对路径。
@@ -112,12 +124,183 @@ const PUBLIC_API = new Set([
   '/health', '/auth/status', '/auth/login', '/auth/register', '/auth/config',
   '/live/manifest.json', '/live/manifest.txt', '/live/devices.csv', '/live/devices.html',
   '/live/workbook.html',   // 用 token 鉴权，供 Excel/WPS 直连
+  '/agent',                // GLPI Agent 上报纸质：走 HTTP Basic 令牌，没有会话 Cookie
 ]);
 const PUBLIC_FILES = [/^\/login(\.html)?$/, /^\/register(\.html)?$/, /^\/assets\//, /^\/favicon\.ico$/];
+
+/**
+ * GLPI Agent 可能被配成好几种地址，这里全都收：
+ *   /api/agent                  我们文档里推荐的
+ *   /front/inventory.php        GLPI 官方的默认地址（照抄官方文档的人会填这个）
+ *   /inventory.php              老版本文档里的写法
+ *   POST /                      只填了主机名的配置（agent 会把盘点发到根路径）
+ * 最后一条只在「带了 GLPI-Agent-ID 头」时才认，浏览器请求绝不会被它截走。
+ */
+const AGENT_PATHS = new Set(['/api/agent', '/api/agent/inventory', '/api/agent/ca', '/front/inventory.php', '/inventory.php']);
+
+function isAgentRequest(p, method, req) {
+  if (AGENT_PATHS.has(p)) return true;
+  if (method === 'POST' && (p === '/' || p === '/index.php') && req.headers['glpi-agent-id']) return true;
+  return false;
+}
+
+/** 一次最多收多少 agent 上报数据（未压缩；实测最大的机器带完整软件列表约 1.2MB） */
+const MAX_AGENT_BYTES = 16 * 1024 * 1024;
 
 function isPublicPath(p) {
   if (p.startsWith('/api/')) return PUBLIC_API.has(p.slice(4));
   return PUBLIC_FILES.some((re) => re.test(p));
+}
+
+/**
+ * GLPI Agent 的 HTTP 入口。
+ *
+ * 和本站其它接口有两点根本不同，所以应答必须自己写：
+ *   ① 认证走 HTTP Basic 里的**上报令牌**，不是会话 Cookie（agent 拿不到 Cookie）；
+ *   ② 应答体必须是**裸 JSON**，如 {"status":"ok","expiration":24}。
+ *      套上我们那个 {ok:true,data:...} 包装的话，agent 读不到 status 就当你没回话。
+ *
+ * 协议来自 https://github.com/glpi-project/json-protocol（公开文档），
+ * 三个动作都要认：CONTACT（打招呼）、INVENTORY（交盘点）、REGISTER（注册）。
+ */
+async function handleAgent(req, res, { ip, method = 'POST', path: p = '/api/agent' }) {
+  const agentId = String(req.headers['glpi-agent-id'] || '').trim();
+  const reqId = req.headers['glpi-request-id'];
+
+  /*
+   * CA 证书下载（给安装脚本用）。
+   * 走 HTTPS + 自签证书的机器，agent 必须知道我们的 CA 才不会拒绝连接；
+   * 安装脚本就从这个地址把 ca.pem 拉过去，省得人工拷贝文件。
+   * 证书是**公开信息**（本来就发给每一个连上来的客户端），所以这里不需要令牌。
+   */
+  if (method === 'GET' && /\/ca$/.test(p)) {
+    try {
+      const pem = fs.readFileSync(path.join(CERT_DIR, 'ca.pem'), 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'application/x-pem-file; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="itam-ca.pem"',
+        'Cache-Control': 'public, max-age=3600',
+      });
+      res.end(pem);
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status: 'error', message: 'no-ca' }));
+    }
+    return undefined;
+  }
+
+  const respond = (status, body) => {
+    const headers = {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    };
+    // 协议规定：服务端要把 agent 的 id 回写（代理场景靠它路由回话）
+    if (agentId) headers['GLPI-Agent-ID'] = agentId;
+    if (reqId) headers['GLPI-Request-ID'] = reqId;
+    res.writeHead(status, headers);
+    res.end(JSON.stringify(body));
+  };
+
+  /* ---- 令牌 ---- */
+  let token = null;
+  try {
+    const auth = parseBasicAuth(req.headers.authorization);
+    token = tokenVerify(auth?.user, auth?.pass, { ip });
+  } catch (e) {
+    logger.warn(`agent 令牌校验异常：${e.message}`);
+  }
+  if (!token) {
+    logAgentReport({ deviceid: agentId, action: 'auth', ip, result: 'error', message: '令牌无效或未配置' });
+    audit({ actor: 'agent', ip, method: req.method, path: '/api/agent', action: 'agent.auth', detail: '令牌无效', status: 401 });
+    return respond(401, { status: 'error', message: 'forbidden' });
+  }
+
+  /* ---- 收体 ---- */
+  let raw;
+  try {
+    raw = await readBody(req, MAX_AGENT_BYTES);
+  } catch (e) {
+    logAgentReport({ deviceid: agentId, action: 'read', ip, token_id: token.id, token_name: token.name, result: 'error', message: e.message });
+    return respond(e.status || 400, { status: 'error', message: 'bad-request' });
+  }
+
+  const { text, format } = decodeAgentBody(raw, req.headers['content-type'], req.headers['content-encoding']);
+  const base = { deviceid: agentId, ip, bytes: raw.length, format, token_id: token.id, token_name: token.name };
+
+  /* ---- 老式 PROLOG（GLPI 9 时代 FusionInventory 的 XML 招呼）----
+     只认得出「这是招呼」就够：协议明确说，只要看到 GLPI-Agent-ID 头，
+     就应该用新的 JSON 协议回答。 */
+  const prolog = parseProlog(text);
+  if (prolog) {
+    logAgentReport({ ...base, deviceid: prolog.deviceid || agentId, action: 'prolog', result: 'ok' });
+    return respond(200, contactAnswer());
+  }
+
+  let payload = null;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    logAgentReport({ ...base, action: 'parse', result: 'error', message: 'malformed json', message_head: text.slice(0, 80) });
+    return respond(400, { status: 'error', message: 'malformed json' });
+  }
+  if (!payload || typeof payload !== 'object') {
+    logAgentReport({ ...base, action: 'parse', result: 'error', message: 'not an object' });
+    return respond(400, { status: 'error', message: 'malformed json' });
+  }
+
+  const action = String(payload.action || (payload.content ? 'inventory' : 'contact')).toLowerCase();
+  const agentName = str(payload.name, 60) || null;
+  const agentVersion = str(payload.version, 40) || null;
+  const dev = str(payload.deviceid, 120) || agentId || null;
+  const versionclient = str(payload?.content?.versionclient, 60) || null;
+
+  /* ---- ① CONTACT：告诉它用哪套协议、多久再来 ---- */
+  if (action === 'contact') {
+    logAgentReport({ ...base, deviceid: dev, action, result: 'ok', agent_name: agentName, agent_version: agentVersion });
+    return respond(200, contactAnswer());
+  }
+
+  /* ---- ② REGISTER：agent 注册。我们靠令牌鉴权，认同即可 ---- */
+  if (action === 'register') {
+    logAgentReport({ ...base, deviceid: dev, action, result: 'ok', agent_name: agentName, agent_version: agentVersion });
+    return respond(200, { status: 'registered', expiration: '30d' });
+  }
+
+  /* ---- ③ INVENTORY：正式交盘点 ---- */
+  if (action === 'inventory') {
+    try {
+      // 上报日志由 ingest() 自己写（成功那条），这里只管业务
+      const r = ingest(payload, {
+        agentName: agentName || versionclient, agentVersion, ip,
+        bytes: raw.length, format, token_id: token.id, token_name: token.name,
+      });
+      audit({
+        actor: `agent:${token.name}`, ip, method: req.method, path: '/api/agent', action: 'agent.inventory',
+        detail: `${r.machine?.hostname || dev} sn=${r.machine?.sn || '-'} ${r.partial ? '部分' : '全量'}(${r.sections.length}段)`,
+        status: 200,
+      });
+      // 认领过的机器：顺势把盘点结果同步进台账（只填空字段 + 刷新 MAC/IP/系统等）
+      if (r.machine?.claimed_device_id) {
+        try { svc.agentSyncMachine(r.machine.id, 'agent'); } catch (e) { logger.warn(`agent 同步台账失败：${e.message}`); }
+      }
+      return respond(200, { status: 'ok', expiration: 24 });
+    } catch (e) {
+      logAgentReport({ ...base, deviceid: dev, action, result: 'error', message: e.message });
+      return respond(e.status || 400, { status: 'error', message: e.agentError || 'bad-format' });
+    }
+  }
+
+  /* ---- 其它动作（netdiscovery / netinventory / deploy / collect ...）----
+     我们只做电脑盘点。网络扫描那几种的 content 结构完全不同，
+     硬塞进来只会造出一堆空字段的垃圾记录，所以明确回绝：
+     agent 会记一条「服务端不支持该任务」，不会反复重试。 */
+  logAgentReport({ ...base, deviceid: dev, action, result: 'error', message: 'unsupported action' });
+  return respond(200, {
+    status: 'ok',
+    expiration: 24,
+    message: `ITAM 只支持 inventory 任务，已忽略 ${action}`,
+  });
 }
 
 function isSecureReq(req) {
@@ -138,6 +321,11 @@ async function handle(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+
+  // ---------- GLPI Agent 上报（不走会话，走 Basic 令牌，应答格式也不是我们的 {ok,data} 包装） ----------
+  if (isAgentRequest(p, method, req)) {
+    return handleAgent(req, res, { ip, method, path: p });
+  }
 
   const user = authenticate(req);
   const session = user ? { u: user.username, uid: user.id, role: user.role } : null;
@@ -517,7 +705,15 @@ async function routeApi(ctx) {
     if (method === 'POST' && seg[1] === 'bulk') {
       const body = await readJson(req);
       require(body.action === 'delete' ? 'device.delete' : 'device.write');
-      const r = svc.deviceBulk(body.ids, body.action, body.payload || {}, actor);
+      // 前端有两种传法：
+      //   ids:[...]                        —— 逐台勾选（可现在跨页，所以可能远超一页 20 条）
+      //   all_matching:true + query:{...}  —— 勾了「选中当前筛选下的全部 N 台」，只传筛选条件
+      // 后者在这里展开成真实 id：前端不必存几万个 uuid，且以「执行那一刻」的筛选结果为准。
+      // ⚠️ 展开后的条数校验在 deviceBulk / deviceIdsByQuery 里，别在这里各判一次（口径会分叉）。
+      const ids = body.all_matching
+        ? svc.deviceIdsByQuery(body.query || {})
+        : body.ids;
+      const r = svc.deviceBulk(ids, body.action, body.payload || {}, actor);
       audit({ actor, ip, method, path: url.pathname, action: `device.bulk.${body.action}`, detail: `${r.ok} 成功 / ${r.failed} 失败`, status: 200 });
       return r;
     }
@@ -687,6 +883,168 @@ async function routeApi(ctx) {
     };
   }
 
+  /* ---------------- 自动盘点（GLPI Agent）管理端接口 ----------------
+     ⚠️ 注意：agent 自己用的上报入口是 handleAgent()，不走这里
+        （认证方式和应答格式都不同）。这里只服务管理端页面。 */
+  if (route === '/agent/overview') {
+    require('device.read');
+    return {
+      stats: agentStats(),
+      tokens: agentTokenSafeList(),
+      endpoint: `${linkBaseOf(req)}/api/agent`,
+      endpoint_lan: `http://${localIPs()[0] || '127.0.0.1'}:${PORT}/api/agent`,
+      ca_fingerprint: caFingerprintOf(),
+      max_bytes: MAX_AGENT_BYTES,
+    };
+  }
+
+  if (route === '/agent/tokens' && method === 'GET') {
+    require('device.read');
+    return agentTokenSafeList();
+  }
+
+  if (route === '/agent/tokens' && method === 'POST') {
+    require('settings.write');
+    const body = await readJson(req);
+    const r = tokenCreate({ name: body.name, note: body.note, createdBy: actor });
+    audit({ actor, ip, method, path: url.pathname, action: 'agent.token.create', detail: r.name, status: 200 });
+    return r;   // ⚠️ 明文令牌只在这里出现这一次，之后库里只有哈希
+  }
+
+  if (seg[0] === 'agent' && seg[1] === 'tokens' && seg[2] && method === 'PATCH') {
+    require('settings.write');
+    const body = await readJson(req);
+    tokenSetEnabled(seg[2], body.enabled !== false);
+    return { ok: true };
+  }
+
+  if (seg[0] === 'agent' && seg[1] === 'tokens' && seg[2] && method === 'DELETE') {
+    require('settings.write');
+    tokenDelete(seg[2]);
+    audit({ actor, ip, method, path: url.pathname, action: 'agent.token.delete', detail: seg[2], status: 200 });
+    return { ok: true };
+  }
+
+  if (route === '/agent/machines' && method === 'GET') {
+    require('device.read');
+    return agentMachineList({
+      q: str(q.q, 80), only: str(q.only, 20),
+      page: Number(q.page) || 1, page_size: Number(q.page_size) || 50,
+    });
+  }
+
+  if (seg[0] === 'agent' && seg[1] === 'machines' && seg[2]) {
+    require('device.read');
+    const m = agentMachineGet(seg[2]);
+    if (!m) throw new HttpError(404, '自动盘点记录不存在');
+    // agentMachineGet 已经带齐 sn / sn_alt / uuid / hostname，正好是认领推荐要用的
+    const full = m;
+
+    if (seg[3] === 'reports') return agentMachineReports(m.deviceid, Number(q.limit) || 50);
+    if (seg[3] === 'candidates') return agentMatchCandidates(full);
+    if (seg[3] === 'claim' && method === 'POST') {
+      require('device.write');
+      const body = await readJson(req);
+      const r = svc.agentClaimMachine(seg[2], { deviceId: body.device_id || null, actor, create: body.create || {} });
+      audit({ actor, ip, method, path: url.pathname, action: 'agent.claim', detail: `${m.hostname || m.deviceid} → ${r.device.asset_no}`, status: 200 });
+      return r;
+    }
+    if (seg[3] === 'unclaim' && method === 'POST') {
+      require('device.write');
+      return svc.agentUnclaimMachine(seg[2], actor);
+    }
+    if (seg[3] === 'sync' && method === 'POST') {
+      require('device.write');
+      const body = await readJson(req);
+      if (body.auto_sync !== undefined) svc.agentSetSync(seg[2], body.auto_sync !== false);
+      return svc.agentSyncMachine(seg[2], actor);
+    }
+    if (seg[3] === 'delete' && method === 'POST') {
+      require('device.delete');
+      svc.agentDeleteMachine(seg[2]);
+      audit({ actor, ip, method, path: url.pathname, action: 'agent.machine.delete', detail: m.hostname || seg[2], status: 200 });
+      return { ok: true };
+    }
+    if (!seg[3] && method === 'GET') {
+      return { machine: full, monitors: agentMonitorList({ machineId: seg[2] }), candidates: agentMatchCandidates(full) };
+    }
+  }
+
+  if (route === '/agent/monitors' && method === 'GET') {
+    require('device.read');
+    return agentMonitorList({ only: str(q.only, 20) });
+  }
+
+  if (seg[0] === 'agent' && seg[1] === 'monitors' && seg[2]) {
+    require('device.read');
+    if (seg[3] === 'candidates') return svc.agentMonitorCandidates(seg[2]);
+    if (seg[3] === 'claim' && method === 'POST') {
+      require('device.write');
+      const body = await readJson(req);
+      const r = svc.agentClaimMonitor(seg[2], { deviceId: body.device_id || null, actor, create: body.create || {} });
+      audit({ actor, ip, method, path: url.pathname, action: 'agent.monitor.claim', detail: r.device.asset_no, status: 200 });
+      return r;
+    }
+    if (seg[3] === 'unclaim' && method === 'POST') {
+      require('device.write');
+      return svc.agentUnclaimMonitor(seg[2]);
+    }
+  }
+
+  if (route === '/agent/reports' && method === 'GET') {
+    require('device.read');
+    return agentReportList({ page: Number(q.page) || 1, page_size: Number(q.page_size) || 50, only_error: q.only === 'error' });
+  }
+
+  /* ---------------- 二维码兜底解码 ---------------- */
+  /*
+   * 为什么要有这个接口：
+   *   手机浏览器自带的 BarcodeDetector 在「对着显示器拍」时经常解不出来
+   *   （摩尔纹 + 视频压缩 + 浏览器内部缩放），iPhone 的 Safari 更是压根没有这个 API。
+   *   前端在浏览器解不出来时，把这一帧转成灰度图发上来，由服务端纯 JS 解码器兜底。
+   *
+   * 协议：POST /api/scan?w=<宽>&h=<高>，body 是 w*h 字节的灰度像素（0 黑 255 白，行优先）。
+   *   故意不用 base64/JSON —— 一帧 900×900 就是 81 万字节，base64 要多背 33% 还多一次编解码。
+   *
+   * 可选查询参数 `kind=qr|bar`（默认 qr）：决定走哪个解码器。
+   *   二维码走 qrdecode.js（定位图案 + 纠错），一维码走 bardecode.js（逐行扫条空）。
+   *   两者算法完全不同，**不能互相顶替** —— 拿二维码解码器去解条码只会白跑一遍。
+   */
+  if (route === '/scan' && method === 'POST') {
+    require('device.read');
+    const w = Number(q.w);
+    const h = Number(q.h);
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 8 || h < 8 || w > 4000 || h > 4000) {
+      throw new HttpError(400, '缺少合法的 w / h 查询参数（灰度图宽高）');
+    }
+    const kind = q.kind === 'bar' ? 'bar' : 'qr';
+    const bytes = w * h;
+    const raw = await readBody(req, Math.min(MAX_SCAN_BYTES, bytes + 1024));
+    if (raw.length < bytes) throw new HttpError(400, `灰度数据不足：需要 ${bytes} 字节，收到 ${raw.length}`);
+    const gray = new Uint8Array(raw.buffer, raw.byteOffset, bytes);
+    const t0 = Date.now();
+    let hit = null;
+    try {
+      // ⚠️ 一维条码的返回形状要和二维码对齐（都带 text），前端只认 `text`。
+      //    bardecode 给的是 { text, format, row }，这里补一个 version:null 保持字段一致。
+      hit = kind === 'bar' ? decodeBarcode(gray, w, h) : decodeQR(gray, w, h);
+    } catch (e) {
+      // 解码器再怎么失手也不能把接口打成 500：扫码失败 = 没扫到，让前端提示重扫
+      hit = null;
+      audit({ actor, ip, method, path: url.pathname, action: 'scan.error', detail: String(e && e.message || e), status: 200 });
+    }
+    const elapsed = Date.now() - t0;
+    audit({ actor, ip, method, path: url.pathname, action: 'scan.decode', detail: `${kind} ${w}x${h} ${hit ? '命中 ' + hit.text : '未命中'} ${elapsed}ms`, status: 200 });
+    return {
+      ok: !!hit,
+      text: hit ? hit.text : null,
+      kind,
+      format: hit ? (hit.format || 'qr_code') : null,
+      version: hit ? (hit.version ?? null) : null,
+      elapsed,
+    };
+  }
+
   if (route === '/ocr/status') { require('device.read'); return ocrStatus(); }
 
   if (route === '/ocr/test' && method === 'POST') {
@@ -846,14 +1204,14 @@ async function routeApi(ctx) {
   if (seg[0] === 'excel') {
     if (route === '/excel/template' && method === 'GET') {
       require('excel.export');
-      const { buffer, filename } = buildTemplate();
+      const { buffer, filename } = await buildTemplate();
       return download(res, buffer, filename);
     }
     if (route === '/excel/export' && method === 'GET') {
       require('excel.export');
       // ids 用逗号分隔：只导出这几台（「导出所选」）
       const ids = String(q.ids || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 5000);
-      const { buffer, filename, count, sheets, photos } = exportDevices({
+      const { buffer, filename, count, sheets, photos } = await exportDevices({
         keyword: q.keyword, category_id: q.category_id, org_id: q.org_id,
         status: q.status, brand: q.brand, owner: q.owner,
         supplier: q.supplier,
@@ -1032,6 +1390,22 @@ function download(res, buffer, filename) {
 /* ================================================================== *
  * 启动
  * ================================================================== */
+/**
+ * 上报令牌列表 —— ⚠️ 绝不返回 token_hash。
+ * 界面上只需要「是哪一个」（prefix）和「什么时候用过」，哈希给了也没用、泄了更糟。
+ */
+function agentTokenSafeList() {
+  return tokenList().map((t) => ({ ...t, token_hash: undefined }));
+}
+
+/** CA 证书指纹：给 agent 配 ssl-fingerprint 用（比 no-ssl-check 安全） */
+function caFingerprintOf() {
+  try {
+    const pem = fs.readFileSync(path.join(CERT_DIR, 'ca.pem'), 'utf8');
+    return new crypto.X509Certificate(pem).fingerprint256;
+  } catch { return null; }
+}
+
 function baseUrlOf(req) {
   const proto = req.socket.encrypted ? 'https' : 'http';
   // 用客户端实际访问的 Host（含端口），这样经隧道/反代访问时链接也是对的

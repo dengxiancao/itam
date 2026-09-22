@@ -309,7 +309,7 @@ function safeSheetNames(names) {
  *   baseUrl   拼接照片链接用的地址前缀（不传则链接留空）
  *   embedPhotos 是否把缩略图嵌进 Excel（默认 true，可在系统设置里关）
  */
-export function exportDevices(query = {}, {
+export async function exportDevices(query = {}, {
   withHelp = true, limit = 50000, split = false, baseUrl = '', embedPhotos = true,
 } = {}) {
   const raw = collectRows(query, limit);
@@ -397,7 +397,7 @@ export function exportDevices(query = {}, {
 
   const suffix = split ? '（分类分表）' : '';
   return {
-    buffer: buildXlsx({ sheets, title: 'IT 资产设备台账' }),
+    buffer: await buildXlsx({ sheets, title: 'IT 资产设备台账' }),
     filename: `IT资产台账${suffix}_${new Date().toISOString().slice(0, 10)}.xlsx`,
     count: data.length,
     sheets: sheets.length,
@@ -599,7 +599,7 @@ export function liveManifest(baseUrl, query = {}) {
 }
 
 /** 生成导入模板（含下拉、字段说明、字典页） */
-export function buildTemplate() {
+export async function buildTemplate() {
   const columns = allColumns();
 
   // 主表不放任何示例数据行，避免被误当成真实数据导入（示例统一放到「填写示例」页）
@@ -637,7 +637,7 @@ export function buildTemplate() {
   const sheets = [mainSheet, sampleSheet(cols), ...helpSheets()];
 
   return {
-    buffer: buildXlsx({ sheets, title: 'IT 资产导入模板' }),
+    buffer: await buildXlsx({ sheets, title: 'IT 资产导入模板' }),
     filename: `IT资产导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`,
   };
 }

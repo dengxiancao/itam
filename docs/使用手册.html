@@ -456,7 +456,7 @@ tbody tr:hover { background: #f8fafc; }
 </table></div>
 <p>例如显示器那张表的列尾就是：</p>
 <pre><code>… 分辨率 | 接口类型 | 照片 | 照片链接</code></pre>
-<blockquote><p>🔗 <strong>链接地址是「大家都能打开」的那个</strong>：即使你是在服务器本机用 <code>127.0.0.1</code> 打开后台导出的，</p><p>链接也会自动写成<strong>局域网 IP</strong>（如 <code>http://192.168.110.138:8080/...</code>），换台电脑照样打得开。</p><p>想固定成某个地址（比如公网域名），去 <strong>系统设置 → 企业信息 → 外部访问地址</strong> 填一下即可。</p></blockquote>
+<blockquote><p>🔗 <strong>链接地址是「大家都能打开」的那个</strong>：即使你是在服务器本机用 <code>127.0.0.1</code> 打开后台导出的，</p><p>链接也会自动写成<strong>局域网 IP</strong>（如 <code>http://192.168.1.100:8080/...</code>），换台电脑照样打得开。</p><p>想固定成某个地址（比如公网域名），去 <strong>系统设置 → 企业信息 → 外部访问地址</strong> 填一下即可。</p></blockquote>
 <blockquote><p>💡 行高会自动撑大让图放得下。如果设备很多导致文件偏大，点 <strong>不含照片</strong> 即可。</p></blockquote>
 <h4 id="导出的文件太大-下载很慢">导出的文件太大 / 下载很慢？<a class="anchor" href="#导出的文件太大-下载很慢">#</a></h4>
 <p>早期录入的设备（缩略图功能上线之前）只有一张 1600px 的大图，每张约 150 KB，几十台就是好几 MB。</p>
@@ -606,14 +606,14 @@ tbody tr:hover { background: #f8fafc; }
 <p>把项目里的 <code>scripts\install-glpi-agent.ps1</code> 拷到目标电脑（或用共享目录）， <strong>用管理员身份的 PowerShell</strong> 执行：</p>
 <p><strong>局域网内的电脑（绝大多数，推荐）</strong></p>
 <pre><code>powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 `
-  -Server &quot;http://192.168.110.138:8080/api/agent&quot; -Token &quot;你的令牌&quot;</code></pre>
+  -Server &quot;http://192.168.1.100:8080/api/agent&quot; -Token &quot;你的令牌&quot;</code></pre>
 <p><strong>要带回家的笔记本（走公网穿透）</strong></p>
 <pre><code>powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 `
-  -Server &quot;https://itam.dengxc.cloud:40259/api/agent&quot; -Token &quot;你的令牌&quot; -UsePublic</code></pre>
+  -Server &quot;https://itam.example.com:12345/api/agent&quot; -Token &quot;你的令牌&quot; -UsePublic</code></pre>
 <p>加了 <code>-UsePublic</code> 后，脚本会<strong>自动从服务器把 CA 证书拉下来</strong>配好（<code>/api/agent/ca</code>）， 所以 <strong>TLS 校验照常开着</strong>，不需要用 <code>no-ssl-check</code> 那种关掉校验的将就办法。</p>
 <p><strong>这台电脑没有外网</strong>（先把 MSI 拷过去）</p>
 <pre><code>powershell -ExecutionPolicy Bypass -File install-glpi-agent.ps1 `
-  -Server &quot;http://192.168.110.138:8080/api/agent&quot; -Token &quot;你的令牌&quot; `
+  -Server &quot;http://192.168.1.100:8080/api/agent&quot; -Token &quot;你的令牌&quot; `
   -MsiPath &quot;D:\GLPI-Agent-1.19-x64.msi&quot;</code></pre>
 <p>脚本会：下载官方 MSI（22MB）→ 静默安装成 Windows 服务 → 写入服务器地址与令牌 → 重启服务 → <strong>立刻做一次盘点</strong>（不用等定时任务）。全程约 1~2 分钟。</p>
 <p>装完屏幕上会打印下一步去哪儿看：<strong>自动盘点 → 待认领机器</strong>。</p>
@@ -654,7 +654,7 @@ tbody tr:hover { background: #f8fafc; }
 <h3 id="76-隧道-内网穿透环境下要注意什么">7.6 隧道 / 内网穿透环境下要注意什么<a class="anchor" href="#76-隧道-内网穿透环境下要注意什么">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>机器在哪</th><th>用哪个地址</th><th>为什么</th></tr></thead>
-<tbody><tr><td><strong>公司局域网内</strong></td><td><code>http://192.168.110.138:8080/api/agent</code></td><td>直连，不碰证书、不占穿透流量</td></tr><tr><td><strong>要带回家的笔记本</strong></td><td><code>https://itam.dengxc.cloud:40259/api/agent</code></td><td>在家里也连得上；脚本会自动配好 CA 证书</td></tr></tbody>
+<tbody><tr><td><strong>公司局域网内</strong></td><td><code>http://192.168.1.100:8080/api/agent</code></td><td>直连，不碰证书、不占穿透流量</td></tr><tr><td><strong>要带回家的笔记本</strong></td><td><code>https://itam.example.com:12345/api/agent</code></td><td>在家里也连得上；脚本会自动配好 CA 证书</td></tr></tbody>
 </table></div>
 <p>几条容易踩的：</p>
 <ul>
@@ -672,12 +672,12 @@ tbody tr:hover { background: #f8fafc; }
 <h3 id="77-出问题怎么查">7.7 出问题怎么查<a class="anchor" href="#77-出问题怎么查">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>现象</th><th>去哪里看</th></tr></thead>
-<tbody><tr><td>「待认领」里一直没东西</td><td>管理端 <strong>自动盘点 → 上报历史</strong>，看有没有记录。一条都没有 = 网络或地址不对</td></tr><tr><td>上报历史里一堆「鉴权」失败</td><td>令牌不对或被停用了。重新生成一个，用脚本重装（或改注册表）</td></tr><tr><td>上报历史里显示「解析」失败</td><td>报文格式不对，把 agent 日志发我</td></tr><tr><td>想直接看 agent 在干什么</td><td>agent 电脑上：<code>C:\Program Files\GLPI-Agent\logs\glpi-agent.log</code>，或运行 <code>&amp; &quot;C:\Program Files\GLPI-Agent\glpi-agent.bat&quot; --force --debug</code></td></tr><tr><td>想手工验证通道通不通</td><td>浏览器打开 <code>http://192.168.110.138:8080/api/health</code>，能出 JSON 就说明网络没问题</td></tr><tr><td>手边没有 agent 也想测</td><td>agent 电脑上跑 <code>glpi-agent --local - --json</code>，会把盘点直接打到屏幕上</td></tr></tbody>
+<tbody><tr><td>「待认领」里一直没东西</td><td>管理端 <strong>自动盘点 → 上报历史</strong>，看有没有记录。一条都没有 = 网络或地址不对</td></tr><tr><td>上报历史里一堆「鉴权」失败</td><td>令牌不对或被停用了。重新生成一个，用脚本重装（或改注册表）</td></tr><tr><td>上报历史里显示「解析」失败</td><td>报文格式不对，把 agent 日志发我</td></tr><tr><td>想直接看 agent 在干什么</td><td>agent 电脑上：<code>C:\Program Files\GLPI-Agent\logs\glpi-agent.log</code>，或运行 <code>&amp; &quot;C:\Program Files\GLPI-Agent\glpi-agent.bat&quot; --force --debug</code></td></tr><tr><td>想手工验证通道通不通</td><td>浏览器打开 <code>http://192.168.1.100:8080/api/health</code>，能出 JSON 就说明网络没问题</td></tr><tr><td>手边没有 agent 也想测</td><td>agent 电脑上跑 <code>glpi-agent --local - --json</code>，会把盘点直接打到屏幕上</td></tr></tbody>
 </table></div>
 <p><strong>服务器侧的关键信息</strong>（安装指引页签里也有一份）：</p>
 <div class="tw"><table>
 <thead><tr><th>项目</th><th>值</th></tr></thead>
-<tbody><tr><td>上报入口</td><td><code>http://192.168.110.138:8080/api/agent</code>（也认 <code>/front/inventory.php</code>，照抄 GLPI 官方文档配的人不会踩坑）</td></tr><tr><td>认证方式</td><td>HTTP Basic，用户名和密码都填令牌</td></tr><tr><td>单次上限</td><td>16 MB（未压缩）</td></tr><tr><td>支持的压缩</td><td>gzip / zlib(deflate) / brotli / 不压缩</td></tr><tr><td>CA 证书</td><td><code>http://192.168.110.138:8080/api/agent/ca</code>（公开，可匿名下载）</td></tr></tbody>
+<tbody><tr><td>上报入口</td><td><code>http://192.168.1.100:8080/api/agent</code>（也认 <code>/front/inventory.php</code>，照抄 GLPI 官方文档配的人不会踩坑）</td></tr><tr><td>认证方式</td><td>HTTP Basic，用户名和密码都填令牌</td></tr><tr><td>单次上限</td><td>16 MB（未压缩）</td></tr><tr><td>支持的压缩</td><td>gzip / zlib(deflate) / brotli / 不压缩</td></tr><tr><td>CA 证书</td><td><code>http://192.168.1.100:8080/api/agent/ca</code>（公开，可匿名下载）</td></tr></tbody>
 </table></div>
 <h3 id="78-只支持电脑盘点">7.8 只支持&quot;电脑盘点&quot;<a class="anchor" href="#78-只支持电脑盘点">#</a></h3>
 <p>本系统只处理 <code>inventory</code> 这个动作（也就是电脑/服务器盘点）。agent 的 <code>netdiscovery</code>（网络扫描发现）、<code>netinventory</code>（网络设备盘点）、<code>deploy</code>、<code>collect</code> 这几种任务的报文结构完全不同，硬塞进来只会造出一堆空字段的垃圾记录， 所以服务端会<strong>明确回绝并说明</strong>（回 2xx，避免 agent 反复重试）。</p>
@@ -726,7 +726,7 @@ tbody tr:hover { background: #f8fafc; }
 <h3 id="91-企业信息">9.1 企业信息<a class="anchor" href="#91-企业信息">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>项目</th><th>说明</th></tr></thead>
-<tbody><tr><td>企业名称</td><td>显示在右上角</td></tr><tr><td>资产编号格式</td><td>支持变量 <code>{PREFIX}</code> 分类前缀、<code>{YYYY}</code> 年份、<code>{SEQ:4}</code> 四位流水号</td></tr><tr><td>货币符号</td><td>默认 CNY</td></tr><tr><td><strong>设备供应商选项</strong></td><td>逗号分隔。会同步到设备表单、筛选、手机端和 Excel 模板的下拉</td></tr><tr><td><strong>外部访问地址</strong></td><td>导出 Excel 里照片链接用的地址。留空 = 自动（本机地址自动换成局域网 IP）；想固定成公网域名就填 <code>https://itam.dengxc.cloud:40259</code></td></tr><tr><td><strong>自助注册</strong></td><td>开关 + 是否需审核 + 注册默认角色</td></tr></tbody>
+<tbody><tr><td>企业名称</td><td>显示在右上角</td></tr><tr><td>资产编号格式</td><td>支持变量 <code>{PREFIX}</code> 分类前缀、<code>{YYYY}</code> 年份、<code>{SEQ:4}</code> 四位流水号</td></tr><tr><td>货币符号</td><td>默认 CNY</td></tr><tr><td><strong>设备供应商选项</strong></td><td>逗号分隔。会同步到设备表单、筛选、手机端和 Excel 模板的下拉</td></tr><tr><td><strong>外部访问地址</strong></td><td>导出 Excel 里照片链接用的地址。留空 = 自动（本机地址自动换成局域网 IP）；想固定成公网域名就填 <code>https://itam.example.com:12345</code></td></tr><tr><td><strong>自助注册</strong></td><td>开关 + 是否需审核 + 注册默认角色</td></tr></tbody>
 </table></div>
 <h3 id="911-照片归档">9.1.1 照片归档<a class="anchor" href="#911-照片归档">#</a></h3>
 <p>系统设置里的 <strong>📸 照片归档</strong> 卡片（默认全开，一般不用动）：</p>
@@ -737,7 +737,7 @@ tbody tr:hover { background: #f8fafc; }
 <h3 id="92-识别服务手机拍照识别用">9.2 识别服务（手机拍照识别用）<a class="anchor" href="#92-识别服务手机拍照识别用">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>项目</th><th>说明</th></tr></thead>
-<tbody><tr><td>服务提供商</td><td>视觉大模型 / 百度 OCR / 腾讯云 OCR / 阿里云 / 自定义 / 本地模拟</td></tr><tr><td>服务商预设</td><td>选一家自动填好地址与模型（推荐智谱 GLM-4.6V-Flash，免费）</td></tr><tr><td>API Key</td><td>服务商的密钥，保存后只显示为 <code>d484****mevK</code> 掩码</td></tr><tr><td>图片编码方式</td><td>一般选「自动」</td></tr><tr><td>置信度阈值</td><td>低于该值的识别结果会在手机端标红提示人工确认</td></tr><tr><td>🧪 测试识别</td><td>点一下验证密钥是否可用</td></tr></tbody>
+<tbody><tr><td>服务提供商</td><td>视觉大模型 / 百度 OCR / 腾讯云 OCR / 阿里云 / 自定义 / 本地模拟</td></tr><tr><td>服务商预设</td><td>选一家自动填好地址与模型（推荐智谱 GLM-4.6V-Flash，免费）</td></tr><tr><td>API Key</td><td>服务商的密钥，保存后只显示为 <code>abcd****wxyz</code> 掩码</td></tr><tr><td>图片编码方式</td><td>一般选「自动」</td></tr><tr><td>置信度阈值</td><td>低于该值的识别结果会在手机端标红提示人工确认</td></tr><tr><td>🧪 测试识别</td><td>点一下验证密钥是否可用</td></tr></tbody>
 </table></div>
 <h3 id="93-我的账号">9.3 我的账号<a class="anchor" href="#93-我的账号">#</a></h3>
 <p>查看自己的角色权限、修改姓名密码、查看登录记录。</p>
@@ -781,7 +781,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/20 17:26:48</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/22 16:17:16</div>
 </div>
 </body>
 </html>

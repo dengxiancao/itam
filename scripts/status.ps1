@@ -46,9 +46,13 @@ foreach ($n in 'SakuraFrpService', 'frpc', 'SakuraLauncher') {
 Write-Host '  (session 0 = runs without anyone logged in)' -ForegroundColor DarkGray
 
 Head 'Access URLs'
-Write-Host '  LAN     http://192.168.110.138:8080/'
-Write-Host '  Mobile  https://192.168.110.138:8443/m'
-Write-Host '  Public  https://itam.dengxc.cloud:40259/'
+$lanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+          Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '169.254.*' } |
+          Select-Object -First 1).IPAddress
+if (-not $lanIp) { $lanIp = 'localhost' }
+Write-Host ("  LAN     http://{0}:8080/" -f $lanIp)
+Write-Host ("  Mobile  https://{0}:8443/m" -f $lanIp)
+Write-Host '  Public  see the SakuraFrp tunnel log (or set "external access URL" in Settings)'
 
 Head 'Recent server log'
 $log = Join-Path $root 'logs\server.log'

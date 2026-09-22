@@ -377,7 +377,7 @@ function renderHomeLegacy() {
 /* ================= 入口 ================= */
 function httpsUrl() {
   // 把当前地址切换成 HTTPS + 8443 端口（手机调用摄像头必需）
-  const host = location.hostname || '192.168.110.138';
+  const host = location.hostname || 'localhost';
   return `https://${host}:8443/m`;
 }
 

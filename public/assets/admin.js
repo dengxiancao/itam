@@ -2341,7 +2341,7 @@ async function renderSettings() {
         <div class="field"><label>货币符号</label><input id="sCurrency" value="${esc(sys.currency || 'CNY')}"></div>
         <div class="field"><label>供应商选项${help('多个用逗号分隔。会同步到设备表单下拉、列表筛选、手机端和 Excel 导入模板。')}</label>
           <input id="sSuppliers" value="${esc((sys.suppliers || []).join(', '))}" placeholder="易点云, 小熊"></div>
-        <div class="field"><label>外部访问地址${help('导出的 Excel 可能拿到别的电脑上打开，里面的照片链接要用一个大家都访问得到的地址。\n例：http://192.168.110.138:8080（办公室）或 https://itam.dengxc.cloud:40259（公网）\n留空 = 自动，系统会把 127.0.0.1 换成局域网 IP。')}</label>
+        <div class="field"><label>外部访问地址${help('导出的 Excel 可能拿到别的电脑上打开，里面的照片链接要用一个大家都访问得到的地址。\n例：http://192.168.1.100:8080（办公室）或 https://itam.example.com:12345（公网）\n留空 = 自动，系统会把 127.0.0.1 换成局域网 IP。')}</label>
           <input id="sLinkBase" value="${esc(sys.link_base_url || '')}" placeholder="留空 = 自动"></div>
         <div class="field"><label>自助注册${help('内网自用建议保持关闭。\n开放时建议开启「需审核」，并把默认角色设为「只读」或「录入员」。')}</label>
           <div style="display:flex;flex-direction:column;gap:8px;margin-top:2px">
@@ -3193,8 +3193,13 @@ function agentGuideHTML() {
   const ov = state.agentOverview || {};
   const token = (ov.tokens || []).find((t) => t.enabled);
   const shown = token ? `${token.prefix}…（生成时复制的那串完整令牌）` : '<span style="color:var(--amber)">还没有启用中的令牌，先去「上报令牌」生成一个</span>';
-  const lanUrl = ov.endpoint_lan || 'http://192.168.110.138:8080/api/agent';
-  const pubUrl = 'https://itam.dengxc.cloud:40259/api/agent';
+  const lanUrl = ov.endpoint_lan || `${location.origin}/api/agent`;
+  // 公网入口来自后端（读「外部访问地址」设置）。没配就留空，下面的模板会提示去配置，
+  // 不再写死某个域名——否则用户换了域名，这里还显示旧地址。
+  const pubUrl = ov.endpoint_public || '';
+  const pubCell = pubUrl
+    ? `<span class="mono">${esc(pubUrl)}</span>`
+    : '<span style="color:var(--amber)">未配置 —— 去「系统设置 → 企业信息 → 外部访问地址」填公网地址</span>';
   return `
     <div class="card">
       <h3>① 先有个令牌</h3>
@@ -3213,7 +3218,7 @@ function agentGuideHTML() {
         <thead><tr><th>机器在哪</th><th>用哪个地址</th><th>要额外配什么</th></tr></thead>
         <tbody>
           <tr><td>公司局域网内（绝大多数）</td><td class="mono">${esc(lanUrl)}</td><td>不用，走 HTTP 不碰证书</td></tr>
-          <tr><td>要带回家的笔记本</td><td class="mono">${esc(pubUrl)}</td><td>装脚本时带上 <span class="mono">-UsePublic</span>，它会配好 CA 证书</td></tr>
+          <tr><td>要带回家的笔记本</td><td>${pubCell}</td><td>装脚本时带上 <span class="mono">-UsePublic</span>，它会配好 CA 证书</td></tr>
         </tbody>
       </table></div>
       <p class="muted" style="margin:8px 0 0">
@@ -3236,7 +3241,7 @@ function agentGuideHTML() {
       <dl class="kv">
         <dt>上报入口</dt><dd class="mono">${esc(ov.endpoint || '')}</dd>
         <dt>局域网入口</dt><dd class="mono">${esc(lanUrl)}</dd>
-        <dt>公网入口</dt><dd class="mono">${esc(pubUrl)}</dd>
+        <dt>公网入口</dt><dd>${pubCell}</dd>
         <dt>CA 证书指纹</dt><dd class="mono" style="font-size:11px;word-break:break-all">${esc(ov.ca_fingerprint || '—')}</dd>
         <dt>单次上限</dt><dd>${ov.max_bytes ? `${(ov.max_bytes / 1024 / 1024).toFixed(0)} MB` : '—'}</dd>
       </dl>

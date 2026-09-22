@@ -463,7 +463,7 @@ await check('资产二维码用短码：扫资产编号也能查到设备', asyn
   // 短码的二维码必须比网址码简单（模块少 = 好扫）
   const { qrcodeEncode } = await import('../server/lib/qrcode.js');
   const short = qrcodeEncode(dev.asset_no, 'M');
-  const url = qrcodeEncode(`http://192.168.110.138:8080/m/#/device/${dev.id}`, 'L');
+  const url = qrcodeEncode(`http://192.168.1.100:8080/m/#/device/${dev.id}`, 'L');
   if (short.size >= url.size) {
     throw new Error(`短码(${short.size}×${short.size}) 不该比网址码(${url.size}×${url.size}) 还复杂`);
   }

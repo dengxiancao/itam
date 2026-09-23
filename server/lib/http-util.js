@@ -65,6 +65,9 @@ export async function readJson(req, limit) {
  * 解析 multipart/form-data
  * @returns {{fields: Record<string,string>, files: Record<string,{filename:string, mime:string, data:Buffer}>}}
  */
+/** 一次 multipart 最多允许几段。正常表单最多十几段（image/original/thumb + 几个字段） */
+const MAX_PARTS = 64;
+
 export function parseMultipart(buf, contentType) {
   const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType || '');
   if (!m) throw Object.assign(new Error('缺少 multipart boundary'), { status: 400 });
@@ -79,6 +82,10 @@ export function parseMultipart(buf, contentType) {
   let idx = buf.indexOf(bBuf, 0);
   while (idx !== -1) {
     positions.push(idx);
+    // 段数超限直接拒，别把后面几百万次循环跑完再报错
+    if (positions.length > MAX_PARTS + 1) {
+      throw Object.assign(new Error(`multipart 分段过多（上限 ${MAX_PARTS} 段）`), { status: 400 });
+    }
     idx = buf.indexOf(bBuf, idx + bBuf.length);
   }
   if (positions.length < 2) throw Object.assign(new Error('multipart 数据不完整'), { status: 400 });
@@ -94,16 +101,25 @@ export function parseMultipart(buf, contentType) {
     else if (buf[end - 1] === 0x0a) end -= 1;
     if (end <= start) continue;
 
-    const headerEnd = buf.indexOf('\r\n\r\n', start);
-    const headerEndAlt = buf.indexOf('\n\n', start);
+    /*
+     * ⚠️ 只在本段范围内找头结束标记。
+     *
+     * 老写法是 `buf.indexOf('\r\n\r\n', start)` —— 它会在**整个请求体**里往后搜。
+     * 攻击者只要把请求体做成「几万个边界 + 每段 1 个字节」，每段都会白扫一遍后面的
+     * 全部字节，总复杂度 O(n²) 且 parseMultipart 是**同步**的：
+     * 2026-09-23 实测 1MB 的请求体就能把事件循环卡住 16 秒（整个服务失去响应）。
+     * 改成先 subarray 出本段（零拷贝）再查找，单段搜索长度就与段长成正比。
+     */
+    const part = buf.subarray(start, end);
+    const headerEnd = part.indexOf('\r\n\r\n');
+    const headerEndAlt = part.indexOf('\n\n');
     let sep = headerEnd;
     if (sep === -1 || (headerEndAlt !== -1 && headerEndAlt < sep)) sep = headerEndAlt;
-    if (sep === -1 || sep > end) continue;
+    if (sep === -1) continue;
     const sepLen = sep === headerEnd ? 4 : 2;
 
-    const headerText = buf.toString('utf8', start, sep);
-    const dataStart = sep + sepLen;
-    const data = buf.subarray(dataStart, end);
+    const headerText = part.toString('utf8', 0, sep);
+    const data = part.subarray(sep + sepLen);
 
     const nameM = /name="([^"]*)"/i.exec(headerText);
     const fileM = /filename="([^"]*)"/i.exec(headerText);

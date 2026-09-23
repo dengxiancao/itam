@@ -8,7 +8,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 
 import {
   db, migrate, seedIfEmpty, getSetting, setSetting, allSettings, audit,
@@ -33,6 +32,7 @@ import {
   stats as agentStats, matchCandidates as agentMatchCandidates,
 } from './lib/agent.js';
 import { readBody, readJson, parseMultipart, mimeOf, extOf } from './lib/http-util.js';
+import { clientIp, isInsideDir, createRateLimiter, createGate, applySecurityHeaders } from './lib/guard.js';
 import {
   ensureAdminUser, authenticate, verifyPassword, signSession, setSessionCookie, clearSessionCookie,
   checkLoginRate, recordLoginFail, clearLoginFail, checkAccountLocked, bumpFailedAttempts,
@@ -43,7 +43,6 @@ import {
 } from './auth.js';
 import { logger, HttpError, nowISO, uuid, str, formatBytes } from './util.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const CERT_DIR = path.join(ROOT, 'certs');
 const VERSION = '1.0.0';
@@ -58,6 +57,62 @@ const MAX_PHOTO_BYTES = 48 * 1024 * 1024;
 
 /** 一帧灰度图最多多大（服务端兜底扫码用）。1100×1100 = 1.16 MB，留一倍余量 */
 const MAX_SCAN_BYTES = 4 * 1024 * 1024;
+
+/* ================================================================== *
+ * 限流与并发闸门
+ *
+ * 分两层，缺一不可：
+ *   · 限流（速率）：挡住「同一个人狂打」，也顺手浇掉大部分扫描器。
+ *   · 闸门（并发）：挡住「很多人各打一次」。Node 是单线程，/api/scan 一次要啃
+ *     1~3 秒 CPU，10 个并发就不是慢，而是整个服务（连 /api/health）都停止响应。
+ * 2026-09-23 实测：连打 30 次 /api/scan 全部放行、限流一条没触发。
+ * ================================================================== */
+const apiLimiter = createRateLimiter({
+  limit: Number(process.env.ITAM_RATE_API || 600), windowMs: 60_000, name: '全站接口',
+});
+/**
+ * 重接口：烧 CPU（扫码/二维码）或烧钱（OCR 第三方调用）或全表扫描（导出）
+ *
+ * 阈值怎么定的（2026-09-23 按真实用量反推，不是拍脑袋）：
+ *   · 手机扫码：按一次快门最多发 **2** 个 /api/scan（见 m.js serverDecodeFrame：
+ *     条码走「扁带→整帧」、二维码走「中心方形→整帧」，各 2 次），而且**只在浏览器
+ *     自带解码器失手后**才发 —— 正常一扫就中的情况是 0 次。
+ *   · 一个「狂按快门」的人 ≈ 60 次/分钟 → 120 个请求/分钟，这是单人的现实上界。
+ *   · 关键：限流的 key 是 IP。几台手机经同一个 NAT / 反向代理（且没转发 XFF）时
+ *     **共用一份配额**，所以阈值必须显著高于单人上界，否则「多人一起扫码」就报
+ *     「请求过于频繁」—— 那是把安全措施做成了功能故障。
+ *   → 取 240：刚好是单人上界的 2 倍，同时仍把脚本洪水压在 4 请求/秒以内。
+ *
+ * ⚠️ 真正兜住「把事件循环啃死」的是下面的**闸门**（并发上限），不是这个阈值。
+ *    闸门满了直接回 503，不排队；限流只是速率上的第二道。所以这里放宽一点，
+ *    并不会让服务变得容易被拖垮 —— 但**不要**反过来因为「闸门够了」就把它删掉：
+ *    没有限流，一个账号可以把闸门的 503 刷成日志洪水和审计洪水。
+ */
+const heavyLimiter = createRateLimiter({
+  limit: Number(process.env.ITAM_RATE_HEAVY || 240), windowMs: 60_000, name: '重接口',
+});
+const HEAVY_API = /^\/api\/(scan|ocr|ocr\/test|qrcode|qrcode\/device\/[^/]+|excel\/(export|preview|import|template))(\/|$|\?)/;
+
+/**
+ * 扫码解码是纯 JS 的**同步**重活，必须限制「同时在排队的有几个」。
+ *
+ * ⚠️ 2026-09-23 实测（两轮，都是量出来的，别凭直觉改）：
+ *   ① 闸门只写 `max` 但套在解码外面（`await readBody()` 之后）→ **完全无效**：
+ *      8 个并发 1200×1200 请求全部 200，耗时严格线性叠加（302/593/…/2282ms），
+ *      计数器在下个请求进来前就减回 0 了。
+ *   ② 改成「事件循环滞后 > 阈值才丢弃」→ **不稳定**：探针里 24 个并发丢掉了 21 个，
+ *      同一段测试里 24 个并发又全部放行（滞后信号依赖定时器有没有抢到相位）。
+ *      安全措施时灵时不灵，比没有更糟 —— 于是改成**确定性**的在途计数。
+ *   ⇒ 最终做法：在 `/scan` 路由里 `await readBody()` **之前**先 `acquire()` 占坑
+ *     （占坑早于第一个 await，各请求 handler 由 socket I/O 交错驱动，计数才涨得上去）。
+ *
+ * max 取 4 的依据：最坏情况「健康检查被挡住的时长」= max × 单次解码
+ *   ≈ 4 × 529ms（1600px）≈ 2.1 秒 —— 运维还能确认「服务是活的」；
+ *   同时留得下 4 台手机同时扫码不被误伤。
+ */
+const scanGate = createGate({ max: 4, name: '扫码解码' });
+/** OCR 是网络等待（临界区里真的有 await，计数能涨上去），走 run() 包起来即可 */
+const ocrGate = createGate({ max: 6, name: '图像识别' });
 
 /**
  * 把内存里的图片写到 data/uploads/<日期>/<uuid>.<ext>，返回可访问的相对路径。
@@ -115,9 +170,9 @@ function fail(res, status, message, detail) {
   json(res, status, { ok: false, error: message, detail: detail ?? null });
 }
 
-function clientIp(req) {
-  return (req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || '').replace('::ffff:', '');
-}
+/* 客户端真实 IP 见 lib/guard.js —— 那里做了「可信代理」判定。
+   ⚠️ 别再在本文件重新实现一遍：老版本在这里无条件采信 X-Forwarded-For，
+      攻击者每次换个伪造值就能绕开 auth.js 的按 IP 登录限流。 */
 
 /* ---------------- 认证：哪些路径不需要登录 ---------------- */
 const PUBLIC_API = new Set([
@@ -311,16 +366,39 @@ function isSecureReq(req) {
 }
 
 async function handle(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const p = decodeURIComponent(url.pathname);
+  // 安全响应头先挂上：后面任何一条 return 路径（含 4xx/302）都自动带上
+  applySecurityHeaders(res, { secure: isSecureReq(req) });
+
+  /*
+   * ⚠️ URL 解析要能失败。
+   * 请求行里的 `%E0%A4%A` 这种半截 UTF-8 会让 decodeURIComponent 抛 URIError，
+   * 老代码直接冒到最外层 → 回 500「服务器内部错误」并写一条 error 日志。
+   * 那是**客户端的错**，不是服务器的错；而且能被人拿来白刷错误日志。
+   */
+  let url;
+  let p;
+  try {
+    url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    p = decodeURIComponent(url.pathname);
+  } catch {
+    return fail(res, 400, '请求路径格式不合法');
+  }
   const q = Object.fromEntries(url.searchParams.entries());
   const method = req.method.toUpperCase();
   const ip = clientIp(req);
   const secure = isSecureReq(req);
 
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // ---------- 限流（只对 API；静态资源不限，否则页面都刷不开） ----------
+  if (p.startsWith('/api/')) {
+    try {
+      apiLimiter.check(ip);
+      if (HEAVY_API.test(p)) heavyLimiter.check(ip);
+    } catch (e) {
+      if (e.retryAfter) res.setHeader('Retry-After', String(e.retryAfter));
+      audit({ actor: 'anonymous', ip, method, path: p, action: 'rate.limit', detail: e.message, status: 429 });
+      return fail(res, e.status || 429, e.message);
+    }
+  }
 
   // ---------- GLPI Agent 上报（不走会话，走 Basic 令牌，应答格式也不是我们的 {ok,data} 包装） ----------
   if (isAgentRequest(p, method, req)) {
@@ -361,11 +439,28 @@ async function handle(req, res) {
     if (result !== undefined && !res.writableEnded) ok(res, result);
   } catch (e) {
     const status = e.status || 500;
-    if (status >= 500) logger.error(`${method} ${p} ->`, e.stack || e.message);
-    if (status >= 400) {
-      audit({ actor: user?.username || 'anonymous', ip, method, path: p, action: route, detail: e.message, status });
+    if (e.retryAfter) res.setHeader('Retry-After', String(e.retryAfter));
+    /*
+     * 503 要**在 5xx 之前**单独分支处理（2026-09-23 修）：
+     *   闸门主动丢弃请求（扫码解码忙不过来）时抛的是 503，而 503 >= 500，
+     *   会被下面那条通用分支接住 —— 后果有两个，都很难受：
+     *     ① 客户端拿到的是「服务器内部错误」而不是「繁忙，请重试」，
+     *        运维照着这句去查一个根本不存在的故障；
+     *     ② 每丢一个请求就 logger.error 打一整条堆栈 —— 这正是「被灌请求」
+     *        的时候，日志会被自己的告警刷爆，把真正的线索冲掉。
+     *   丢弃是**预期行为**，记审计（可追溯）但绝不记 error。
+     */
+    if (status === 503) {
+      audit({ actor: user?.username || 'anonymous', ip, method, path: p, action: 'gate.reject', detail: e.reason || e.message, status: 503 });
+      return fail(res, 503, e.message || '服务繁忙，请稍后重试', e.detail);
     }
-    fail(res, status, e.message || '服务器内部错误', e.detail);
+    if (status >= 500) {
+      logger.error(`${method} ${p} ->`, e.stack || e.message);
+      // 500 只回一句通用话术：堆栈、SQL、文件路径这类内部信息不该出现在响应里
+      return fail(res, 500, '服务器内部错误，请稍后重试或联系管理员');
+    }
+    audit({ actor: user?.username || 'anonymous', ip, method, path: p, action: route, detail: e.message, status });
+    fail(res, status, e.message || '请求无法处理', e.detail);
   }
 }
 
@@ -826,7 +921,8 @@ async function routeApi(ctx) {
     if (!buffer?.length) throw new HttpError(400, '图片数据为空');
 
     const t0 = Date.now();
-    const ocrResult = await recognize({ buffer, mime, provider });
+    // 闸门：OCR 走第三方网络，慢但不等 CPU；限并发是为了拦住「一个账号开一千个并发」
+    const ocrResult = await ocrGate.run(() => recognize({ buffer, mime, provider }));
     const parsed = interpret(ocrResult.lines, ocrResult.text);
 
     // 三份图一起落盘：压缩图（识别/预览）、原图、缩略图（Excel 嵌入）
@@ -1022,30 +1118,40 @@ async function routeApi(ctx) {
     }
     const kind = q.kind === 'bar' ? 'bar' : 'qr';
     const bytes = w * h;
-    const raw = await readBody(req, Math.min(MAX_SCAN_BYTES, bytes + 1024));
-    if (raw.length < bytes) throw new HttpError(400, `灰度数据不足：需要 ${bytes} 字节，收到 ${raw.length}`);
-    const gray = new Uint8Array(raw.buffer, raw.byteOffset, bytes);
-    const t0 = Date.now();
-    let hit = null;
+    /*
+     * ⚠️ 占坑必须在**第一个 await 之前**（`await readBody` 的上方）—— 这是整个
+     *    闸门能不能生效的唯一天键，2026-09-23 实测两轮才定位到（详见 scanGate 定义处）。
+     *    挪到 readBody 下面 = 闸门立即失效（24 个并发全放行）。
+     */
+    scanGate.acquire();
     try {
-      // ⚠️ 一维条码的返回形状要和二维码对齐（都带 text），前端只认 `text`。
-      //    bardecode 给的是 { text, format, row }，这里补一个 version:null 保持字段一致。
-      hit = kind === 'bar' ? decodeBarcode(gray, w, h) : decodeQR(gray, w, h);
-    } catch (e) {
-      // 解码器再怎么失手也不能把接口打成 500：扫码失败 = 没扫到，让前端提示重扫
-      hit = null;
-      audit({ actor, ip, method, path: url.pathname, action: 'scan.error', detail: String(e && e.message || e), status: 200 });
+      const raw = await readBody(req, Math.min(MAX_SCAN_BYTES, bytes + 1024));
+      if (raw.length < bytes) throw new HttpError(400, `灰度数据不足：需要 ${bytes} 字节，收到 ${raw.length}`);
+      const gray = new Uint8Array(raw.buffer, raw.byteOffset, bytes);
+      const t0 = Date.now();
+      let hit = null;
+      try {
+        // ⚠️ 一维条码的返回形状要和二维码对齐（都带 text），前端只认 `text`。
+        //    bardecode 给的是 { text, format, row }，这里补一个 version:null 保持字段一致。
+        hit = kind === 'bar' ? decodeBarcode(gray, w, h) : decodeQR(gray, w, h);
+      } catch (e) {
+        // 解码器再怎么失手也不能把接口打成 500：扫码失败 = 没扫到，让前端提示重扫
+        hit = null;
+        audit({ actor, ip, method, path: url.pathname, action: 'scan.error', detail: String(e && e.message || e), status: 200 });
+      }
+      const elapsed = Date.now() - t0;
+      audit({ actor, ip, method, path: url.pathname, action: 'scan.decode', detail: `${kind} ${w}x${h} ${hit ? '命中 ' + hit.text : '未命中'} ${elapsed}ms`, status: 200 });
+      return {
+        ok: !!hit,
+        text: hit ? hit.text : null,
+        kind,
+        format: hit ? (hit.format || 'qr_code') : null,
+        version: hit ? (hit.version ?? null) : null,
+        elapsed,
+      };
+    } finally {
+      scanGate.release();
     }
-    const elapsed = Date.now() - t0;
-    audit({ actor, ip, method, path: url.pathname, action: 'scan.decode', detail: `${kind} ${w}x${h} ${hit ? '命中 ' + hit.text : '未命中'} ${elapsed}ms`, status: 200 });
-    return {
-      ok: !!hit,
-      text: hit ? hit.text : null,
-      kind,
-      format: hit ? (hit.format || 'qr_code') : null,
-      version: hit ? (hit.version ?? null) : null,
-      elapsed,
-    };
   }
 
   if (route === '/ocr/status') { require('device.read'); return ocrStatus(); }
@@ -1293,9 +1399,20 @@ async function routeApi(ctx) {
     require('device.read');
     const text = q.text || (seg[1] === 'device' ? `${baseUrlOf(req)}/m/#/device/${seg[2]}` : '');
     if (!text) throw new HttpError(400, '缺少 text 参数');
-    const svg = qrcodeSvg(text, { ecLevel: q.ec || 'M', quiet: Number(q.quiet ?? 3), dark: q.dark || '#111827', light: q.light || '#ffffff' });
+    // ⚠️ ec / quiet / dark / light 全都来自 query，**绝不能**原样拼进 SVG：
+    //    这个响应是顶层 image/svg+xml 文档，注入的 <script> 会以本应用的源执行。
+    //    颜色与纠错等级在 qrcode.js 里已做白名单（产出层兜底），这里再做一次取值收窄。
+    const ec = ['L', 'M', 'Q', 'H'].includes(String(q.ec || '').toUpperCase()) ? String(q.ec).toUpperCase() : 'M';
+    const svg = qrcodeSvg(text, {
+      ecLevel: ec,
+      quiet: Number(q.quiet ?? 3),
+      dark: q.dark || '#111827',
+      light: q.light || '#ffffff',
+    });
     if (q.raw === '1') return { svg, text };
-    // 默认直接返回 SVG 图片，前端可用 <img src="/api/qrcode?text=..."> 展示
+    // 默认直接返回 SVG 图片，前端可用 <img src="/api/qrcode?text=..."> 展示。
+    // CSP 换成 SVG 专用（default-src 'none' + sandbox）：即便哪天转义又出洞，脚本也是死的。
+    applySecurityHeaders(res, { secure, svg: true });
     res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
     res.end(svg);
     return undefined;
@@ -1305,8 +1422,10 @@ async function routeApi(ctx) {
   if (seg[0] === 'files' && method === 'GET') {
     require('device.read');
     const rel = seg.slice(1).join('/');
-    const abs = path.join(EXPORT_DIR, rel);
-    if (!abs.startsWith(EXPORT_DIR) || !fs.existsSync(abs)) throw new HttpError(404, '文件不存在');
+    const abs = path.normalize(path.join(EXPORT_DIR, rel));
+    if (!isInsideDir(EXPORT_DIR, abs) || !fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
+      throw new HttpError(404, '文件不存在');
+    }
     const buf = fs.readFileSync(abs);
     return download(res, buf, path.basename(abs));
   }
@@ -1326,6 +1445,15 @@ async function routeApi(ctx) {
 /* ================================================================== *
  * 静态文件
  * ================================================================== */
+function notFound(res) {
+  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404 Not Found');
+  return undefined;
+}
+function forbidden(res) {
+  res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden');
+  return undefined;
+}
+
 function serveStatic(req, res, pathname) {
   let rel = pathname;
   if (rel === '/' || rel === '') rel = '/index.html';
@@ -1336,44 +1464,48 @@ function serveStatic(req, res, pathname) {
   if (rel === '/register') rel = '/register.html';
   if (rel === '/manual') rel = '/manual.html';
 
-  const abs = path.normalize(path.join(PUBLIC_DIR, rel));
-  if (!abs.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403).end('Forbidden');
-    return undefined;
+  // /uploads -> data/uploads。它和 public 是**两棵独立的树**，各自判各自的根，
+  // 别拿 public 的包含判定去覆盖 uploads（老代码就是这么混着写的）。
+  if (rel === '/uploads' || rel.startsWith('/uploads/')) {
+    const abs = path.normalize(path.join(UPLOAD_DIR, rel.slice('/uploads'.length)));
+    if (!isInsideDir(UPLOAD_DIR, abs)) return forbidden(res);
+    return serveFile(req, res, abs);
   }
 
-  // /uploads -> data/uploads
-  if (rel.startsWith('/uploads/')) {
-    return serveFile(req, res, path.join(UPLOAD_DIR, rel.slice('/uploads/'.length)));
-  }
+  const abs = path.normalize(path.join(PUBLIC_DIR, rel));
+  // ⚠️ 不能用 `abs.startsWith(PUBLIC_DIR)`：同级的 `public-xxx` 也能通过这个前缀判断。
+  //    isInsideDir 走 path.relative，跨目录会带 `..` 前缀，一并挡掉。
+  if (!isInsideDir(PUBLIC_DIR, abs)) return forbidden(res);
 
   // SPA 回退：管理端
   if (!fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
     const isMobile = rel.startsWith('/m');
     const fallback = path.join(PUBLIC_DIR, isMobile ? 'm/index.html' : 'index.html');
     if (fs.existsSync(fallback)) return serveFile(req, res, fallback);
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404 Not Found');
-    return undefined;
+    return notFound(res);
   }
   return serveFile(req, res, abs);
 }
 
 function serveFile(req, res, abs) {
-  if (!fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('404 Not Found');
-    return undefined;
-  }
+  if (!fs.existsSync(abs) || fs.statSync(abs).isDirectory()) return notFound(res);
   const stat = fs.statSync(abs);
   const etag = `W/"${stat.size}-${stat.mtimeMs}"`;
   if (req.headers['if-none-match'] === etag) {
     res.writeHead(304).end();
     return undefined;
   }
+  const isUpload = abs.startsWith(UPLOAD_DIR);
   res.writeHead(200, {
     'Content-Type': mimeOf(path.extname(abs)),
     'Content-Length': stat.size,
     ETag: etag,
-    'Cache-Control': abs.includes('uploads') ? 'public, max-age=86400' : 'no-cache',
+    /*
+     * 上传的图片是**登录后才能看**的内容，只能进浏览器私有缓存。
+     * 原来写的是 `public, max-age=86400` —— 那样公司里的共享缓存 / 反向代理
+     * 可以把别人的证件照缓存下来再发给另一个不相关的人。
+     */
+    'Cache-Control': isUpload ? 'private, max-age=86400' : 'no-cache',
   });
   fs.createReadStream(abs).pipe(res);
   return undefined;
@@ -1475,14 +1607,45 @@ function localIPs() {
   return out;
 }
 
-const server = http.createServer((req, res) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'same-origin');
+/**
+ * 收尾处理：安全头已在 handle() 里统一挂好，这里只兜住「handle 自己抛了」的极端情况。
+ * ⚠️ 兜底也不回 e.message：那是最外层的意外，最容易带出路径/堆栈。
+ */
+function onRequest(req, res) {
   handle(req, res).catch((e) => {
     logger.error('未捕获异常', e);
-    if (!res.writableEnded) fail(res, 500, e.message || '服务器内部错误');
+    if (!res.writableEnded) fail(res, 500, '服务器内部错误，请稍后重试或联系管理员');
   });
-});
+}
+
+/**
+ * 抗慢速攻击（slowloris）的硬上限。
+ *
+ * 默认值在这种「挂着公网隧道」的部署里太宽松：攻击者开几百个连接、每次只发几个字节，
+ * 就能把连接数占满。这里把「收完请求头」「收完整个请求」都压到分钟级以内，
+ * 并把单连接的最大请求头数量限死（默认 2000 个，够被拿来放大内存）。
+ *
+ * ⚠️ maxHeaderSize 不在这里：它是 http.createServer 的**构造参数**，
+ *    建完再赋值只是往对象上挂了个没人读的属性（实测默认值是 undefined）。
+ *    Node 自己给的默认 16 KB 就合适，不折腾。
+ */
+const NET_HARDENING = {
+  headersTimeout: 30_000,      // 30s 内没发完请求头就断开
+  requestTimeout: 10 * 60_000, // 单请求最长 10 分钟（Excel 大导出要留够时间）
+  keepAliveTimeout: 15_000,
+  maxHeadersCount: 100,
+};
+function hardenServer(s, label) {
+  Object.assign(s, NET_HARDENING);
+  s.on('clientError', (err, socket) => {
+    // 畸形请求（含裸 socket 打的乱码）不应该让 Node 打一整段堆栈，安静拒掉即可
+    logger.warn(`${label} 收到畸形请求：${err?.code || err?.message || 'unknown'}`);
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+  });
+  return s;
+}
+
+const server = hardenServer(http.createServer(onRequest), 'HTTP');
 
 server.listen(PORT, HOST, () => {
   const ips = localIPs();
@@ -1512,13 +1675,7 @@ try {
   if (fs.existsSync(certFile)) {
     const opts = { cert: fs.readFileSync(certFile) };
     if (fs.existsSync(keyFile)) opts.key = fs.readFileSync(keyFile);
-    httpsServer = https.createServer(opts, (req, res) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      handle(req, res).catch((e) => {
-        logger.error('未捕获异常', e);
-        if (!res.writableEnded) fail(res, 500, e.message || '服务器内部错误');
-      });
-    });
+    httpsServer = hardenServer(https.createServer(opts, onRequest), 'HTTPS');
     httpsServer.listen(HTTPS_PORT, HOST, () => {
       logger.ok(`HTTPS 已启用（手机相机可用）`);
       for (const ip of localIPs()) logger.info(`手机访问 https://${ip}:${HTTPS_PORT}/m`);

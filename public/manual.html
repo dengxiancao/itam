@@ -741,17 +741,32 @@ tbody tr:hover { background: #f8fafc; }
 </table></div>
 <h3 id="93-我的账号">9.3 我的账号<a class="anchor" href="#93-我的账号">#</a></h3>
 <p>查看自己的角色权限、修改姓名密码、查看登录记录。</p>
+<h3 id="94-安全机制不需要配置知道有这回事就行">9.4 安全机制（不需要配置，知道有这回事就行）<a class="anchor" href="#94-安全机制不需要配置知道有这回事就行">#</a></h3>
+<p>系统默认就带这些防线，<strong>不用开开关</strong>。列在这里是为了：出问题时你知道是它在起作用，而不是当故障排查。</p>
+<div class="tw"><table>
+<thead><tr><th>机制</th><th>作用</th><th>你会看到什么</th></tr></thead>
+<tbody><tr><td>登录失败限流</td><td>防口令爆破（账号级 / 来源 IP 级 / <strong>全站级</strong>三道，见第十章）</td><td>提示「登录失败次数过多」</td></tr><tr><td>接口限流</td><td>防自动化狂刷；扫码、识别、Excel 导入导出另有更严的额度（每分钟 240 次）</td><td>提示「请求过于频繁」，等 1 分钟</td></tr><tr><td>重活并发限制</td><td>服务端扫码解码/图像识别很吃 CPU，同时只跑 4 / 6 个，多的<strong>直接丢弃</strong>而不是排队 —— 排队会让整个系统（含所有页面）一起变慢</td><td>偶发「服务繁忙，请稍后重试」，再按一次快门即可</td></tr><tr><td>浏览器安全策略（CSP 等）</td><td>防页面被注入后加载外部脚本、把数据外发到别的网址</td><td>正常使用无感；若你把某个外部图片/脚本贴进备注里，它不会被加载（这是故意的）</td></tr><tr><td>照片访问控制</td><td>照片必须登录才能看，且只允许浏览器自己缓存</td><td>换台没登录的电脑打不开照片链接</td></tr><tr><td>上传缓存</td><td>导出表格里的照片链接带临时令牌，令牌重置后旧链接失效</td><td>「Excel 对接」页可一键重置令牌</td></tr></tbody>
+</table></div>
+<p>管理员可调的部分（改环境变量后重启服务）见 <code>README.md</code> 的「安全加固」一节。</p>
 <hr>
 <h2 id="十常见问题">十、常见问题<a class="anchor" href="#十常见问题">#</a></h2>
 <h3 id="登录相关">登录相关<a class="anchor" href="#登录相关">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>问题</th><th>解决</th></tr></thead>
-<tbody><tr><td>登录页打不开</td><td>确认服务在运行（管理员跑 <code>scripts\status.cmd</code>），确认地址端口正确</td></tr><tr><td>提示「用户名或密码错误」</td><td>检查大小写；连续错 5 次会锁 10 分钟</td></tr><tr><td>提示「账号已被锁定」</td><td>等 10 分钟，或让管理员在「用户管理」里点「解锁」</td></tr><tr><td>提示「正在等待管理员审核」</td><td>你的自助注册还没被通过</td></tr><tr><td>提示「账号已被停用」</td><td>联系管理员</td></tr><tr><td>登录后看不到某些菜单</td><td>正常——你的角色没有该权限</td></tr></tbody>
+<tbody><tr><td>登录页打不开</td><td>确认服务在运行（管理员跑 <code>scripts\status.cmd</code>），确认地址端口正确</td></tr><tr><td>提示「用户名或密码错误」</td><td>检查大小写；连续错 5 次会锁 10 分钟</td></tr><tr><td>提示「账号已被锁定」</td><td>等 10 分钟，或让管理员在「用户管理」里点「解锁」</td></tr><tr><td>提示「正在等待管理员审核」</td><td>你的自助注册还没被通过</td></tr><tr><td>提示「账号已被停用」</td><td>联系管理员</td></tr><tr><td>提示「该 IP 登录失败次数过多」</td><td>同一台电脑 15 分钟内错太多次了，等一会儿再试（<strong>换设备也绕不过</strong>，见下面的「登录为什么会失败」）</td></tr><tr><td>登录后看不到某些菜单</td><td>正常——你的角色没有该权限</td></tr></tbody>
 </table></div>
+<h4 id="登录为什么会失败系统在防爆破">登录为什么会失败：系统在防爆破<a class="anchor" href="#登录为什么会失败系统在防爆破">#</a></h4>
+<p>登录失败有两个方向的限制，同时生效：</p>
+<div class="tw"><table>
+<thead><tr><th>限制</th><th>阈值</th><th>什么时候会遇到</th></tr></thead>
+<tbody><tr><td>单个账号</td><td>连错 5 次 → 锁 10 分钟</td><td>自己记错密码，或有人在猜你的密码</td></tr><tr><td>单个来源 IP</td><td>15 分钟内错 10 次 → 该 IP 暂停</td><td>一台电脑上多人反复试</td></tr><tr><td><strong>全站</strong></td><td>5 分钟内累计错 200 次 → 全体暂停几分钟</td><td>有人在批量撞库</td></tr></tbody>
+</table></div>
+<p>最后一条是<strong>故意不看来源地址</strong>的：攻击者可以伪造来源地址，但伪造不了「失败总次数」。所以宁可短暂影响所有人，也不让口令被慢慢试出来。日常使用（几个人手误输错）远远到不了这个量。</p>
+<p>管理员如果确认是误伤，等几分钟即可；不需要重启服务。</p>
 <h3 id="使用相关">使用相关<a class="anchor" href="#使用相关">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>问题</th><th>解决</th></tr></thead>
-<tbody><tr><td>页面显示旧内容</td><td><code>Ctrl + F5</code> 强制刷新</td></tr><tr><td>顶部搜索没反应</td><td>输入关键词后要按<strong>回车</strong></td></tr><tr><td>找不到刚录入的设备</td><td>检查筛选条件是否被限制；点「重置」；确认保存成功（有绿色提示）</td></tr><tr><td>误删了设备</td><td>去 <strong>🗑️ 回收站</strong> 点「恢复」</td></tr><tr><td>保修预警里出现很多设备</td><td>说明这些设备快到保修期了，及时联系供应商续保或更新</td></tr></tbody>
+<tbody><tr><td>页面显示旧内容</td><td><code>Ctrl + F5</code> 强制刷新</td></tr><tr><td>提示「请求过于频繁」</td><td>短时间内发出的请求太多被限流了，等 1 分钟再操作（批量导入/连续扫码时偶尔会遇到）</td></tr><tr><td>扫码时偶发「服务繁忙，请稍后重试」</td><td>同一时刻扫码/识别的人太多，服务端主动丢弃了多余的请求（<strong>不是故障</strong>，也不会卡住其他人的页面）。稍等一两秒再按一次快门即可</td></tr><tr><td>顶部搜索没反应</td><td>输入关键词后要按<strong>回车</strong></td></tr><tr><td>找不到刚录入的设备</td><td>检查筛选条件是否被限制；点「重置」；确认保存成功（有绿色提示）</td></tr><tr><td>误删了设备</td><td>去 <strong>🗑️ 回收站</strong> 点「恢复」</td></tr><tr><td>保修预警里出现很多设备</td><td>说明这些设备快到保修期了，及时联系供应商续保或更新</td></tr></tbody>
 </table></div>
 <h3 id="数据相关">数据相关<a class="anchor" href="#数据相关">#</a></h3>
 <div class="tw"><table>
@@ -781,7 +796,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/22 16:17:16</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/23 13:43:00</div>
 </div>
 </body>
 </html>

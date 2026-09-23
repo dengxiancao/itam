@@ -246,7 +246,64 @@ curl -X POST https://open.bigmodel.cn/api/paas/v4/chat/completions \
 
 ---
 
-## 六、目录结构
+## 六、安全加固
+
+这一节是**部署时可能想调**的开关。默认值已经按「挂公网隧道 + 局域网混用」的场景调好，不改也能用。
+
+### 6.1 客户端 IP 的判定（`ITAM_TRUSTED_PROXIES`）
+
+登录限流、审计日志都按客户端 IP 计数，而 IP 是从 `X-Forwarded-For` 里取的。为了让这个头不能被随便伪造，程序只在**直连方本身可信**时才采信它：
+
+| 直连方 | 默认是否可信 | 说明 |
+| --- | --- | --- |
+| `127.0.0.1` / `::1` | ✅ | 本机的 frp / nginx —— 最常见的情况 |
+| 私网（`10.*` / `192.168.*` / `172.16-31.*`） | ✅ | 同网段的反代 |
+| 公网地址 | ❌ | 它对 `X-Forwarded-For` 说的话一概不理 |
+
+采信时会从右往左取**第一个不可信的地址**（越靠右越接近本机，左边的是客户端自己塞的），所以「每次换一个伪造 IP」不再能打散限流桶。
+
+> 如果连同一局域网里的机器也不信，就设：
+> ```
+> ITAM_TRUSTED_PROXIES=127.0.0.1
+> ```
+> 填了就以它为准，不再自动放行整个私网。
+
+### 6.2 限流（`ITAM_RATE_API` / `ITAM_RATE_HEAVY` / `ITAM_LOGIN_GLOBAL_MAX`）
+
+| 环境变量 | 默认 | 作用 |
+| --- | --- | --- |
+| `ITAM_RATE_API` | `600` | 每个 IP 每分钟最多几次 `/api/*` 请求 |
+| `ITAM_RATE_HEAVY` | `240` | 重接口（扫码 / 二维码 / OCR / Excel 导入导出）单独的每分钟上限 |
+| `ITAM_LOGIN_GLOBAL_MAX` | `200` | 全站 5 分钟内允许的登录失败总次数（**与 IP 无关**） |
+
+超限返回 `429` 并带 `Retry-After` 头。日常使用（几个人录设备、手机扫码）远到不了这些阈值；它们是用来给自动化爆破和放大攻击封顶的。
+
+`ITAM_RATE_HEAVY` 为什么是 240（不是更小）：手机按一次快门最多发 **2** 个 `/api/scan`（见 `m.js` 的 `serverDecodeFrame`：条码走「扁带→整帧」、二维码走「中心方形→整帧」），而且只在浏览器自带解码器失手后才发 —— 一个「狂按快门」的人约 60 次/分钟 = 120 请求。更关键的是**限流按 IP 计**，几台手机经同一个 NAT / 反代（没转发 XFF）时共用一份配额，所以阈值取单人上界的 2 倍。调到比真实用量还低，安全措施就会变成功能故障（用户狂按快门时弹「请求过于频繁」）。
+
+除限流外还有两道闸门，都是「超了就丢弃（返回 `503` + `Retry-After`）」而不是排队：
+
+- 扫码解码同时最多 **4 个**
+- 图像识别（OCR）同时最多 **6 个**
+
+> ⚠️ 闸门的**位置**就是它的全部效力所在，挪一行就静默失效。扫码解码是纯同步 JS，所以「在跑的数量」只有在 `acquire()` 早于第一个 `await`（即早于 `await readBody`）时才涨得上去；套在解码外面的话 24 个并发会全部放行。`tests/security.js` 的 B11 就是钉这件事的（详见 `server/index.js` 里 `scanGate` 的注释）。
+>
+> 「丢弃」而不是「排队」是刻意的：队列在 socket 缓冲区里，排队的代价是**所有接口一起变慢**，连 `/api/health` 都答不上来 —— 运维就没法判断服务是不是还活着了。
+
+### 6.3 浏览器安全头
+
+所有响应都带 CSP / `X-Frame-Options` / `X-Content-Type-Options` / `Referrer-Policy` / `Permissions-Policy`；HTTPS 下额外带 HSTS。二维码这类由参数拼出来的 SVG 用的是更严的 `default-src 'none'; sandbox`。
+
+CSP 里 `script-src` 保留了 `'unsafe-inline'`（前端有内联脚本和大量内联事件属性，去掉按钮就全失灵），所以它挡不住「站内已注入的内联脚本」，但仍然实际挡掉：外域脚本加载、`eval`、`<object>` 插件、注入 `<base>` 劫持相对地址、把数据外发到其它域名、外域图片。
+
+### 6.4 还不知道 / 没做的
+
+- **登录限流是进程内的内存计数器**，重启即清零，多实例部署不共享。
+- **审计日志和 `logs/` 没有轮转**，长期被打会持续增长（`audit_log` 在库里）。真挂公网建议在隧道/反代那一层也加限流并定期清理。
+- 仓库里**没有 LICENSE**，也**没有做依赖扫描**（本项目零第三方依赖，供应链面很小）。
+
+---
+
+## 七、目录结构
 
 ```
 itam/
@@ -266,6 +323,7 @@ itam/
 │     ├─ recognize.js   # 品牌/SN 解析引擎
 │     ├─ brands.js      # 品牌知识库
 │     ├─ qrcode.js      # 零依赖二维码生成
+│     ├─ guard.js       # 安全护栏：可信代理 IP / 限流 / 并发闸门 / 安全响应头
 │     └─ http-util.js   # multipart / MIME 工具
 ├─ public/
 │  ├─ index.html        # 管理端
@@ -295,34 +353,31 @@ itam/
 
 ---
 
-## 七、测试
+## 八、测试
+
+**推荐直接跑总入口** —— 它自己起临时库 + 临时端口，一个文件一个子进程，**绝不碰真实数据**：
 
 ```bash
-# 后端单元测试（25 项：Excel 往返、二维码、识别引擎、CRUD、导入导出、模板安全）
-node tests/selftest.js
-
-# 账户系统测试（27 项：登录、角色权限矩阵、用户管理、锁定、会话失效、注册审核、管理员保护）
-#   建议对着独立临时实例跑，避免动真实数据：
-#   ITAM_DB=%TEMP%\itam-acct.db  ITAM_ADMIN_PASSWORD=TestAdmin-123  PORT=8099  node server/index.js
-#   BASE=http://127.0.0.1:8099  ITAM_PASS=TestAdmin-123  node tests/account.js
-node tests/account.js
-
-# API 冒烟测试（28 项，需先启动服务）
-node tests/api-smoke.js
-
-# 前端渲染冒烟测试（35 项，无需浏览器）
-node tests/render-smoke.js
-
-# 视觉大模型适配器测试（8 项）
-node tests/vision-adapter.js
+npm test                      # 跑完所有套件（约 2 分钟）
 ```
 
-> 冒烟测试需要登录凭据：设 `ITAM_USER` / `ITAM_PASS` 环境变量，或确保 `data/admin-password.txt` 还在（首次启动生成、改密后删除）。
-> 若系统 PATH 里没有 `node`，请用完整路径，例如：`"C:\Program Files\nodejs\node.exe" tests\selftest.js`
+想单独跑某一套：
+
+```bash
+npm run selftest              # 后端单测（Excel 往返、二维码、识别引擎、CRUD、导入导出）
+npm run ledger                # 设备台账（含跨页批量选择的回归）
+npm run render                # 前端渲染冒烟（无需浏览器）
+npm run security              # 安全加固回归（自起实例，含限流/XFF/注入/穿越）
+npm run security-mutate       # 变异测试：把每个安全修复改回缺陷版，确认断言会变红
+npm run bulk-e2e              # 跨页批量操作真实 HTTP 端到端（会真改数据，跑完即删临时库）
+```
+
+> 服务类套件请一律走 `tests/all.js` 或 `node __patch/run-isolated.mjs`，
+> 不要对着正在运行的实例（8080）跑：那会把失败登录写进真实库、还会把管理员账号锁上。
 
 ---
 
-## 八、常见问题
+## 九、常见问题
 
 **Q：手机打不开摄像头？**
 A：必须用 HTTPS 访问 `https://<电脑IP>:8443/m`；首次会提示“不安全”，点「高级 → 继续访问」。若仍不行，先把 `certs/cert.pem` 安装到手机“信任凭据”，或在移动端点「从相册选图」兜底。

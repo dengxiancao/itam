@@ -550,7 +550,28 @@ const ACC_MAX_FAILS = 5;
 const ACC_LOCK_MS = 10 * 60 * 1000;
 const ipFails = new Map();
 
+/*
+ * 全局登录失败闸门（**与来源 IP 无关**）。
+ *
+ * 为什么按 IP 计数不够：请求是经隧道/反代进来的，服务端看到的 IP 来自
+ * X-Forwarded-For。哪怕我们做了「可信代理」判定，判定的正确性仍然取决于上游
+ * 是**追加**还是**覆盖**这个头 —— 这是我们不能控制的外部条件。
+ * 所以再加一道只看「失败总次数」的闸门：无论攻击者换多少 IP，总量到顶就一律拒。
+ *
+ * 阈值取 200 次 / 5 分钟：三人规模的 IT 部门正常手误远远到不了，
+ * 但暴力破解也绝无可能。同时账号级锁定（5 次错 → 锁 10 分钟）仍然生效，
+ * 两者一个管「面」一个管「点」。
+ */
+const GLOBAL_MAX_FAILS = Number(process.env.ITAM_LOGIN_GLOBAL_MAX || 200);
+const GLOBAL_WINDOW_MS = 5 * 60 * 1000;
+let globalFails = { count: 0, resetAt: 0 };
+
 export function checkLoginRate(ip) {
+  const now = Date.now();
+  if (globalFails.count >= GLOBAL_MAX_FAILS && now < globalFails.resetAt) {
+    const mins = Math.max(1, Math.ceil((globalFails.resetAt - now) / 60000));
+    throw new HttpError(429, `登录失败次数过多，请 ${mins} 分钟后再试`);
+  }
   const rec = ipFails.get(ip);
   if (!rec) return;
   if (Date.now() > rec.resetAt) { ipFails.delete(ip); return; }
@@ -561,13 +582,18 @@ export function checkLoginRate(ip) {
 }
 
 export function recordLoginFail(ip) {
-  const rec = ipFails.get(ip);
   const now = Date.now();
+  if (now > globalFails.resetAt) globalFails = { count: 0, resetAt: now + GLOBAL_WINDOW_MS };
+  globalFails.count++;
+
+  const rec = ipFails.get(ip);
   if (!rec || now > rec.resetAt) ipFails.set(ip, { count: 1, resetAt: now + IP_WINDOW_MS });
   else rec.count++;
 }
 
 export function clearLoginFail(ip) {
+  // ⚠️ 只清「这个 IP」的计数，**不清全局计数** —— 否则攻击者只要手里有一个
+  //    能登录的账号，成功一次就能把全局闸门重置掉。
   ipFails.delete(ip);
 }
 

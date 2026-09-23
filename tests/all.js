@@ -48,6 +48,9 @@ const SUITES = [
   { file: 'agent.js', label: 'GLPI Agent 对接', server: true },
   { file: 'account.js', label: '账户与权限', server: true },
   { file: 'api-smoke.js', label: 'HTTP 接口', server: true },
+  // ⚠️ security 放最后，而且它**自己起实例**（server:false 是故意的）：
+  //    它为了验证限流会故意把限流打满，打在共享实例上会让后面所有套件集体 429。
+  { file: 'security.js', label: '安全加固', server: false },
 ];
 
 /* ---------------- 临时环境 ---------------- */

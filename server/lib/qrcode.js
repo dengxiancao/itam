@@ -159,13 +159,17 @@ const EC_LEVEL_BITS = { L: 0b01, M: 0b00, Q: 0b11, H: 0b10 };
  * @returns {{size:number, modules:Int8Array[], version:number}}
  */
 export function qrcodeEncode(text, ecLevel = 'M') {
+  // 纠错等级只认 L/M/Q/H。传别的（例如 ?ec=zzz）以前会直接
+  // `EC_TABLE[ecLevel][v]` 抛 TypeError → 500，等于给了一个免费的错误日志刷屏口。
+  const lvl = String(ecLevel ?? '').toUpperCase();
+  const ec = Object.prototype.hasOwnProperty.call(EC_TABLE, lvl) && lvl !== '__proto__' ? lvl : 'M';
   const bytes = [...Buffer.from(String(text), 'utf8')];
 
   // 选版本
   let version = 0;
   let info = null;
   for (let v = 1; v <= 20; v++) {
-    const t = EC_TABLE[ecLevel][v];
+    const t = EC_TABLE[ec][v];
     if (!t) continue;
     const dataCodewords = t[1] * t[2] + t[3] * t[4];
     const capacityBits = dataCodewords * 8;
@@ -295,12 +299,12 @@ export function qrcodeEncode(text, ecLevel = 'M') {
     const cand = base.map((row) => Int8Array.from(row));
     const res2 = reserved.map((row) => Int8Array.from(row));
     applyMask(cand, reserved, maskFns[mask]);
-    drawFormat(cand, res2, ecLevel, mask);
+    drawFormat(cand, res2, ec, mask);
     const score = penalty(cand);
     if (score < bestScore) { bestScore = score; best = cand; }
   }
 
-  return { size, modules: best, version, ecLevel };
+  return { size, modules: best, version, ecLevel: ec };
 }
 
 function applyMask(m, reserved, fn) {
@@ -442,10 +446,34 @@ function penalty(m) {
 }
 
 /** 生成 SVG 字符串（viewBox 单位 = 1 模块） */
+/**
+ * ⚠️ 颜色必须过白名单！
+ *
+ * 这两个值最终会被插进 `fill="…"`，而 `/api/qrcode` 的 dark/light 是**直接来自 query** 的。
+ * 2026-09-23 实测确认过：`?dark=%22%3E%3Cscript%3E…` 会拼出一个含 <script> 的 SVG，
+ * 而该响应是顶层 `image/svg+xml` 文档 → 浏览器按文档执行 → 拿到本应用的源执行任意脚本。
+ *
+ * 校验放在「产出 SVG 的这一层」而不是调用方，是为了以后新增调用方时不会再漏一次。
+ */
+const COLOR_HEX = /^#[0-9a-f]{3,8}$/i;
+const COLOR_FN = /^(rgb|rgba|hsl|hsla)\(\s*[\d.%,\s/]+\)$/i;
+const COLOR_NAMED = /^(black|white|red|green|blue|gray|grey|silver|navy|teal|olive|purple|maroon|aqua|cyan|fuchsia|magenta|lime|yellow|orange|pink|brown|transparent|none)$/i;
+function safeColor(v, fallback) {
+  const s = String(v ?? '').trim();
+  if (COLOR_HEX.test(s) || COLOR_FN.test(s) || COLOR_NAMED.test(s)) return s;
+  return fallback;
+}
+
 export function qrcodeSvg(text, { ecLevel = 'M', quiet = 3, dark = '#111827', light = '#ffffff', size = null } = {}) {
+  const fg = safeColor(dark, '#111827');
+  const bg = safeColor(light, '#ffffff');
   const { size: n, modules } = qrcodeEncode(text, ecLevel);
-  const total = n + quiet * 2;
-  const px = size ? ` width="${size}" height="${size}"` : '';
+  // quiet 只允许合理范围的非负整数，别让它变成把 viewBox 撑爆/写 NaN 的手段
+  const qd = Number.isFinite(Number(quiet)) ? Math.min(16, Math.max(0, Math.trunc(Number(quiet)))) : 3;
+  const total = n + qd * 2;
+  const px = Number.isFinite(Number(size)) && Number(size) > 0
+    ? ` width="${Math.min(4096, Math.trunc(Number(size)))}" height="${Math.min(4096, Math.trunc(Number(size)))}"`
+    : '';
   const paths = [];
   for (let r = 0; r < n; r++) {
     let c = 0;
@@ -453,13 +481,13 @@ export function qrcodeSvg(text, { ecLevel = 'M', quiet = 3, dark = '#111827', li
       if (modules[r][c] === 1) {
         let w = 1;
         while (c + w < n && modules[r][c + w] === 1) w++;
-        paths.push(`M${c + quiet} ${r + quiet}h${w}v1h-${w}z`);
+        paths.push(`M${c + qd} ${r + qd}h${w}v1h-${w}z`);
         c += w;
       } else c++;
     }
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}"${px} shape-rendering="crispEdges">
-<rect width="${total}" height="${total}" fill="${light}"/>
-<path d="${paths.join('')}" fill="${dark}"/>
+<rect width="${total}" height="${total}" fill="${bg}"/>
+<path d="${paths.join('')}" fill="${fg}"/>
 </svg>`;
 }

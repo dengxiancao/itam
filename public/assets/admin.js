@@ -11,6 +11,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const ICON_PATHS = {
   dashboard: "<path d='M3 20h18'/><path d='M6.5 20v-5'/><path d='M12 20V8'/><path d='M17.5 20v-8'/>",
   devices: "<rect x='2.5' y='4' width='19' height='12.5' rx='2'/><path d='M2 20.5h20'/>",
+  explorer: "<path d='M3 6.6A2.6 2.6 0 0 1 5.6 4h3.2a2 2 0 0 1 1.6.8l1 1.4a2 2 0 0 0 1.6.8h5.4A2.6 2.6 0 0 1 21 9.6v7.8A2.6 2.6 0 0 1 18.4 20H5.6A2.6 2.6 0 0 1 3 17.4z'/><path d='M8 12.5h8M8 16h5'/>",
   monitor: "<rect x='2.5' y='4' width='19' height='12.5' rx='2'/><path d='M8.5 20.5h7'/><path d='M12 16.5v4'/>",
   laptop: "<rect x='4' y='5' width='16' height='11' rx='1.6'/><path d='M2 19h20'/>",
   printer: "<path d='M7 8V3.5h10V8'/><rect x='3' y='8' width='18' height='8' rx='2'/><path d='M7 13.5h10V21H7z'/>",
@@ -24,6 +25,12 @@ const ICON_PATHS = {
   battery: "<rect x='2' y='7' width='16' height='10' rx='2.6'/><path d='M21 10.5v3'/><path d='M6 12h6'/>",
   building: "<path d='M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16'/><path d='M16 9.5h2.5a2 2 0 0 1 2 2V21'/><path d='M2.5 21h19'/><path d='M8 7h.01M12 7h.01M8 11h.01M12 11h.01M8 15h.01M12 15h.01'/>",
   folder: "<path d='M3 7.6A2.6 2.6 0 0 1 5.6 5h2.9a2 2 0 0 1 1.6.8l1 1.4a2 2 0 0 0 1.6.8h5.7A2.6 2.6 0 0 1 21 10.6v6A2.6 2.6 0 0 1 18.4 19H5.6A2.6 2.6 0 0 1 3 16.4z'/>",
+  'folder-open': "<path d='M3 7.6A2.6 2.6 0 0 1 5.6 5h2.9a2 2 0 0 1 1.6.8l1 1.4a2 2 0 0 0 1.6.8h5.7A2.6 2.6 0 0 1 21 10.6v1.4'/><path d='M2.4 12.2h16.4a2 2 0 0 1 2 2.4l-.9 4.2a2 2 0 0 1-2 1.6H4.9a2 2 0 0 1-2-1.6L2 14.6a2 2 0 0 1 .4-2.4z'/>",
+  'arrow-left': "<path d='M15 5.5 8.5 12l6.5 6.5'/>",
+  'arrow-right': "<path d='M9 5.5 15.5 12 9 18.5'/>",
+  'arrow-up': "<path d='M5.5 15 12 8.5l6.5 6.5'/>",
+  pencil: "<path d='M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17z'/><path d='M14.5 5.5l4 4'/>",
+  'check-small': "<path d='m5 12.5 4.5 4.5L19 7.5'/>",
   sheet: "<path d='M14 2.5H7A2 2 0 0 0 5 4.5v15a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-11z'/><path d='M14 2.5v6h5'/><path d='m9.5 13.5 5 5M14.5 13.5l-5 5'/>",
   trash: "<path d='M4 6.5h16'/><path d='M9.5 6.5V4.8A1.3 1.3 0 0 1 10.8 3.5h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7'/><path d='m6.5 6.5.9 12.6a2 2 0 0 0 2 1.9h5.2a2 2 0 0 0 2-1.9l.9-12.6'/>",
   users: "<path d='M16 20.5v-1.8a3.7 3.7 0 0 0-3.7-3.7H6.7A3.7 3.7 0 0 0 3 18.7v1.8'/><circle cx='9.5' cy='7.5' r='3.7'/><path d='M21 20.5v-1.8a3.7 3.7 0 0 0-2.8-3.6'/><path d='M15.5 4a3.7 3.7 0 0 1 0 7'/>",
@@ -254,11 +261,12 @@ function closeModal() {
 /* ================= 路由 ================= */
 const NAV = [
   { id: 'dashboard', label: '仪表盘', ico: 'dashboard', group: '概览', perm: 'device.read' },
+  { id: 'explorer', label: '资源管理器', ico: 'explorer', group: '资产管理', perm: 'device.read' },
   { id: 'devices', label: '设备台账', ico: 'devices', group: '资产管理', perm: 'device.read' },
   { id: 'orgs', label: '组织架构', ico: 'building', group: '资产管理', perm: 'device.read' },
   { id: 'categories', label: '设备分类', ico: 'folder', group: '资产管理', perm: 'device.read' },
   { id: 'agent', label: '自动盘点', ico: 'refresh', group: '资产管理', perm: 'device.read' },
-  { id: 'excel', label: 'Excel 对接', ico: 'sheet', group: '数据', perm: 'excel.export' },
+  { id: 'excel', label: 'Excel 表格', ico: 'sheet', group: '数据', perm: 'excel.export' },
   { id: 'trash', label: '回收站', ico: 'trash', group: '系统', perm: 'trash.manage' },
   { id: 'users', label: '用户管理', ico: 'users', group: '系统', perm: 'user.manage' },
   { id: 'settings', label: '系统设置', ico: 'settings', group: '系统', perm: 'settings.read' },
@@ -301,6 +309,7 @@ function switchView(view) {
     state.selectAllMatching = 0;
   }
   state.view = view;
+  document.body.classList.toggle('view-devices', view === 'devices');
   $('#pageTitle').textContent = TITLES[view];
   $('#globalSearch').value = '';
   renderNav();
@@ -312,6 +321,7 @@ function switchView(view) {
     dashboard: renderDashboard, devices: renderDevices, orgs: renderOrgs,
     categories: renderCategories, excel: renderExcel, trash: renderTrash,
     users: renderUsers, settings: renderSettings, agent: renderAgent,
+    explorer: renderExplorer,
   }[view];
   fn();
 }
@@ -742,16 +752,22 @@ async function devicesViewHTML() {
   const brandOpts = o.brands.map((b) => `<option value="${esc(b.v)}">${esc(b.v)} (${b.c})</option>`).join('');
   const supplierOpts = (o.suppliers || []).map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   return `
-  <div class="card">
+  <div class="card device-ledger">
     <div class="toolbar">
       <input id="fKeyword" placeholder="搜索 编号/SN/品牌/型号/使用人…" value="${esc(state.devicesQuery.keyword)}" style="width:240px" />
-      <div class="fbar">
+      <details class="device-filter-panel" open>
+        <summary>筛选条件 <span>分类、组织、状态、品牌、供应商</span></summary>
+        <div class="fbar">
         <select id="fCategory" style="width:150px"><option value="">全部分类</option>${o.categories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+        ${/* ⚠️ 筛选栏这几个 id 不能和编辑弹窗里的字段重名：R=同一个页面上 $('#fBrand') 只会返回 DOM 里第一个
+             （也就是筛选栏那个），弹窗保存时读到筛选栏的空值 → 品牌被清空、组织变未分配、状态回落成库存。
+             弹窗表单的字段统一用 df_ 前缀，筛选栏保持 f 前缀，两边永不重叠。 */''}
         <select id="fOrg" style="width:210px"><option value="">全部组织</option>${orgOpts}</select>
         <select id="fStatus" style="width:130px"><option value="">全部状态</option>${o.statuses.map((s) => `<option value="${s.id}">${s.label}</option>`).join('')}</select>
         <select id="fBrand" style="width:130px"><option value="">全部品牌</option>${brandOpts}</select>
         <select id="fSupplier" style="width:120px"><option value="">全部供应商</option>${supplierOpts}</select>
-      </div>
+        </div>
+      </details>
       <button class="btn" id="fSearch">${svgIcon('search')} 查询</button>
       <button class="btn ghost" id="fReset">重置</button>
       <span class="grow"></span>
@@ -792,6 +808,9 @@ function bindDeviceEvents() {
   on('#fStatus', 'onchange', (e) => { state.devicesQuery.page = 1; state.devicesQuery.status = e.target.value; loadDevices(); });
   on('#fBrand', 'onchange', (e) => { state.devicesQuery.page = 1; state.devicesQuery.brand = e.target.value; loadDevices(); });
   on('#fSupplier', 'onchange', (e) => { state.devicesQuery.page = 1; state.devicesQuery.supplier = e.target.value; loadDevices(); });
+  // 手机上默认收起低频筛选，首屏只留搜索和主要操作；桌面端仍完整展开。
+  const filters = $('.device-filter-panel');
+  if (filters && window.matchMedia?.('(max-width: 1100px)').matches) filters.removeAttribute?.('open');
   on('#fReset', 'onclick', () => {
     state.devicesQuery = { page: 1, page_size: 20, keyword: '', category_id: '', org_id: '', status: '', brand: '', supplier: '', sort: 'updated_at', order: 'desc' };
     renderDevices();
@@ -831,16 +850,16 @@ async function loadDevices() {
     // 一旦把判定挪到 map 外面，d 就不在作用域里了（这里踩过：ReferenceError: d is not defined）。
     body.innerHTML = data.items.map((d) => `
       <tr data-id="${d.id}">
-        <td data-label="" class="keep"><input type="checkbox" class="row-check" value="${d.id}"${state.selection.has(String(d.id)) ? ' checked' : ''}></td>
-        <td class="mono" style="font-weight:600" data-label="资产编号">${esc(d.asset_no)}</td>
-        <td data-label="分类"><span class="chip">${iconOf(d.category_icon)} ${esc(d.category_name || '未分类')}</span></td>
-        <td data-label="品牌 / 型号">${esc(d.brand || '—')} <span class="muted">${esc(d.model || '')}</span></td>
-        <td class="mono muted" data-label="SN">${esc(d.sn || '—')}</td>
-        <td class="muted${d.org_path || d.org_name ? '' : ' blank'}" data-label="所属组织">${esc(d.org_path || d.org_name || '—')}</td>
-        <td class="${d.owner_name ? '' : 'blank'}" data-label="使用人">${esc(d.owner_name || '—')}</td>
-        <td data-label="状态">${statusBadge(d.status)}</td>
-        <td class="mut" data-label="保修">${d.warranty_expired === true ? '<span class="tag" style="color:var(--red)">已过期</span>' : d.warranty_expired === false ? `<span class="muted">${fmtDate(d.warranty_until)}</span>` : '<span class="muted">—</span>'}</td>
-        <td class="muted" data-label="更新时间">${esc((d.updated_at || '').replace('T', ' ').slice(0, 16))}</td>
+        <td data-label="" class="keep device-select"><input type="checkbox" class="row-check" value="${d.id}"${state.selection.has(String(d.id)) ? ' checked' : ''}></td>
+        <td class="mono dev-asset" style="font-weight:600" data-label="资产编号">${esc(d.asset_no)}</td>
+        <td class="dev-category" data-label="分类"><span class="chip">${iconOf(d.category_icon)} ${esc(d.category_name || '未分类')}</span></td>
+        <td class="dev-model" data-label="品牌 / 型号">${esc(d.brand || '—')} <span class="muted">${esc(d.model || '')}</span></td>
+        <td class="mono muted dev-sn" data-label="SN">${esc(d.sn || '—')}</td>
+        <td class="muted dev-org${d.org_path || d.org_name ? '' : ' blank'}" data-label="所属组织">${esc(d.org_path || d.org_name || '—')}</td>
+        <td class="dev-owner${d.owner_name ? '' : ' blank'}" data-label="使用人">${esc(d.owner_name || '—')}</td>
+        <td class="dev-status" data-label="状态">${statusBadge(d.status)}</td>
+        <td class="mut dev-warranty" data-label="保修">${d.warranty_expired === true ? '<span class="tag" style="color:var(--red)">已过期</span>' : d.warranty_expired === false ? `<span class="muted">${fmtDate(d.warranty_until)}</span>` : '<span class="muted">—</span>'}</td>
+        <td class="muted dev-updated" data-label="更新时间">${esc((d.updated_at || '').replace('T', ' ').slice(0, 16))}</td>
         <td data-label="" class="keep"><div class="row-actions">
           <button type="button" class="btn xs" onclick="openDeviceDetail('${d.id}')">查看</button>
           ${hasPerm('device.write') ? `<button type="button" class="btn xs" onclick="openDeviceForm('${d.id}')">编辑</button>` : ''}
@@ -1065,6 +1084,65 @@ function isColumnTracking(key) {
   return (state.options?.column_tracking_keys || []).includes(key);
 }
 
+/**
+ * 电脑端设备表单里**始终显示**的核心字段（少一个就不知道这行是什么设备）。
+ *
+ * ⚠️ 这里只留 7 个。以前表单里写死了 30 来个字段（使用人工号、电话、采购、保修、
+ *    金额、合同号、成色、备注、IP、MAC、系统、CPU、内存、硬盘…），用户的原话是
+ *    「设备分类里没有这些字段，为什么还要加在这里」——
+ *    现在这些字段统一由「设备分类 → 专属字段」管理：配了就出现在「专属字段」区，
+ *    没配就收进表单底部的折叠区「其他字段」（仍在 DOM 里，所以**不会丢已有数据**）。
+ */
+const DEVICE_FORM_CORE_KEYS = ['asset_no', 'brand', 'model', 'sn', 'category_id', 'org_id', 'status'];
+
+/**
+ * 「其他字段」的定义：设备表里有、但分类没点名的那些。
+ * 折叠收起，不占地方；但一定要渲染出来 —— 已存的数据得能看能改，
+ * 而且表单不渲染的字段虽然服务端会保留原值，用户却再也没法修改它了。
+ */
+const OPTIONAL_FIELD_DEFS = [
+  { key: 'owner_name', label: '使用人', type: 'text' },
+  { key: 'owner_employee_no', label: '使用人工号', type: 'text' },
+  { key: 'owner_phone', label: '使用人电话', type: 'text' },
+  { key: 'location', label: '存放位置', type: 'text' },
+  { key: 'ip_address', label: 'IP 地址', type: 'text' },
+  { key: 'mac_address', label: 'MAC 地址', type: 'text' },
+  { key: 'os_name', label: '操作系统', type: 'text' },
+  { key: 'cpu', label: 'CPU', type: 'text' },
+  { key: 'memory', label: '内存', type: 'text' },
+  { key: 'disk', label: '硬盘', type: 'text' },
+  { key: 'screen_size', label: '屏幕尺寸', type: 'text' },
+  { key: 'purchase_date', label: '采购日期', type: 'date' },
+  { key: 'warranty_until', label: '保修到期', type: 'date' },
+  { key: 'purchase_price', label: '采购金额', type: 'number' },
+  { key: 'supplier', label: '供应商', type: 'supplier' },
+  { key: 'contract_no', label: '合同号', type: 'text' },
+  { key: 'condition_grade', label: '成色', type: 'grade' },
+  { key: 'remark', label: '备注', type: 'textarea' },
+];
+
+/** 该分类该渲染哪些专属字段（剔除表单顶部已有固定输入框的核心字段） */
+function formTrackingFields(cat) {
+  return (cat?.tracking_fields || []).filter((t) => t && t.key && !DEVICE_FORM_CORE_KEYS.includes(t.key));
+}
+
+/** 该分类没点名、因而收进折叠区的「其他字段」 */
+function optionalFieldsFor(cat) {
+  const configured = new Set((cat?.tracking_fields || []).filter((f) => f && f.key).map((f) => f.key));
+  return OPTIONAL_FIELD_DEFS.filter((d) => !configured.has(d.key));
+}
+
+/**
+ * 专属字段的默认值（管理端在「设备分类 → 专属字段 → 默认值」里配）。
+ * 下拉字段只在默认值确实在选项里时才用，否则等于选了个不存在的值。
+ */
+function fieldDefault(t) {
+  const d = t?.default === undefined || t?.default === null ? '' : String(t.default);
+  if (!d) return '';
+  if (t.type === 'select') return (Array.isArray(t.options) && t.options.includes(d)) ? d : '';
+  return d;
+}
+
 /** 专属字段的当前值：映射到列就读列，否则读 extra */
 function trackingValue(dev, t) {
   if (!dev) return '';
@@ -1090,45 +1168,72 @@ function trackingInputHTML(t, value) {
 function deviceFormHTML(dev) {
   const o = state.options;
   const cat = dev?.category_id || state.options.categories[0]?.id || '';
-  const tracking = state.options.categories.find((c) => c.id === cat)?.tracking_fields || [];
-  const extra = dev?.extra || {};
+  const catObj = state.options.categories.find((c) => c.id === cat);
   return `
     <div class="form-grid">
       <div class="field"><label>资产编号 <span class="req">*</span></label>
-        <input id="fAssetNo" value="${esc(dev?.asset_no || '')}" placeholder="留空自动生成"></div>
+        <input id="df_asset_no" value="${esc(dev?.asset_no || '')}" placeholder="留空自动生成"></div>
       <div class="field"><label>设备分类 <span class="req">*</span></label>
-        <select id="fCat">${o.categories.map((c) => `<option value="${c.id}" ${c.id === cat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>品牌</label><input id="fBrand" list="brandList" value="${esc(dev?.brand || '')}" placeholder="Dell / 联想 / HP…">
+        <select id="df_cat">${o.categories.map((c) => `<option value="${c.id}" ${c.id === cat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>品牌</label><input id="df_brand" list="brandList" value="${esc(dev?.brand || '')}" placeholder="Dell / 联想 / HP…">
         <datalist id="brandList">${o.brands.map((b) => `<option value="${esc(b.v)}">`).join('')}</datalist></div>
-      <div class="field"><label>型号</label><input id="fModel" value="${esc(dev?.model || '')}" placeholder="如 U2723QE"></div>
-      <div class="field"><label>SN 序列号</label><input id="fSN" value="${esc(dev?.sn || '')}" placeholder="设备唯一序列号"></div>
-      <div class="field"><label>所属组织</label><select id="fOrg"><option value="">未分配</option>${o.orgs.map((x) => `<option value="${x.id}" ${dev?.org_id === x.id ? 'selected' : ''}>${esc(x.path || x.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>状态</label><select id="fStatus">${o.statuses.map((s) => `<option value="${s.id}" ${dev?.status === s.id ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
-      <div class="field"><label>成色</label><select id="fGrade"><option value="">—</option>${['A', 'B', 'C'].map((g) => `<option ${dev?.condition_grade === g ? 'selected' : ''}>${g}</option>`).join('')}</select></div>
-      <div class="field"><label>使用人</label><input id="fOwner" value="${esc(dev?.owner_name || '')}"></div>
-      <div class="field"><label>使用人工号</label><input id="fEmp" value="${esc(dev?.owner_employee_no || '')}"></div>
-      <div class="field"><label>使用人电话</label><input id="fPhone" value="${esc(dev?.owner_phone || '')}"></div>
-      <div class="field"><label>存放位置</label><input id="fLocation" value="${esc(dev?.location || '')}"></div>
-      <div class="field"><label>IP 地址</label><input id="fIP" value="${esc(dev?.ip_address || '')}"></div>
-      <div class="field"><label>MAC 地址</label><input id="fMAC" value="${esc(dev?.mac_address || '')}"></div>
-      <div class="field"><label>操作系统</label><input id="fOS" value="${esc(dev?.os_name || '')}"></div>
-      <div class="field"><label>CPU</label><input id="fCPU" value="${esc(dev?.cpu || '')}"></div>
-      <div class="field"><label>内存</label><input id="fMem" value="${esc(dev?.memory || '')}"></div>
-      <div class="field"><label>硬盘</label><input id="fDisk" value="${esc(dev?.disk || '')}"></div>
-      <div class="field"><label>采购日期</label><input type="date" id="fBuy" value="${dev?.purchase_date || ''}"></div>
-      <div class="field"><label>保修到期</label><input type="date" id="fWarranty" value="${dev?.warranty_until || ''}"></div>
-      <div class="field"><label>采购金额</label><input type="number" step="0.01" id="fPrice" value="${dev?.purchase_price ?? ''}"></div>
-      <div class="field"><label>供应商</label>
-        <select id="fSupplier">
-          <option value="">— 未指定 —</option>
-          ${[...new Set([...(o.suppliers || []), ...(dev?.supplier ? [dev.supplier] : [])])]
-            .map((s) => `<option value="${esc(s)}" ${dev?.supplier === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
-        </select></div>
-      <div class="field"><label>合同号</label><input id="fContract" value="${esc(dev?.contract_no || '')}"></div>
-      <div class="field full"><label>备注</label><textarea id="fRemark">${esc(dev?.remark || '')}</textarea></div>
-      ${tracking.length ? `<div class="full" style="grid-column:1/-1"><h3 style="margin:10px 0 12px">${esc(state.options.categories.find((c) => c.id === cat)?.name || '')} 专属字段</h3><div class="form-grid">${tracking.map((t) => `
-        <div class="field"><label>${esc(t.label)}</label>${trackingInputHTML(t, trackingValue(dev, t))}</div>`).join('')}</div></div>` : ''}
+      <div class="field"><label>型号</label><input id="df_model" value="${esc(dev?.model || '')}" placeholder="如 U2723QE"></div>
+      <div class="field"><label>SN 序列号</label><input id="df_sn" value="${esc(dev?.sn || '')}" placeholder="设备唯一序列号"></div>
+      <div class="field"><label>所属组织</label><select id="df_org"><option value="">未分配</option>${o.orgs.map((x) => `<option value="${x.id}" ${dev?.org_id === x.id ? 'selected' : ''}>${esc(x.path || x.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>状态</label><select id="df_status">${o.statuses.map((s) => `<option value="${s.id}" ${dev?.status === s.id ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
+
+      <div class="full" style="grid-column:1/-1" id="catFieldsSlot">${catFieldsHTML(dev, catObj)}</div>
+      <div class="full" style="grid-column:1/-1" id="optFieldsSlot">${optFieldsHTML(dev, catObj)}</div>
     </div>`;
+}
+
+/** 「设备分类 → 专属字段」区：这个分类配了什么就渲染什么（顺序也按配置来） */
+function catFieldsHTML(dev, catObj) {
+  const tracking = formTrackingFields(catObj);
+  if (!tracking.length) {
+    return `<p class="muted" style="margin:10px 0 0">「${esc(catObj?.name || '该分类')}」没有配置专属字段。
+      需要加字段（比如使用人、CPU、屏幕尺寸）就到 <b>设备分类 → 编辑 → 专属字段</b> 里加。</p>`;
+  }
+  return `<h3 style="margin:10px 0 12px">${esc(catObj?.name || '')} 专属字段</h3>
+    <div class="form-grid">${tracking.map((t) => `
+      <div class="field"><label>${esc(t.label)}</label>${trackingInputHTML(t, trackingValue(dev, t) || (dev ? '' : fieldDefault(t)))}</div>`).join('')}</div>`;
+}
+
+/**
+ * 折叠区「其他字段」：分类没点名的设备字段。
+ * 仍然是真输入框（只是收起来了），所以：已存的值能看能改，绝不会因为"界面上没有"而被清掉。
+ */
+function optFieldsHTML(dev, catObj) {
+  const list = optionalFieldsFor(catObj);
+  if (!list.length) return '';
+  return `<details class="field-extra">
+    <summary>其他字段（未在「设备分类」里配置，一般不用填）</summary>
+    <div class="form-grid" style="margin-top:10px">
+      ${list.map((d) => `<div class="field${d.type === 'textarea' ? ' full' : ''}"><label>${esc(d.label)}</label>${optionalFieldInputHTML(d, dev)}</div>`).join('')}
+    </div>
+  </details>`;
+}
+
+/** 折叠区字段的输入控件（供应商 / 成色是下拉，备注是文本域，其余按类型） */
+function optionalFieldInputHTML(d, dev) {
+  const id = `o_${d.key}`;
+  const v = dev?.[d.key];
+  const val = v === null || v === undefined ? '' : String(v);
+  if (d.type === 'textarea') {
+    return `<textarea id="${id}" rows="2">${esc(val)}</textarea>`;
+  }
+  if (d.type === 'supplier') {
+    const opts = [...new Set([...(state.options.suppliers || []), ...(val ? [val] : [])])];
+    return `<select id="${id}"><option value="">— 未指定 —</option>
+      ${opts.map((s) => `<option value="${esc(s)}" ${val === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`;
+  }
+  if (d.type === 'grade') {
+    return `<select id="${id}"><option value="">—</option>
+      ${['A', 'B', 'C'].map((g) => `<option value="${g}" ${val === g ? 'selected' : ''}>${g}</option>`).join('')}</select>`;
+  }
+  const type = d.type === 'date' ? 'date' : d.type === 'number' ? 'number' : 'text';
+  const step = d.type === 'number' ? ' step="0.01"' : '';
+  return `<input id="${id}" type="${type}"${step} value="${esc(val)}">`;
 }
 
 function openDeviceForm(id) {
@@ -1148,25 +1253,19 @@ function openDeviceForm(id) {
 }
 
 function bindDeviceForm(dev) {
-  $('#fCat').onchange = () => {
-    const cat = $('#fCat').value;
-    const tracking = state.options.categories.find((c) => c.id === cat)?.tracking_fields || [];
-    const box = $('.modal-body');
-    const existing = box.querySelector('[data-tracking]');
-    if (existing) existing.remove();
-    if (tracking.length) {
-      const div = document.createElement('div');
-      div.setAttribute('data-tracking', '');
-      div.className = 'full';
-      div.style.gridColumn = '1/-1';
-      div.innerHTML = `<h3 style="margin:10px 0 12px">${esc(state.options.categories.find((c) => c.id === cat)?.name || '')} 专属字段</h3>
-        <div class="form-grid">${tracking.map((t) => `<div class="field"><label>${esc(t.label)}</label>${trackingInputHTML(t, '')}</div>`).join('')}</div>`;
-      box.appendChild(div);
-    }
+  // 换分类：只重建「专属字段区 + 其他字段区」，**不动上面已填好的核心字段**
+  // （整表单重绘会把用户刚敲的品牌/SN 抹掉）
+  $('#df_cat').onchange = () => {
+    const catObj = state.options.categories.find((c) => c.id === $('#df_cat').value);
+    const cs = $('#catFieldsSlot');
+    if (cs) cs.innerHTML = catFieldsHTML(dev, catObj);
+    const os = $('#optFieldsSlot');
+    if (os) os.innerHTML = optFieldsHTML(dev, catObj);
   };
   $('#devSave').onclick = async () => {
-    const cat = $('#fCat').value;
-    const tracking = state.options.categories.find((c) => c.id === cat)?.tracking_fields || [];
+    const cat = $('#df_cat').value;
+    const catObj = state.options.categories.find((c) => c.id === cat);
+    const tracking = formTrackingFields(catObj);
     // 专属字段：映射到设备列的写列，其余写 extra
     const extra = { ...(dev?.extra || {}) };
     const columnValues = {};
@@ -1181,18 +1280,25 @@ function bindDeviceForm(dev) {
     });
     const payload = {
       category_id: cat,
-      asset_no: $('#fAssetNo').value.trim(),
-      brand: $('#fBrand').value.trim(), model: $('#fModel').value.trim(), sn: $('#fSN').value.trim(),
-      org_id: $('#fOrg').value || null, status: $('#fStatus').value, condition_grade: $('#fGrade').value || null,
-      owner_name: $('#fOwner').value.trim(), owner_employee_no: $('#fEmp').value.trim(), owner_phone: $('#fPhone').value.trim(),
-      location: $('#fLocation').value.trim(), ip_address: $('#fIP').value.trim(), mac_address: $('#fMAC').value.trim(),
-      os_name: $('#fOS').value.trim(), cpu: $('#fCPU').value.trim(), memory: $('#fMem').value.trim(), disk: $('#fDisk').value.trim(),
-      purchase_date: $('#fBuy').value || null, warranty_until: $('#fWarranty').value || null,
-      purchase_price: $('#fPrice').value === '' ? null : Number($('#fPrice').value),
-      supplier: $('#fSupplier').value.trim(), contract_no: $('#fContract').value.trim(), remark: $('#fRemark').value.trim(),
+      asset_no: $('#df_asset_no').value.trim(),
+      brand: $('#df_brand').value.trim(), model: $('#df_model').value.trim(), sn: $('#df_sn').value.trim(),
+      org_id: $('#df_org').value || null, status: $('#df_status').value,
       ...columnValues,
       extra,
     };
+    /*
+     * 折叠区「其他字段」：**只有真的渲染出来的才提交**。
+     * 没渲染的字段一律不带 key → 服务端 normalizeDeviceInput(input, cur) 会沿用它原来的值，
+     * 所以"界面上没有"永远不会变成"把数据清空"。
+     */
+    for (const d of optionalFieldsFor(catObj)) {
+      const el = $(`#o_${d.key}`);
+      if (!el) continue;
+      const raw = String(el.value ?? '');
+      if (d.type === 'number') payload[d.key] = raw === '' ? null : Number(raw);
+      else if (d.type === 'date') payload[d.key] = raw || null;
+      else payload[d.key] = raw;
+    }
     try {
       if (dev) await api('/devices/' + dev.id, { method: 'PUT', body: JSON.stringify(payload) });
       else await api('/devices', { method: 'POST', body: JSON.stringify(payload) });
@@ -1794,7 +1900,13 @@ async function renderCategories() {
 function openCatForm(id) {
   const cur = id ? state.catsData.items.find((c) => c.id === id) : null;
   const icons = state.options.icons;
-  const fields = cur?.tracking_fields || [];
+  // 新建分类时预填两个最常用的字段：它们原来是手机端写死的输入框，
+  // 现在归分类管 —— 预填好，不想要的人自己删掉即可。
+  const DEFAULT_OWNER_FIELDS = [
+    { key: 'owner_name', label: '使用人', type: 'text' },
+    { key: 'location', label: '存放位置', type: 'text' },
+  ];
+  const fields = cur ? (cur.tracking_fields || []) : DEFAULT_OWNER_FIELDS;
   openModal(`<div class="modal-head"><h2>${cur ? '编辑分类' : '新增分类'}</h2><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <div class="form-grid">
@@ -1808,8 +1920,13 @@ function openCatForm(id) {
           </div></div>
         <div class="field full"><label>主题色</label><input type="text" id="cColor" value="${cur?.color || 'var(--primary)'}">
           <input type="color" id="cColorPick" value="${cur?.color || 'var(--primary)'}" style="width:44px;height:36px;padding:2px;margin-left:8px;cursor:pointer"></div>
-        <div class="field full"><label>专属字段${help('这个分类特有的属性，在电脑端和手机端录入时都会自动出现。')}</label>
+        <div class="field full"><label>专属字段${help('这个分类特有的属性，在电脑端和手机端录入时都会自动出现。\n留空则那个字段不显示；改名只影响界面显示。\n\n以下 key 会写进设备的正式字段（推荐直接用它们）：\nowner_name 使用人 · location 存放位置 · cpu · memory · disk · os_name · ip_address · mac_address · screen_size · supplier · remark\n其它 key 存进扩展字段，导出 Excel 时同样成列。')}</label>
           <div id="trackFields">${fields.map((f, i) => trackFieldHTML(i, f)).join('')}</div>
+          <datalist id="trackKeyList">
+            ${['owner_name', 'location', 'cpu', 'memory', 'disk', 'os_name', 'ip_address', 'mac_address',
+    'screen_size', 'resolution', 'interface', 'supplier', 'remark', 'imei', 'phone_no',
+    'print_type', 'ports', 'rack_no'].map((k) => `<option value="${k}"></option>`).join('')}
+          </datalist>
           <button class="btn sm" id="addTrack" style="margin-top:8px">＋ 添加字段</button></div>
       </div>
     </div>
@@ -1833,6 +1950,9 @@ function openCatForm(id) {
         type,
       };
       if (type === 'select' && options.length) f.options = options;
+      // 默认值：下拉字段只在它确实是选项之一时才存（否则等于选了个不存在的值）
+      const dv = ($(`.tf-default`, r)?.value || '').trim();
+      if (dv && (type !== 'select' || options.includes(dv))) f.default = dv;
       return f;
     }).filter((f) => f.key);
     const payload = { name: $('#cName').value.trim(), code: $('#cCode').value.trim(), code_prefix: $('#cPrefix').value.trim(), icon: $('#cIcon').value, color: $('#cColor').value, tracking_fields: fields };
@@ -1849,8 +1969,8 @@ function openCatForm(id) {
 function trackFieldHTML(i, f) {
   const isSel = f.type === 'select';
   return `<div class="track-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-    <input class="tf-key" placeholder="字段 key" value="${esc(f.key)}" style="flex:1;min-width:110px" title="数据库字段标识（英文）">
-    <input class="tf-label" placeholder="显示名" value="${esc(f.label)}" style="flex:1.2;min-width:110px" title="录入界面显示的名称">
+    <input class="tf-key" list="trackKeyList" placeholder="字段 key" value="${esc(f.key)}" style="flex:1;min-width:110px" title="数据库字段标识（英文）。下面这些会写进设备的正式字段：owner_name 使用人 / location 存放位置 / cpu / memory / disk / os_name / ip_address / mac_address / screen_size">
+    <input class="tf-label" placeholder="显示名" value="${esc(f.label)}" style="flex:1.2;min-width:110px" title="录入界面显示的名称（手机端、电脑端都用它）">
     <select class="tf-type" style="width:104px" onchange="this.parentElement.querySelector('.tf-opts').style.display = (this.value === 'select' ? '' : 'none')">
       <option value="text" ${f.type === 'text' ? 'selected' : ''}>文本</option>
       <option value="number" ${f.type === 'number' ? 'selected' : ''}>数字</option>
@@ -1858,6 +1978,7 @@ function trackFieldHTML(i, f) {
       <option value="select" ${isSel ? 'selected' : ''}>下拉选项</option>
     </select>
     <input class="tf-opts" placeholder="选项，逗号分隔，如：24寸,27寸" value="${esc((f.options || []).join(', '))}" style="flex:1.8;min-width:150px;${isSel ? '' : 'display:none'}">
+    <input class="tf-default" placeholder="默认值" value="${esc(f.default || '')}" style="flex:.9;min-width:92px" title="录入时预先选好/填好的值。下拉字段填的默认值必须是上面选项之一；留空 = 不预设">
     <button class="btn xs ghost" onclick="this.parentElement.remove()">${svgIcon('x', 13)}</button></div>`;
 }
 
@@ -1868,7 +1989,7 @@ async function delCat(id, name) {
   }
 }
 
-/* ================= Excel 对接 =================
+/* ================= Excel 表格（导出 / 导入 / 自动更新） =================
  * 三个分区，一个分区一件事：**导出 / 导入 / 实时链接**，顺序按使用频率排。
  *
  * 三条精简原则（改这一块时请继续遵守）：
@@ -1879,91 +2000,307 @@ async function delCat(id, name) {
  *      现在收成「3 个开关 + 1 个按钮」。
  */
 
-/** 「实时链接」相关的两条通用提醒 —— showLiveGuide / showMultiSheetGuide 共用，别再各写一遍 */
-const WPS_WARN_HTML = '<div class="hint" style="background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-text);padding:11px 13px;border-radius:10px">' +
-  'WPS 的「自网站」<b>只认网页里的表格，不认 CSV</b>，粘 CSV 链接会报「<b>无法获取数据</b>」。<br>' +
-  '请把「链接格式」保持为 <b>网页表格 · WPS / Excel 通用</b> 再复制链接。<br>' +
-  '若仍失败：把链接<b>先粘到浏览器地址栏回车</b> —— 能看到表格页说明链接没问题（是 WPS 取数方式的问题）；' +
-  '打不开则说明地址选错了，把「取数地址」换成 <b>本机</b> 或 <b>局域网</b> 那个。</div>';
+/* ================= Excel 页 =================
+ * 用户的原话：「操作逻辑有大问题，普通用户理解不了，改得通俗易懂好上手」。
+ *
+ * 老页面是按「技术手段」组织的（导出卡片 / 导入卡片 / 实时数据链接卡片），
+ * 于是把一堆技术词直接摊给了用户：取数地址、链接格式（网页表格 vs CSV）、
+ * 导航器、外部数据属性、多表链接、令牌、Power Query……
+ * 用户得先搞懂这些概念，才知道自己该点哪儿。
+ *
+ * 新页面按「**你要做什么**」组织，三件事一张卡，从上到下就是使用顺序：
+ *    ① 导出一份文件    （打印 / 存档 / 发人）
+ *    ② 把填好的表传回来（批量新增、批量改）
+ *    ③ 让 Excel 自己更新（最省事，配一次以后一直有效）
+ * 每张卡里只有「一句人话说明 + 一个大按钮」，技术细节全部收进折叠区或"出问题了"。
+ *
+ * 术语翻译（老 → 新）：
+ *    取数地址            → 这个 Excel 文件会在哪台电脑上用？（三选一，自动选好推荐项）
+ *    链接格式 网页表格/CSV → 藏进「出问题了」，主流程默认网页表格（WPS/Excel 都认）
+ *    实时数据链接         → 让 Excel 自己跟着更新
+ *    导航器 / 外部数据属性 → 「弹出的小窗口里选 Table」「右键 → 属性」
+ *    令牌                → 不提；只说"链接自带只读口令，别人拿到只能看、改不了"
+ *    多表链接            → 「每个分类各一张工作表」（按结果命名，不按机制命名）
+ * ============================================ */
 
-/** 弹窗里的小节标题样式 —— 原来 `font-size:15px;margin:22px 0 8px` 在弹窗里抄了 6 遍 */
+/** 老页面里被测试和别处引用的样式常量，保留 */
 const H3_STEP = 'font-size:15px;margin:22px 0 8px';
-
-/** 弹窗里只读链接框的样式 —— showLiveGuide / showMultiSheetGuide 共用 */
 const TA_LINK = 'width:100%;height:70px;font-family:monospace;font-size:12px';
 
-/** 导出方式两种口径的对照 —— 只在导出卡片里出现一次 */
-const EXPORT_KINDS_HTML =
-  '<div class="table-wrap"><table class="grid">' +
-  '<thead><tr><th>做法</th><th>Excel 里的样子</th><th>数据会自动更新吗</th></tr></thead><tbody>' +
-  '<tr><td><b>快照导出</b><br><span class="muted" style="font-size:12px">本卡片的按钮</span></td>' +
-  '<td><b>照片直接嵌在单元格里</b>，打开就看到图，另带两个可点链接</td>' +
-  '<td>不会（导完就固定，要新的再导一次）</td></tr>' +
-  '<tr><td><b>实时数据链接</b><br><span class="muted" style="font-size:12px">本页第 3 个分区</span></td>' +
-  '<td>文字列「照片链接」= 点一下就打开浏览器看图</td>' +
-  '<td><b>会</b>（按 F5 / 打开文件自动拉最新）</td></tr>' +
-  '</tbody></table></div>' +
-  '<div class="hint" style="margin-top:10px"><b>既想自动更新又想看图</b>？用实时链接导入后，' +
-  '在表格里<b>自己加一列</b>填 <code>=IMAGE(照片链接所在单元格)</code> 即可' +
-  '（Excel 365 / 较新版 WPS 支持），刷新时图片会跟着变。</div>';
+/** 「出问题了」排查清单 —— 老页面的 WPS_WARN_HTML 改写成人话 */
+const XLS_TROUBLE_HTML = `
+  <div class="xl-tip warn">
+    <b>最常见的一句报错：「无法获取数据」。</b>按顺序做这三件事，基本都能解决：
+    <ol>
+      <li><b>把链接粘到浏览器地址栏</b>回车。能看到一张表格 → 链接没问题，是取数方式的问题（看第 3 条）；
+          打不开 → 是第 2 条的问题。</li>
+      <li><b>换一个「这个 Excel 文件会在哪台电脑上用」</b>，重新复制链接再试。这一步选错了，Excel 就连不上服务器。</li>
+      <li><b>WPS 必须用「网页表格」格式</b>（我们复制的默认就是它）。WPS 的自网站功能不认 CSV 链接，
+          粘 CSV 一定报「无法获取数据」。</li>
+    </ol>
+  </div>
+  <div class="xl-tip">
+    <b>什么时候才需要 CSV 格式？</b>Excel（不是 WPS）里希望日期/金额是真正的数字类型时。
+    代价是纯数字的 SN 可能被 Excel 显示成科学计数法，需要把那一列改成「文本」。
+    <div style="margin-top:8px"><button class="btn sm" onclick="copyLiveLink('all','csv')">复制 CSV 链接（Excel 专用）</button></div>
+  </div>`;
+
+/** 照片要不要显示 —— 老页面的 EXPORT_KINDS_HTML 精简版 */
+const XL_PHOTO_HTML = `
+  <p style="margin-top:0">实时链接过来的「照片链接」列是一串可点的文字，<b>点一下</b>就在浏览器里打开那张照片。</p>
+  <p style="margin:0">想让照片直接显示在单元格里：在表格里新增一列，填公式
+    <code>=IMAGE(照片链接所在单元格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图片会跟着变。</p>
+  <p class="muted" style="margin-bottom:0">想让照片<b>一开始就嵌在文件里</b>（不依赖公式、发给别人也能看），那就用第 ① 张卡的「导出一份 Excel 文件」。</p>`;
 
 /**
- * 导出卡片。三个开关 + 一个按钮，取代原来 4 个平级按钮：
- *   原来用户在「按分类分表 / 单表导出 / 不含照片 / 不含说明页」之间要自己组合，
- *   而这四者其实是**两个维度**（是否分表、是否带照片、是否带说明页），
- *   写成开关后语义直接对上，也不会再出现"导出了两次才发现点错"。
+ * 导出卡片（第 ① 件）。
+ * 三个开关保留原样 —— 它们表达的是两个维度的口径，语义直接对得上，不需要改。
  */
 function exportCardHTML() {
   return `
-    <div class="card">
-      <h3>${svgIcon('upload')} 导出到 Excel${help('导出的是当前台账的快照，文件自带照片（图片直接嵌在单元格里）。适合打印、存档、发给别人。想让数据自动更新，用下面的「实时数据链接」。')}</h3>
+    <div class="card xl-card">
+      <div class="xl-task-head"><span class="xl-num">1</span><h3>导出一份 Excel 文件</h3></div>
+      <p class="xl-lead">打印、存档、发给别人。<b>照片直接嵌在单元格里</b>，对方打开就能看到。</p>
+      <button class="btn primary xl-big" onclick="doExportExcel()">${svgIcon('sheet')} 导出 Excel 文件</button>
+      <p class="muted xl-note">导出的是<b>此刻</b>的台账快照，导完就固定了。想让数据一直保持最新，用第 ③ 张卡。</p>
 
-      <div class="opt-list" style="margin-bottom:12px">
-        <label><input type="checkbox" id="expSplit" checked> 按分类分表<span class="muted">台式主机 / 显示器…各一个工作表，另附数量汇总页</span></label>
-        <label><input type="checkbox" id="expPhotos" checked> 含照片<span class="muted">取消后文件小得多（几十台从几 MB 降到几十 KB）</span></label>
-        <label><input type="checkbox" id="expHelp" checked> 含说明页<span class="muted">附带「字段说明 / 设备分类 / 组织架构」三张辅助表</span></label>
-      </div>
-
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button class="btn primary" onclick="doExportExcel()">${svgIcon('sheet')} 导出</button>
-        <button class="btn" id="btnBackfill" onclick="backfillThumbs()">${svgIcon('image')} 补缩略图</button>
-        ${help('「补缩略图」：早期录的设备只有 1600px 大图（每张约 150 KB），几十台就是好几 MB。\n点它在浏览器里批量生成 320px 小图，之后导出的体积能降到十分之一、下载也快得多。')}
-      </div>
-
-      <details style="margin-top:14px">
-        <summary style="cursor:pointer;font-size:13px;color:var(--text-2);font-weight:600">照片的两种给法有什么区别？</summary>
-        <div style="margin-top:10px">${EXPORT_KINDS_HTML}</div>
+      <details class="xl-more">
+        <summary>导出选项</summary>
+        <div class="opt-list" style="margin-top:10px">
+          <label><input type="checkbox" id="expSplit" checked> 按分类分表<span class="muted">台式主机 / 显示器…各一个工作表，另附数量汇总页</span></label>
+          <label><input type="checkbox" id="expPhotos" checked> 含照片<span class="muted">取消后文件小得多（几十台从几 MB 降到几十 KB）</span></label>
+          <label><input type="checkbox" id="expHelp" checked> 含说明页<span class="muted">附带「字段说明 / 设备分类 / 组织架构」三张辅助表</span></label>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <button class="btn sm" id="btnBackfill" onclick="backfillThumbs()">${svgIcon('image')} 补缩略图</button>
+          ${help('早期录的设备只有 1600px 大图（每张约 150 KB），几十台就是好几 MB。\\n点它在浏览器里批量生成 320px 小图，之后导出的体积能降到十分之一、下载也快得多。只影响导出速度，不删原图。')}
+        </div>
       </details>
     </div>`;
 }
 
-/** 导入卡片 */
+/**
+ * 导入卡片（第 ② 件）。
+ * 把「下载模板 → 填 → 上传」写成有编号的两个按钮，减少"我该先干嘛"的犹豫。
+ */
 function importCardHTML() {
   return `
-    <div class="card">
-      <h3>${svgIcon('download')} 从 Excel 导入</h3>
-      <p class="muted" style="margin-top:0">
-        下载模板填写后上传；系统按<b>表头</b>智能匹配列、按<b>名称</b>匹配组织与分类，同 SN 自动去重（走更新）。
-        模板主表本身不含数据（避免示例被误导入），填写格式参考「<b>填写示例</b>」页，数据填在「<b>设备台账</b>」页第 3 行起。
-      </p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button class="btn" onclick="location.href='/api/excel/template'">${svgIcon('download')} 下载导入模板</button>
-        <button class="btn primary" onclick="$('#importFile').click()">${svgIcon('upload')} 选择文件导入</button>
-        <input type="file" id="importFile" accept=".xlsx,.xls" hidden>
+    <div class="card xl-card">
+      <div class="xl-task-head"><span class="xl-num">2</span><h3>把填好的表传回来</h3></div>
+      <p class="xl-lead">一次批量新增或修改很多台设备。系统按<b>表头</b>认列、按<b>名称</b>认组织和分类，同一个 SN 自动当成同一台设备去更新。</p>
+      <div class="xl-two-btns">
+        <button class="btn xl-big" onclick="location.href='/api/excel/template'">${svgIcon('download')} ① 下载模板</button>
+        <button class="btn primary xl-big" onclick="$('#importFile').click()">${svgIcon('upload')} ② 上传填好的文件</button>
       </div>
-      <div class="opt-list" style="margin-top:12px">
-        <label><input type="checkbox" id="impCreate" checked> 自动创建缺失的组织 / 分类
-          ${help('关掉后，表格里出现台账里没有的组织名或分类名时，该行会被跳过并记进「失败」，不会凭空建出新分类。')}</label>
-        <label><input type="checkbox" id="impUpdate" checked> 遇到同 SN 时更新已有设备
-          ${help('关掉后，同 SN 的行被当作重复直接忽略（既不新建也不更新）。\n想只补空字段、不动人工填过的值，保持开启即可。')}</label>
+      <input type="file" id="importFile" accept=".xlsx,.xls" hidden>
+      <p class="muted xl-note">上传后<b>先给你看结果</b>（会新增几台、更新几台、哪几行有问题），你确认了才真正写入。</p>
+
+      <details class="xl-more">
+        <summary>怎么填？（模板里的两张表）</summary>
+        <ul class="xl-list">
+          <li><b>「填写示例」页</b>：教你每一列该填什么，<b>不会被导入</b>。</li>
+          <li><b>「设备台账」页</b>：真正要导入的数据填在这里，<b>从第 3 行</b>开始（第 1 行标题、第 2 行表头别动）。</li>
+          <li>不想手填资产编号就留空，系统会按分类自动编号。</li>
+          <li>备注里写了「示例」的行会被自动忽略，防止模板示例被当成真设备导进去。</li>
+        </ul>
+      </details>
+
+      <details class="xl-more">
+        <summary>导入选项</summary>
+        <div class="opt-list" style="margin-top:10px">
+          <label><input type="checkbox" id="impCreate" checked> 表格里的组织 / 分类不存在时，自动新建
+            ${help('关掉后，出现台账里没有的组织名或分类名时，该行会被跳过并记进「失败」，不会凭空建出新分类。')}</label>
+          <label><input type="checkbox" id="impUpdate" checked> 同一个 SN 已存在时，更新那台设备
+            ${help('关掉后，同 SN 的行被当作重复直接忽略（既不新建也不更新）。\\n想只补空字段、不动人工填过的值，保持开启即可。')}</label>
+        </div>
+      </details>
+    </div>`;
+}
+
+/** 把服务器给的「取数地址」翻译成普通人能对号入座的说法 */
+function xlBaseChoices(bases) {
+  return (bases || []).map((b, i) => {
+    const base = String(b.base || '');
+    const isLoopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/i.test(base);
+    const isLan = /^http:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(base);
+    let scene; let desc;
+    if (isLoopback) {
+      scene = '就在这台电脑上用';
+      desc = 'Excel 和本系统开在同一台电脑上（最快）';
+    } else if (isLan) {
+      scene = '在办公室其他电脑上用';
+      desc = `同一 WiFi / 同一网段的电脑都能用（${base.replace(/^https?:\/\//, '')}）`;
+    } else {
+      scene = '在外网 / 家里用';
+      desc = '需要走公网访问；如果取不到数据，看下面的「出问题了」';
+    }
+    // 推荐规则：局域网最通用（服务器自己也能访问自己的局域网 IP），
+    // 所以有局域网就推局域网，否则退到本机，最后才是公网。
+    return { i, base, scene, desc, hw: isLoopback ? 'loopback' : isLan ? 'lan' : 'public', label: b.label, hint: b.hint };
+  });
+}
+
+/**
+ * 第 ③ 件：让 Excel 自己跟着更新。
+ * 三步走（哪里用 → 复制链接 → 贴进 Excel），技术细节全在折叠区里。
+ */
+function liveCardHTML(live) {
+  const bases = live.bases || [];
+  if (!bases.length) return '';
+  const choices = xlBaseChoices(bases);
+  const rec = choices.find((c) => c.hw === 'lan') || choices.find((c) => c.hw === 'loopback') || choices[0];
+  state.liveRecIdx = rec.i;
+
+  return `
+    <div class="card xl-card" style="margin-top:16px;border-color:var(--primary-border)">
+      <div class="xl-task-head"><span class="xl-num">3</span><h3>让 Excel 自己跟着更新</h3>
+        <span class="badge" style="color:var(--green);margin-left:8px">配一次，以后一直有效</span></div>
+      <p class="xl-lead">把台账接进 Excel 当数据源。以后<b>打开文件就是最新数据</b>，不用再反复导出。
+        第一次配置大约 1 分钟，三步：</p>
+
+      <section class="xl-step">
+        <h4>第 1 步　这个 Excel 文件会在哪台电脑上用？</h4>
+        <div class="xl-choice" id="liveBase">
+          ${choices.map((c) => `
+            <button class="xl-choice-btn${c.i === rec.i ? ' on' : ''}" data-base="${c.i}">
+              <span class="xl-choice-t">${esc(c.scene)}${c.i === rec.i ? '<span class="xl-rec">推荐</span>' : ''}</span>
+              <span class="xl-choice-d">${esc(c.desc)}</span>
+            </button>`).join('')}
+        </div>
+        <p class="muted xl-note">不确定就选<b>推荐</b>那个。选错了的表现是 Excel 里提示「无法获取数据」，换一个重新复制链接即可。</p>
+      </section>
+
+      <section class="xl-step">
+        <h4>第 2 步　点一下，链接就复制好了</h4>
+        <div class="xl-two-btns">
+          <button class="btn primary xl-big" onclick="copyLiveLink('all')">${svgIcon('copy')} 复制链接：全部设备放一张表</button>
+          <button class="btn xl-big" onclick="copyLiveLink('workbook')">${svgIcon('copy')} 复制链接：每个分类各一张工作表</button>
+        </div>
+        <p class="muted xl-note" style="margin-bottom:4px">两个的区别：只想看一张总表 → 选第一个；
+          想让「台式主机 / 显示器 / 打印机…」<b>各占一张工作表</b> → 选第二个。</p>
+        <p class="muted xl-note">链接里自带只读口令：别人拿到它<b>只能看台账字段</b>，看不到密码、密钥和登录信息，也改不了任何数据。</p>
+      </section>
+
+      <section class="xl-step">
+        <h4>第 3 步　粘到 Excel / WPS 里</h4>
+        <div class="grid grid-2 xl-howto-grid">
+          <div class="xl-howto">
+            <div class="xl-howto-t">${svgIcon('sheet', 14)} Excel</div>
+            <ol class="xl-list">
+              <li>菜单 <b>数据</b> → <b>获取数据</b> → <b>自其他源</b> → <b>自网站</b></li>
+              <li>粘贴刚才复制的链接 → 确定</li>
+              <li>弹出的小窗口里会出现表格，选 <b>Table</b> → 点 <b>加载</b></li>
+              <li>想自动刷新：右键生成的数据 → <b>属性</b> → 勾「打开文件时刷新」+「每 30 分钟刷新」</li>
+            </ol>
+          </div>
+          <div class="xl-howto">
+            <div class="xl-howto-t">${svgIcon('sheet', 14)} WPS</div>
+            <ol class="xl-list">
+              <li>菜单 <b>数据</b> → <b>获取数据</b> / <b>自网站</b></li>
+              <li>粘贴链接 → 确定</li>
+              <li>在表格列表里选要的表格 → <b>导入</b></li>
+              <li>想自动刷新：右键数据 → <b>属性</b> → 勾「打开文件时刷新」</li>
+            </ol>
+            <p class="muted" style="margin:8px 0 0;font-size:12px">WPS 只认网页表格格式（我们复制给你的默认就是），别用 CSV 链接。</p>
+          </div>
+        </div>
+      </section>
+
+      <details class="xl-more">
+        <summary>出问题了？（表格提示「无法获取数据」等）</summary>
+        <div style="margin-top:10px">${XLS_TROUBLE_HTML}</div>
+      </details>
+
+      <details class="xl-more">
+        <summary>想让照片也显示出来</summary>
+        <div style="margin-top:10px">${XL_PHOTO_HTML}</div>
+      </details>
+
+      <details class="xl-more">
+        <summary>只想同步某一个分类（或看某个分类有多少台）</summary>
+        <p class="muted" style="margin:10px 0 0">下面每个分类是一条单独的链接，用法和第 2 步一样，分别粘到不同的工作表里就行。</p>
+        <div id="liveTable" style="margin-top:10px"></div>
+      </details>
+
+      <div class="xl-foot">
+        <span class="muted">当前选用：<b id="liveBaseLabel">${esc(rec.label)}</b></span>
+        <span style="flex:1"></span>
+        <button class="btn sm" onclick="xlPreview()">${svgIcon('search')} 预览数据</button>
+        <button class="btn sm danger" id="btnResetLive">${svgIcon('refresh')} 重置链接</button>
+        ${help('「重置链接」：让所有旧链接立刻失效。\\n什么时候用：换电脑/换网络后发现怎么配都取不到数，或者链接被发到了不该发的地方。\\n重置后已经配好的 Excel 需要换成新链接。')}
       </div>
     </div>`;
 }
 
-/** 导入历史（无记录时给一句空态，不再在 renderExcel 里写三元表达式） */
+/** 单个分类的链接列表（收在折叠区里，给"只想同步一个分类"的人） */
+function renderLiveTable() {
+  const live = state.liveLinks;
+  const box = $('#liveTable');
+  if (!live || !box) return;
+  const b = (live.bases || [])[state.livePick?.idx ?? 0] || (live.bases || [])[0];
+  if (!b) { box.innerHTML = '<div class="muted">没有可用的链接</div>'; return; }
+  box.innerHTML = `
+    <div class="table-wrap"><table class="grid">
+      <thead><tr><th>分类</th><th style="width:110px">设备数量</th><th style="width:150px">链接</th></tr></thead>
+      <tbody>
+        ${(b.sheets || []).map((s, i) => `
+        <tr>
+          <td data-label="分类">${esc(s.name)}</td>
+          <td class="num" data-label="设备数量">${s.count}</td>
+          <td data-label="链接"><button class="btn xs" onclick="copyLiveLink(${i})">${svgIcon('copy')} 复制链接</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+}
+
+/** 在新标签页里打开「当前选用的取数地址 + 全部设备」那张表，让用户先看看通不通 */
+function xlPreview() {
+  const live = state.liveLinks;
+  const idx = state.livePick?.idx ?? 0;
+  const b = (live?.bases || [])[idx] || (live?.bases || [])[0];
+  const url = b?.all?.html;
+  if (!url) { toast('还没有可预览的链接', 'warn'); return; }
+  window.open(url, '_blank');
+}
+
+/** 切换「在哪台电脑上用」（第 1 步的三个按钮） */
+function xlPickBase(idx) {
+  const live = state.liveLinks;
+  const b = (live?.bases || [])[idx];
+  if (!b) return;
+  state.livePick = { base: b, fmt: 'html', idx: Number(idx) };
+  $$('#liveBase .xl-choice-btn').forEach((el) => {
+    el.classList.toggle('on', Number(el.getAttribute('data-base')) === Number(idx));
+  });
+  const lab = $('#liveBaseLabel');
+  if (lab) lab.textContent = b.label;
+  renderLiveTable();
+}
+
+function copyLiveLink(which, fmt) {
+  const live = state.liveLinks;
+  if (!live) return;
+  const idx = state.livePick?.idx ?? state.liveRecIdx ?? 0;
+  const base = (live.bases || [])[idx] || (live.bases || [])[0];
+  if (!base) return;
+  const as = fmt || state.livePick?.fmt || 'html';
+  const size = base.workbook?.tables ?? 0;
+  if (which === 'workbook') {
+    const url = as === 'csv' ? (base.workbook?.csv || base.workbook?.html) : base.workbook?.html;
+    if (url) copyText(url, `「每个分类各一张工作表」的链接（共 ${size} 张表）`);
+    return;
+  }
+  const item = which === 'all' ? base.all : (base.sheets || [])[which];
+  if (!item) return;
+  const url = as === 'csv' ? item.csv : item.html;
+  const name = which === 'all' ? '「全部设备」' : `「${item.name}」`;
+  if (url) copyText(url, `${name}的链接${as === 'csv' ? '（CSV）' : ''}`);
+}
+
+/** 导入历史 */
 function importHistoryHTML(batches) {
   if (!batches.length) {
-    return '<div class="card" style="margin-top:16px"><h3>导入历史</h3><div class="muted">暂无导入记录</div></div>';
+    return '<div class="card" style="margin-top:16px"><h3>导入历史</h3><div class="muted">还没有导入过文件。</div></div>';
   }
   const rows = batches.map((b) => `<tr>
     <td class="muted" data-label="时间">${esc((b.created_at || '').replace('T', ' ').slice(0, 16))}</td>
@@ -1982,6 +2319,7 @@ function importHistoryHTML(batches) {
   </div>`;
 }
 
+/** 页面主体：三件事，从上到下就是使用顺序 */
 async function renderExcel() {
   // 两个接口互不依赖，并发拉；任一失败都不该把整页打挂 —— 历史为空就当作「暂无记录」
   const [batches, live] = await Promise.all([
@@ -1989,8 +2327,17 @@ async function renderExcel() {
     api('/excel/live-links').catch(() => null),
   ]);
   state.liveLinks = live;
+  // 默认选推荐地址（局域网优先），并初始化 state.livePick（copyLiveLink 依赖它）
+  const choices = xlBaseChoices(live?.bases || []);
+  const rec = choices.find((c) => c.hw === 'lan') || choices.find((c) => c.hw === 'loopback') || choices[0];
+  state.livePick = rec ? { base: live.bases[rec.i], fmt: 'html', idx: rec.i } : null;
 
   $('#content').innerHTML = `
+    <div class="xl-intro">
+      <b>在 Excel 里用设备台账，通常就是下面三件事之一。</b>
+      第一次用的话，从上往下看；只想做某一件，直接点那张卡。
+    </div>
+
     <div class="grid grid-2">
       ${exportCardHTML()}
       ${importCardHTML()}
@@ -2013,172 +2360,23 @@ function doExportExcel() {
   });
 }
 
-/** renderExcel 之后的所有事件绑定集中一处（原来散在函数末尾） */
+/** renderExcel 之后的所有事件绑定集中一处 */
 function bindExcelEvents() {
   const f = $('#importFile');
-  if (f) f.onchange = (e) => handleImport(e.target.files[0]);
+  if (f) f.onchange = (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';     // 允许重复选同一个文件（否则第二次选它不触发 change）
+    handleImport(file);
+  };
 
-  const baseSel = $('#liveBase');
-  const fmtSel = $('#liveFmt');
-  if (baseSel) baseSel.onchange = renderLiveTable;
-  if (fmtSel) fmtSel.onchange = renderLiveTable;
-  const guideBtn = $('#btnLiveGuide');
-  if (guideBtn) guideBtn.onclick = showLiveGuide;
+  // 第 1 步的三个「在哪台电脑上用」按钮
+  $$('#liveBase .xl-choice-btn').forEach((el) => {
+    el.onclick = () => xlPickBase(Number(el.getAttribute('data-base')));
+  });
   const resetBtn = $('#btnResetLive');
   if (resetBtn) resetBtn.onclick = resetLiveToken;
 }
 
-/** 实时数据链接卡片（地址可选 + 格式可选） */
-function liveCardHTML(live) {
-  const bases = live.bases || [];
-  if (!bases.length) return '';
-  return `
-    <div class="card" style="margin-top:16px;border-color:var(--primary-border)">
-      <h3>${svgIcon('refresh')} Excel / WPS 实时数据链接
-        ${help('链接里带一个只读令牌，拿到链接的人就能读到设备台账字段（不含密码、密钥、登录信息）。\n换电脑、换网络环境用不了，或者链接被发到了不该发的地方，点「重置链接」即可让所有旧链接立刻失效。')}</h3>
-      <p class="muted" style="margin-top:0">
-        把下面的链接接成数据源，之后<b>每次刷新就能拉到最新台账</b>（可设置「打开文件时刷新」）。
-        只读、只暴露设备台账字段，不含任何密钥。
-      </p>
-      <div class="toolbar" style="margin-bottom:12px">
-        <label style="font-size:13px;color:var(--text-2);font-weight:600">取数地址${help('Excel 装在另一台电脑时，必须选一个对方访问得到的地址（局域网 IP 或公网域名）。\n选错了的表现是表格里报「无法获取数据」——把链接粘到浏览器地址栏试试就知道是不是这个问题。')}</label>
-        <select id="liveBase" style="width:330px">
-          ${bases.map((b, i) => `<option value="${i}">${esc(b.label)}</option>`).join('')}
-        </select>
-        <label style="font-size:13px;color:var(--text-2);font-weight:600;margin-left:8px">链接格式</label>
-        <select id="liveFmt" style="width:230px">
-          <option value="html">网页表格 · WPS / Excel 通用（推荐）</option>
-          <option value="csv">CSV · Excel 用（WPS 可能不认）</option>
-        </select>
-        <span style="flex:1"></span>
-        <button class="btn" id="btnLiveGuide">${svgIcon('book')} 配置步骤</button>
-        <button class="btn danger" id="btnResetLive">${svgIcon('refresh')} 重置链接</button>
-      </div>
-
-      <div style="background:var(--info-bg);border:1px solid var(--info-border);border-radius:10px;padding:13px 15px;margin-bottom:14px">
-        <div style="font-weight:600;color:var(--info-text);margin-bottom:4px">想让每个设备分类落在不同的工作表？</div>
-        <div style="font-size:13px;color:var(--info-text);line-height:1.7">
-          用下面这条「<b>全部分类（多表）</b>」链接 —— 它是一张含<b>多个表格</b>的页面。
-          导入时在表格列表里<b>把表格全部勾选</b>，就能一次生成多张工作表（每个分类一张），
-          不用一个分类建一次查询。
-        </div>
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <button class="btn sm primary" onclick="copyLiveLink('workbook')">${svgIcon('copy')} 复制多表链接</button>
-          <button class="btn sm" onclick="showMultiSheetGuide()">${svgIcon('book')} 怎么配？</button>
-          <span class="muted" style="font-size:12px">当前共 ${bases[0]?.workbook?.tables ?? 0} 张表格</span>
-        </div>
-      </div>
-
-      <div id="liveTable"></div>
-    </div>`;
-}
-
-function renderLiveTable() {
-  const live = state.liveLinks;
-  const box = $('#liveTable');
-  if (!live || !box) return;
-  const bases = live.bases || [];
-  const bi = Number($('#liveBase')?.value || 0);
-  const fmt = $('#liveFmt')?.value || 'html';
-  const b = bases[bi] || bases[0];
-  if (!b) { box.innerHTML = '<div class="muted">没有可用的链接</div>'; return; }
-  state.livePick = { base: b, fmt };
-
-  box.innerHTML = `
-    <div class="table-wrap"><table class="grid">
-      <thead><tr><th>工作表名</th><th style="width:110px">设备数量</th><th style="width:180px">实时链接</th></tr></thead>
-      <tbody>
-        <tr>
-          <td data-label="工作表名"><b>全部设备</b></td>
-          <td class="num" data-label="设备数量">${b.all?.count ?? 0}</td>
-          <td data-label="实时链接"><button class="btn xs primary" onclick="copyLiveLink('all')">${svgIcon('copy')} 复制链接</button></td>
-        </tr>
-        ${(b.sheets || []).map((s, i) => `
-        <tr>
-          <td data-label="工作表名">${esc(s.name)}</td>
-          <td class="num" data-label="设备数量">${s.count}</td>
-          <td data-label="实时链接"><button class="btn xs" onclick="copyLiveLink(${i})">${svgIcon('copy')} 复制链接</button></td>
-        </tr>`).join('')}
-      </tbody>
-    </table></div>
-    <div class="hint" style="margin-top:10px">
-      链接来源：<span class="mono">${esc(b.base)}</span>${b.hint ? ` · <span class="muted">${esc(b.hint)}</span>` : ''}
-    </div>`;
-}
-
-function copyLiveLink(which) {
-  const pick = state.livePick;
-  if (!pick) return;
-  if (which === 'workbook') {
-    const url = pick.base.workbook?.html;
-    if (url) copyText(url, '「全部分类（多表）」链接');
-    return;
-  }
-  const item = which === 'all' ? pick.base.all : pick.base.sheets?.[which];
-  if (!item) return;
-  const url = pick.fmt === 'html' ? item.html : item.csv;
-  copyText(url, which === 'all' ? '「全部设备」链接' : `「${item.name}」链接`);
-}
-
-/** 多工作表配置说明（用户最关心的：每个分类一个 sheet） */
-function showMultiSheetGuide() {
-  const pick = state.livePick;
-  const url = pick?.base?.workbook?.html || '';
-  const n = pick?.base?.workbook?.tables ?? 0;
-
-  openModal(`
-    <div class="modal-head"><h2>让每个分类落在不同工作表</h2><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div class="hint" style="margin:0 0 14px;background:var(--primary-soft);border-left:3px solid var(--primary);padding:10px 12px;border-radius:0 8px 8px 0;color:var(--text-2)">
-        当前选用地址：<b>${esc(pick?.base?.label || '—')}</b> · 共 <b>${n}</b> 张表格
-      </div>
-
-      <p style="margin-top:0">这条链接打开的页面里，<b>每个设备分类是一张独立的表格</b>。
-      导入时把表格<b>全部勾选</b>，分别落到不同工作表即可。</p>
-
-      <div class="hint" style="margin:0 0 14px;background:var(--green-soft);border-left:3px solid var(--green);padding:10px 12px;border-radius:0 8px 8px 0;color:var(--text-2)">
-        每张表的<b>列也不一样</b>：按该分类在「设备分类 → 专属字段」里的配置来。
-        所以<b>显示器那张表只有屏幕尺寸 / 分辨率 / 接口类型</b>，不会冒出 CPU、内存、硬盘、IMEI。
-      </div>
-
-      <textarea readonly style="${TA_LINK}">${esc(url)}</textarea>
-      <div style="margin-top:8px"><button class="btn sm primary" onclick="copyText('${esc(url)}','多表链接')">${svgIcon('copy')} 复制多表链接</button></div>
-
-      <h3 style="${H3_STEP}">Excel 做法</h3>
-      <ol style="margin:0;padding-left:22px;line-height:2">
-        <li>新建空白工作簿</li>
-        <li><b>数据</b> → <b>获取数据</b> → <b>自其他源</b> → <b>自网站</b> → 粘贴上面的链接</li>
-        <li>弹出的导航器里会列出多个表格 → <b>勾选全部</b>（按住 Ctrl 多选，或点表头全选）</li>
-        <li>点 <b>加载</b> → 选「<b>每个表放入新工作表</b>」（或先「转换数据」逐个调整）</li>
-      </ol>
-
-      <h3 style="${H3_STEP}">WPS 做法</h3>
-      <ol style="margin:0;padding-left:22px;line-height:2">
-        <li>新建空白工作簿</li>
-        <li><b>数据</b> → <b>获取数据 / 自网站</b> → 粘贴上面的链接 → 确定</li>
-        <li>在表格列表里<b>全选</b> → 导入</li>
-        <li>如果 WPS 把多张表都塞进了一个工作表，改用下面的「<b>逐个导入</b>」方式</li>
-      </ol>
-
-      <details style="margin-top:22px">
-        <summary style="cursor:pointer;font-size:15px;font-weight:600;color:var(--text-1)">逐个导入（最稳，一定能成）</summary>
-        <p style="margin:6px 0">回到实时链接列表，为<b>每个分类各建一次查询</b>，分别加载到不同工作表：</p>
-        <ol style="margin:0;padding-left:22px;line-height:2">
-        <li>在列表里点「台式主机」的 <b>复制链接</b></li>
-        <li>数据 → 自网站 → 粘贴 → 加载 → 放到 <b>Sheet1</b>，并把 Sheet1 重命名为「台式主机」</li>
-        <li>换成「显示器」的链接，重复一次，放到 <b>Sheet2</b>，重命名为「显示器」</li>
-          <li>以后按 <b>数据 → 全部刷新</b>，所有工作表一起更新</li>
-        </ol>
-      </details>
-
-      <div style="margin-top:16px">${WPS_WARN_HTML}</div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn" onclick="window.open('${esc(url)}','_blank')">${svgIcon('search')} 预览表格</button>
-      <span style="flex:1"></span>
-      <button class="btn primary" onclick="closeModal()">明白了</button>
-    </div>`, { wide: true });
-}
 async function copyText(text, label = '内容') {
   try {
     if (navigator?.clipboard && window.isSecureContext) {
@@ -2204,120 +2402,128 @@ async function copyText(text, label = '内容') {
   }
 }
 
-/** 在 Excel 里配置实时刷新的步骤说明 */
-function showLiveGuide() {
-  const pick = state.livePick;
-  const item = pick?.base?.all;
-  const url = pick?.fmt === 'csv' ? item?.csv : item?.html;
-  const isWps = pick?.fmt !== 'csv';
-  const link = url || '';
+/** 兼容老入口：老页面有「配置步骤 / 多工作表怎么配」两个按钮，现在合并成一页说明 */
+function showLiveGuide() { showExcelGuide(); }
+function showMultiSheetGuide() { showExcelGuide(); }
 
+function showExcelGuide() {
+  const live = state.liveLinks;
+  const idx = state.livePick?.idx ?? 0;
+  const b = (live?.bases || [])[idx] || (live?.bases || [])[0];
+  const url = b?.all?.html || '';
+  const sheets = b?.workbook?.tables ?? 0;
   openModal(`
-    <div class="modal-head"><h2>在 Excel / WPS 里配置「自动刷新」</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h2>让 Excel 自动更新的完整步骤</h2><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <div class="hint" style="margin:0 0 14px;background:var(--primary-soft);border-left:3px solid var(--primary);padding:10px 12px;border-radius:0 8px 8px 0;color:var(--text-2)">
-        当前选用：<b>${esc(pick?.base?.label || '—')}</b> ·
-        <b>${isWps ? '网页表格格式（WPS/Excel 通用）' : 'CSV 格式（Excel 用）'}</b>
-      </div>
-
-      <h3 style="font-size:15px;margin:0 0 8px">通用配置步骤</h3>
       <p style="margin-top:0"><b>1.</b> 新建一个空白工作簿</p>
-      <p><b>2.</b> Excel：菜单 <b>数据</b> → <b>获取数据</b> → <b>自其他源</b> → <b>自网站</b><br>
-         WPS：菜单 <b>数据</b> → <b>获取数据</b> / <b>自网站</b></p>
-      <p><b>3.</b> 粘贴下面链接 → 确定 → 在导航器里选 <b>Table</b> → 点「加载」／「导入」</p>
-      <textarea readonly style="${TA_LINK}">${esc(link)}</textarea>
-      <div style="margin-top:8px"><button class="btn sm" onclick="copyText('${esc(link)}','链接')">${svgIcon('copy')} 复制链接</button></div>
-
-      <h3 style="${H3_STEP}">让它自动刷新</h3>
-      <p style="margin:0 0 6px">在生成的数据表上右键 → <b>表格</b> → <b>外部数据属性</b>（或「数据范围属性」）→ 勾选：</p>
-      <ul style="margin:0;padding-left:22px;line-height:2">
-        <li>打开文件时刷新数据</li>
-        <li>每 <b>30</b> 分钟刷新一次（按需调整）</li>
-      </ul>
-
-      <details style="margin-top:22px">
-        <summary style="cursor:pointer;font-size:15px;font-weight:600;color:var(--text-1)">WPS 用户必看 / 每个分类一个工作表</summary>
-        <div style="margin-top:10px">
-          ${WPS_WARN_HTML}
-          <h3 style="${H3_STEP}">每个分类一个工作表</h3>
-          <p style="margin:0">把链接换成对应分类的链接（在列表里点「复制」），每个分类重复一次第 2~3 步，然后分别设置刷新即可。</p>
-          <div class="hint" style="margin-top:16px">
-            选 <b>CSV 格式</b> 时 Excel 的数字/日期会更规整，但纯数字 SN 可能被识别成科学计数法
-            （遇到就在 Power Query 里把那列类型改成「文本」）。网页表格格式不会有这个问题，但所有列都会是文本。
-          </div>
-        </div>
-      </details>
+      <p><b>2.</b> Excel：<b>数据</b> → <b>获取数据</b> → <b>自其他源</b> → <b>自网站</b>；
+         WPS：<b>数据</b> → <b>获取数据</b> / <b>自网站</b></p>
+      <p><b>3.</b> 粘贴链接 → 确定 → 在弹出的小窗口里选 <b>Table</b> → 点「加载」／「导入」</p>
+      <p><b>4.</b> 右键生成的数据 → <b>属性</b> → 勾「打开文件时刷新」+「每 30 分钟刷新一次」</p>
+      <textarea readonly style="${TA_LINK}">${esc(url)}</textarea>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn sm primary" onclick="copyText('${esc(url)}','链接')">${svgIcon('copy')} 复制链接</button>
+        <button class="btn sm" onclick="closeModal();copyLiveLink('workbook')">${svgIcon('copy')} 复制「每个分类一张表」的链接（共 ${sheets} 张）</button>
+      </div>
+      <div style="margin-top:16px">${XLS_TROUBLE_HTML}</div>
     </div>
     <div class="modal-foot">
-      <button class="btn" onclick="window.open('${esc(link)}','_blank')">${svgIcon('search')} 浏览器打开</button>
+      <button class="btn" onclick="window.open('${esc(url)}','_blank')">${svgIcon('search')} 浏览器打开看看</button>
       <span style="flex:1"></span>
       <button class="btn primary" onclick="closeModal()">明白了</button>
     </div>`, { wide: true });
 }
 
 async function resetLiveToken() {
-  if (!await confirmBox('重置实时链接', '重置后<b>所有旧的实时链接立即失效</b>，已经配置好的 Excel 需要换成新链接。确定吗？')) return;
+  if (!await confirmBox('重置链接', '重置后**所有旧链接立刻失效**，已经配好取数的 Excel 需要换成新链接。什么时候需要重置：换电脑/换网络后怎么都取不到数，或链接被发到了不该发的地方。确定要重置吗？')) return;
   try {
     const r = await api('/excel/live-token/reset', { method: 'POST', body: JSON.stringify({}) });
     state.liveLinks = r;
-    toast('已重置，请复制新链接');
+    toast('已重置，请重新复制链接');
     renderExcel();
   } catch (e) { toast(e.message, 'error'); }
 }
 
+/**
+ * 导入流程：上传 → **先试算** → 看清楚了再确认写入。
+ *
+ * 老流程的坑：弹窗里默认勾着「仅预览」，按钮却写「开始导入」——
+ * 用户点下去什么也没写进库，还得再传一次文件。现在只有一条路：
+ * 一定会先给出试算结果（新增/更新/跳过/哪几行有问题），确认按钮写着「确认导入 N 台」。
+ */
 async function handleImport(file) {
   if (!file) return;
-  const fd = new FormData();
-  fd.append('file', file);
-  const create = $('#impCreate').checked;
-  const update = $('#impUpdate').checked;
+  const create = $('#impCreate')?.checked !== false;
+  const update = $('#impUpdate')?.checked !== false;
+
+  const post = (dry) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('create_missing', create ? '1' : '0');
+    fd.append('update_existing', update ? '1' : '0');
+    fd.append('dry_run', dry ? '1' : '0');
+    return api('/excel/import', { method: 'POST', body: fd });
+  };
+
+  let t = null;
+  let calc = null;
   try {
-    toast('正在解析文件…');
-    const preview = await api('/excel/preview', { method: 'POST', body: fd });
-    const total = preview.total;
-    const unmatched = preview.unmatched;
-    openModal(`<div class="modal-head"><h2>导入预览</h2><button class="modal-close" onclick="closeModal()">×</button></div>
-      <div class="modal-body">
-        <p><b>${esc(file.name)}</b> · 识别到 <b>${total}</b> 行数据 · 匹配到 ${preview.matched.length} 列
-        ${unmatched.length ? `<br><span style="color:var(--amber)">未匹配列：${esc(unmatched.join('、'))}（将被忽略）</span>` : ''}</p>
-        ${preview.sample.length ? `<div class="table-wrap"><table class="grid"><thead><tr>${preview.headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-          <tbody>${preview.sample.map((r) => `<tr>${preview.headers.map((h) => `<td>${esc(r[h] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}
-        <label style="display:flex;gap:8px;margin-top:14px;font-size:13px;color:var(--text-2)">
-          <input type="checkbox" checked id="impDry"> 仅预览（不写入数据库，先看结果）
-        </label>
+    t = toast('正在检查这个文件…');
+    calc = await post(true);
+  } catch (e) {
+    t?.remove();
+    toast(e.message, 'error');
+    return;
+  }
+  t?.remove();
+
+  const realErrors = (calc.errors || []).filter((e) => e.row > 0);
+  const headErrors = (calc.errors || []).filter((e) => !e.row);
+  const willWrite = (calc.created || 0) + (calc.updated || 0);
+
+  openModal(`
+    <div class="modal-head"><h2>确认导入</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <p style="margin-top:0"><b>${esc(file.name)}</b> 里一共 <b>${calc.total ?? 0}</b> 行数据。下面是导入后会发生的改动：</p>
+      <div class="xl-calc">
+        <div class="xl-calc-item ok"><b>${calc.created ?? 0}</b><span>台新增</span></div>
+        <div class="xl-calc-item"><b>${calc.updated ?? 0}</b><span>台更新</span></div>
+        <div class="xl-calc-item"><b>${calc.skipped ?? 0}</b><span>行跳过</span></div>
+        <div class="xl-calc-item ${calc.failed ? 'bad' : ''}"><b>${calc.failed ?? 0}</b><span>行失败</span></div>
       </div>
-      <div class="modal-foot">
-        <button class="btn" onclick="closeModal()">取消</button>
-        <button class="btn primary" id="impConfirm">开始导入</button>
-      </div>`, { wide: true });
-    $('#impConfirm').onclick = async () => {
-      const dry = $('#impDry').checked;
-      const fd2 = new FormData();
-      fd2.append('file', file);
-      fd2.append('create_missing', create ? '1' : '0');
-      fd2.append('update_existing', update ? '1' : '0');
-      fd2.append('dry_run', dry ? '1' : '0');
-      const btn = $('#impConfirm');
-      btn.disabled = true; btn.textContent = '导入中…';
-      try {
-        const r = await api('/excel/import', { method: 'POST', body: fd2 });
-        if (r.failed) {
-          toast(`导入完成：新增 ${r.created}、更新 ${r.updated}、跳过 ${r.skipped}、失败 ${r.failed}`, 'warn');
-        } else {
-          toast(`导入完成：新增 ${r.created}、更新 ${r.updated}${dry ? '（仅预览，未写入）' : ''}`);
-        }
-        if (r.errors?.length) {
-          const errText = r.errors.slice(0, 10).map((e) => `第${e.row}行：${e.message}`).join('\n');
-          console.warn('导入错误：', r.errors);
-          openModal(`<div class="modal-head"><h2>导入结果</h2><button class="modal-close" onclick="closeModal()">×</button></div>
-            <div class="modal-body"><pre style="white-space:pre-wrap;font-size:12.5px;background:var(--surface-2);padding:14px;border-radius:10px">${esc(errText)}</pre></div>
-            <div class="modal-foot"><button class="btn primary" onclick="closeModal()">知道了</button></div>`);
-        }
-        closeModal();
-        renderExcel();
-      } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '开始导入'; }
-    };
-  } catch (e) { toast(e.message, 'error'); }
+      ${headErrors.length ? `<div class="xl-tip warn" style="margin-top:12px">${esc(headErrors[0].message)}</div>` : ''}
+      ${realErrors.length ? `
+        <div class="xl-tip warn" style="margin-top:12px">
+          <b>有 ${realErrors.length} 行有问题，这些行不会被导入：</b>
+          <ul class="xl-list" style="margin:8px 0 0">
+            ${realErrors.slice(0, 8).map((e) => `<li>第 ${e.row} 行：${esc(e.message)}</li>`).join('')}
+          </ul>
+          ${realErrors.length > 8 ? `<div class="muted" style="margin-top:6px">…还有 ${realErrors.length - 8} 行，导入后在「导入历史」里能看到全部。</div>` : ''}
+        </div>` : ''}
+      ${calc.skipped ? '<p class="muted" style="margin:12px 0 0">「跳过」通常是备注里标了「示例」的行，或者关了「同一个 SN 更新」时的重复行。</p>' : ''}
+      ${!willWrite ? '<p class="muted" style="margin:12px 0 0">没有可写入的改动 —— 可能表格是空的，或数据没填在「设备台账」页。</p>' : ''}
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal()">${willWrite ? '先不导' : '关闭'}</button>
+      ${willWrite ? `<button class="btn primary" id="impConfirm">确认导入 ${willWrite} 台</button>` : ''}
+    </div>`, { wide: true });
+
+  const btn = $('#impConfirm');
+  if (!btn) return;
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = '正在导入…';
+    try {
+      const r = await post(false);
+      if (r.failed) toast(`导完了：新增 ${r.created}、更新 ${r.updated}、跳过 ${r.skipped}、失败 ${r.failed}`, 'warn');
+      else toast(`导完了：新增 ${r.created}、更新 ${r.updated}${r.skipped ? `、跳过 ${r.skipped}` : ''}`);
+      closeModal();
+      renderExcel();
+    } catch (e) {
+      toast(e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = '重试';
+    }
+  };
 }
 
 /* ================= 系统设置 ================= */
@@ -2331,6 +2537,7 @@ async function renderSettings() {
   const p = ocr.provider || 'mock';
   const cfg = data.settings[`ocr_${p}`] || ocr.credentials || {};
   const photo = data.settings.photo || {};
+  const mobile = data.settings.mobile || {};
   $('#content').innerHTML = `
     <div class="grid grid-2">
       <div class="card">
@@ -2362,6 +2569,30 @@ async function renderSettings() {
             </div>
           </div></div>
         <button class="btn primary" id="saveSystem">保存</button>
+      </div>
+      <div class="card">
+        <h3>${svgIcon('camera')} 手机录入默认值${help('手机端「拍照识别入库」表单里那几个下拉的默认选中项。\n\n现场是一台接一台地录，同一批设备往往同部门、同供应商、同状态 ——\n配好默认值后，大多数情况直接按「保存入库」就行，不用每次点三四个下拉。\n\n设备分类：识别能猜出来时以识别为准，猜不出来才用这里的默认值。')}</h3>
+        <p class="muted" style="margin-top:0;font-size:13px">配好后手机端一打开就是这个选项（仍然可以随时改）。</p>
+        <div class="field" style="margin-bottom:10px"><label>默认设备分类</label>
+          <select id="mdCategory">
+            <option value="">（不预设，按列表第一个）</option>
+            ${(state.options?.categories || []).map((c) => `<option value="${c.id}" ${mobile?.category_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          </select></div>
+        <div class="field" style="margin-bottom:10px"><label>默认所属组织</label>
+          <select id="mdOrg">
+            <option value="">（不预设 = 未分配）</option>
+            ${(state.options?.orgs || []).map((o) => `<option value="${o.id}" ${mobile?.org_id === o.id ? 'selected' : ''}>${esc(o.path || o.name)}</option>`).join('')}
+          </select></div>
+        <div class="field" style="margin-bottom:10px"><label>默认供应商</label>
+          <select id="mdSupplier">
+            <option value="">（不预设 = 未指定）</option>
+            ${(state.options?.suppliers || []).map((s) => `<option value="${esc(s)}" ${mobile?.supplier === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>默认状态</label>
+          <select id="mdStatus">
+            ${(state.options?.statuses || []).map((s) => `<option value="${s.id}" ${(mobile?.status || 'in_use') === s.id ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}
+          </select></div>
+        <button class="btn primary" id="saveMobile">保存</button>
       </div>
       <div class="card">
         <h3>${svgIcon('camera')} 照片归档</h3>
@@ -2457,6 +2688,25 @@ async function renderSettings() {
         }),
       });
       toast('照片设置已保存');
+      renderSettings();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  $('#saveMobile').onclick = async () => {
+    try {
+      await api('/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          mobile: {
+            category_id: $('#mdCategory').value || '',
+            org_id: $('#mdOrg').value || '',
+            supplier: $('#mdSupplier').value || '',
+            status: $('#mdStatus').value || 'in_use',
+          },
+        }),
+      });
+      // 手机端读的是 /options 里的 mobile_defaults，改完要重新拉一次
+      state.options = await api('/options');
+      toast('默认值已保存，手机端下次打开就是它');
       renderSettings();
     } catch (e) { toast(e.message, 'error'); }
   };
@@ -3264,6 +3514,10 @@ function bindAgentPane() {
 
 window.renderAgent = renderAgent;
 window.switchAgentTab = switchAgentTab;
+// 便于自动化测试：专属字段的控件渲染 + 默认值解析（纯函数，直接断言产出）
+window.trackingInputHTML = trackingInputHTML;
+window.fieldDefault = fieldDefault;
+window.formTrackingFields = formTrackingFields;
 window.openAgentClaim = openAgentClaim;
 window.doAgentClaim = doAgentClaim;
 window.doAgentUnclaim = doAgentUnclaim;
@@ -3275,6 +3529,1044 @@ window.createAgentToken = createAgentToken;
 window.toggleAgentToken = toggleAgentToken;
 window.delAgentToken = delAgentToken;
 window.agentInstallCmd = agentInstallCmd;
+
+/* ================= 资源管理器：按组织架构浏览设备 ================= *
+ * 用户的要求是「照搬 Windows 资源管理器的操作方式」，所以这一页不是「树 + 网页表格」，
+ * 而是把资源管理器那套**肌肉记忆**原样搬过来：
+ *
+ *   导航   ← 后退 · → 前进 · ↑ 向上 · ⟳ 刷新 · 地址栏（面包屑，点空白处可编辑路径）
+ *   内容区 子文件夹和文件（设备）**混在一起**列出来，文件夹排在前面
+ *   选中   单击选中 · Ctrl+单击加选 · Shift+单击连选 · Ctrl+A 全选 · 点空白处取消
+ *   打开   双击（或回车）—— 文件夹=进入，设备=打开详情
+ *   右键   设备/文件夹/空白处各有一套右键菜单
+ *   快捷键 Enter 打开 · F2 重命名 · Delete 删除 · F5 刷新 · Backspace 向上一级 · Alt+←/→ 前进后退 · 方向键移动选择
+ *   列头   点一下按该列排序，再点一下反向（▲▼）
+ *   状态栏 底部显示「共 N 个项目 / 选中 M 个项目」
+ *   视图   详细信息（表格）· 大图标（平铺）
+ *   拖放   把设备拖到左边文件夹、或拖到内容区里的子文件夹上 = 改归属组织
+ *
+ * 相对上一版改掉的地方（上一版是"网页表格"思路，不趁手）：
+ *   · 去掉了每行的「打开」按钮和勾选框列 —— 资源管理器靠**选中**（Ctrl / Shift），不是勾选框
+ *   · 去掉了底部分页 —— 文件夹里就该是一屏滚到底，翻页是网页才有的东西
+ *   · 子文件夹现在会出现在内容区（以前只能在左树里进）
+ *   · 补上了后退/前进/向上/刷新、地址栏、右键菜单、列头排序、状态栏、快捷键
+ *
+ * ⚠️ 一条口径上的讲究保持不变：文件夹上的数字必须和点进去看到的条数一致。
+ *    两边共用同一个「包含子文件夹」开关，数字取自同一套统计（直接数 / 含下级总数）。
+ * =============================================================== */
+
+const EX_NONE = '__none__';   // 「未分配组织」虚拟文件夹
+
+/** 内容区里的一行：设备或子文件夹统一成同一种结构，选中/排序/键盘才好处理 */
+const exRowKey = (kind, id) => `${kind}:${id}`;
+const exRowId = (key) => String(key).slice(String(key).indexOf(':') + 1);
+const exRowKind = (key) => String(key).slice(0, String(key).indexOf(':'));
+
+state.ex = state.ex || {
+  orgId: '',                 // '' = 全部设备；EX_NONE = 未分配；其它 = 组织 id
+  includeChildren: false,    // 「包含子文件夹」——默认关，和资源管理器一致（文件夹只显示自己装的）
+  keyword: '',
+  status: '',
+  sort: 'name',              // 资源管理器默认按名称排
+  order: 'asc',
+  view: 'details',           // details | tiles
+  expanded: null,            // Set<orgId>
+  sel: new Set(),            // Set<'device:id' | 'org:id'>
+  anchor: null,              // Shift 连选的锚点（当前列表里的下标）
+  rows: [],                  // 当前内容区渲染出来的行（键盘导航和连选都靠它）
+  hist: [''],                // 浏览历史（前进后退）
+  histIdx: 0,
+  pathEditing: false,        // 地址栏是否处于编辑态
+  data: null,                // /api/orgs
+  cap: 500,                  // 一屏最多拉多少条（资源管理器不分页，这是保护措施）
+};
+
+/* ---------------- 打开 / 重绘 ---------------- */
+
+async function renderExplorer() {
+  const data = await api('/orgs');
+  state.ex.data = data;
+  if (!state.ex.expanded) {
+    // 默认展开：根节点，以及当前所在文件夹的所有祖先，一进来就能看到自己在哪
+    const open = new Set();
+    for (const r of data.tree) open.add(r.id);
+    state.ex.expanded = open;
+  }
+  exEnsureVisible(state.ex.orgId);
+
+  $('#content').innerHTML = `
+    <div class="ex">
+      <aside class="ex-side">
+        <div class="ex-nav-title">${svgIcon('explorer', 14)} 组织架构${help('把右边的设备拖到文件夹上就能改归属组织。\n右键文件夹：新建子文件夹 / 重命名 / 删除。\n快捷键：Enter 打开、F2 重命名、Delete 删除、F5 刷新、Backspace 向上一级、Ctrl+A 全选、方向键选择。')}</div>
+        <div class="ex-tree" id="exTree">${exTreeHTML()}</div>
+      </aside>
+      <section class="ex-main">
+        <div class="ex-toolbar">
+          <div class="ex-navbtns">
+            <button class="ex-tb" id="exBack" title="后退 (Alt+←)">${svgIcon('arrow-left', 16)}</button>
+            <button class="ex-tb" id="exFwd" title="前进 (Alt+→)">${svgIcon('arrow-right', 16)}</button>
+            <button class="ex-tb" id="exUp" title="向上一级 (Backspace)">${svgIcon('arrow-up', 16)}</button>
+            <button class="ex-tb" id="exRefresh" title="刷新 (F5)">${svgIcon('refresh', 15)}</button>
+          </div>
+          <div class="ex-addr" id="exAddr" title="点一下可以编辑路径"></div>
+          <div class="ex-search">
+            ${svgIcon('search', 14)}
+            <input id="exKw" placeholder="搜索" value="${esc(state.ex.keyword)}" autocomplete="off">
+          </div>
+          <div class="ex-viewtoggle">
+            <button class="ex-vt${state.ex.view === 'details' ? ' on' : ''}" data-view="details" title="详细信息">${svgIcon('list', 14)}</button>
+            <button class="ex-vt${state.ex.view === 'tiles' ? ' on' : ''}" data-view="tiles" title="大图标">${svgIcon('devices', 14)}</button>
+          </div>
+        </div>
+        <div class="ex-body" id="exBody"></div>
+        <div class="ex-statusbar" id="exStatus"></div>
+      </section>
+    </div>`;
+
+  exRenderAddr();
+  bindExplorerTree();
+  bindExplorerToolbar();
+  await exLoad();
+}
+
+/** 把某个文件夹及其祖先都展开（导航过去时用） */
+function exEnsureVisible(orgId) {
+  if (!orgId || orgId === EX_NONE || !state.ex.data) return;
+  const byId = new Map((state.ex.data.flat || []).map((o) => [o.id, o]));
+  let cur = byId.get(orgId);
+  while (cur) {
+    if (cur.parent_id) state.ex.expanded.add(cur.parent_id);
+    cur = cur.parent_id ? byId.get(cur.parent_id) : null;
+  }
+}
+
+/* ---------------- 左树 ---------------- */
+
+/** 当前「包含子文件夹」口径下，某个组织该显示多少个项目 */
+function exCount(node) {
+  if (!node) return 0;
+  return state.ex.includeChildren ? (node.total ?? node.device_count ?? 0) : (node.device_count ?? 0);
+}
+
+function exTreeHTML() {
+  const d = state.ex.data;
+  if (!d) return '';
+  const ex = state.ex;
+  const statsById = new Map((d.stats || []).map((s) => [s.id, s]));
+
+  const node = (n) => {
+    const kids = n.children || [];
+    const open = ex.expanded.has(n.id);
+    const isSel = ex.orgId === n.id;
+    const st = statsById.get(n.id) || {};
+    const cnt = ex.includeChildren ? (st.total ?? n.device_count ?? 0) : (n.device_count ?? 0);
+    return `
+      <div class="ex-row${isSel ? ' sel' : ''}" data-org="${n.id}" data-drop="1">
+        <span class="ex-arrow${kids.length ? '' : ' leaf'}${open ? ' open' : ''}" data-toggle="${n.id}">${svgIcon('chevron', 11)}</span>
+        <span class="ex-ico">${svgIcon(open && kids.length ? 'folder-open' : 'folder', 14)}</span>
+        <span class="ex-name" title="${esc(n.name)}">${esc(n.name)}</span>
+        <span class="ex-cnt${cnt ? '' : ' zero'}">${cnt}</span>
+      </div>
+      ${kids.length && open ? `<div class="ex-kids">${kids.map(node).join('')}</div>` : ''}`;
+  };
+
+  const allStats = (d.stats || []).reduce((s, x) => s + (x.own || 0), 0) + (d.unassigned || 0);
+  return `
+    <div class="ex-row${ex.orgId === '' ? ' sel' : ''}" data-org="" data-drop="1">
+      <span class="ex-arrow leaf"></span>
+      <span class="ex-ico ex-ico-root">${svgIcon('devices', 14)}</span>
+      <span class="ex-name">全部设备</span>
+      <span class="ex-cnt">${allStats}</span>
+    </div>
+    ${d.tree.map(node).join('')}
+    <div class="ex-row ex-none${ex.orgId === EX_NONE ? ' sel' : ''}" data-org="${EX_NONE}" data-drop="1">
+      <span class="ex-arrow leaf"></span>
+      <span class="ex-ico ex-ico-warn">${svgIcon('alert', 14)}</span>
+      <span class="ex-name">未分配组织</span>
+      <span class="ex-cnt${d.unassigned ? '' : ' zero'}">${d.unassigned || 0}</span>
+    </div>`;
+}
+
+function bindExplorerTree() {
+  const tree = $('#exTree');
+  if (!tree) return;
+  $$('#exTree [data-toggle]').forEach((a) => {
+    a.onclick = (e) => {
+      e.stopPropagation();
+      const id = a.getAttribute('data-toggle');
+      if (state.ex.expanded.has(id)) state.ex.expanded.delete(id);
+      else state.ex.expanded.add(id);
+      tree.innerHTML = exTreeHTML();
+      bindExplorerTree();
+    };
+  });
+  $$('#exTree .ex-row').forEach((row) => {
+    row.onclick = () => exNavigate(row.getAttribute('data-org') || '');
+    row.addEventListener('dragover', (e) => { e.preventDefault(); row.classList.add('drop'); });
+    row.addEventListener('dragleave', () => row.classList.remove('drop'));
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      row.classList.remove('drop');
+      const ids = String(e.dataTransfer?.getData('text/plain') || '').split(',').filter(Boolean);
+      if (ids.length) exMoveTo(row.getAttribute('data-org') || '', ids);
+    });
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const orgId = row.getAttribute('data-org') || '';
+      if (!orgId || orgId === EX_NONE) exMenu(e, exEmptyMenu());
+      else exMenu(e, exFolderMenu(orgId));
+    });
+  });
+}
+
+/* ---------------- 地址栏 ---------------- */
+
+function exCrumbs() {
+  const d = state.ex.data;
+  const id = state.ex.orgId;
+  const crumbs = [{ id: '', label: '全部设备' }];
+  if (id === EX_NONE) { crumbs.push({ id: EX_NONE, label: '未分配组织' }); return crumbs; }
+  if (!id || !d) return crumbs;
+  const flat = d.flat || [];
+  const row = flat.find((o) => o.id === id);
+  if (!row) return crumbs;
+  const names = String(row.path || row.name).split(' / ');
+  let parentId = '';
+  for (const nm of names) {
+    const hit = flat.find((o) => o.name === nm && (o.parent_id || '') === parentId);
+    if (hit) { crumbs.push({ id: hit.id, label: hit.name }); parentId = hit.id; }
+    else crumbs.push({ id: hit ? hit.id : id, label: nm });
+  }
+  return crumbs;
+}
+
+function exRenderAddr() {
+  const box = $('#exAddr');
+  if (!box) return;
+  const ex = state.ex;
+  if (ex.pathEditing) {
+    const path = exCrumbs().map((c) => c.label).join('\\');
+    box.innerHTML = `<input id="exAddrInput" class="ex-addr-input" value="${esc(path)}">`;
+    const inp = $('#exAddrInput');
+    if (inp) {
+      inp.focus();
+      inp.select();
+      inp.onkeydown = (e) => {
+        if (e.key === 'Enter') { ex.pathEditing = false; exGoPath(inp.value); }
+        else if (e.key === 'Escape') { ex.pathEditing = false; exRenderAddr(); }
+      };
+      inp.onblur = () => { if (state.ex.pathEditing) { state.ex.pathEditing = false; exRenderAddr(); } };
+    }
+    return;
+  }
+  const crumbs = exCrumbs();
+  box.innerHTML = `<span class="ex-addr-ico">${svgIcon('folder', 13)}</span>
+    ${crumbs.map((c, i) => {
+    const last = i === crumbs.length - 1;
+    return `${i ? `<span class="ex-addr-sep">${svgIcon('chevron', 10)}</span>` : ''}
+      <a class="ex-addr-part${last ? ' cur' : ''}" data-crumb="${esc(c.id)}" title="${esc(c.label)}">${esc(c.label)}</a>`;
+  }).join('')}
+    <span class="ex-addr-fill" data-edit="1"></span>`;
+  $$('#exAddr [data-crumb]').forEach((a) => {
+    a.onclick = (e) => { e.stopPropagation(); exNavigate(a.getAttribute('data-crumb') || ''); };
+  });
+  const fill = $('#exAddr [data-edit]');
+  if (fill) fill.onclick = () => { state.ex.pathEditing = true; exRenderAddr(); };
+}
+
+/** 地址栏里手输路径跳转（用 \ 或 / 分隔，末段按名字找） */
+function exGoPath(text) {
+  const want = String(text || '').split(/[\\/]/).map((s) => s.trim()).filter(Boolean);
+  const d = state.ex.data;
+  if (!want.length) { exNavigate(''); return; }
+  if (want[0] === '全部设备') want.shift();
+  if (!want.length) { exNavigate(''); return; }
+  if (want[0] === '未分配组织') { exNavigate(EX_NONE); return; }
+  let parentId = '';
+  for (const nm of want) {
+    const hit = (d.flat || []).find((o) => o.name === nm && (o.parent_id || '') === parentId);
+    if (!hit) { toast(`找不到「${nm}」这个文件夹`, 'warn'); exRenderAddr(); return; }
+    parentId = hit.id;
+  }
+  exNavigate(parentId);
+}
+
+/* ---------------- 导航（含前进后退） ---------------- */
+
+function exNavigate(orgId, { push = true } = {}) {
+  const ex = state.ex;
+  if (orgId === ex.orgId && !push) return;
+  ex.orgId = orgId;
+  ex.sel.clear();
+  ex.anchor = null;
+  ex.keyword = '';
+  ex.pathEditing = false;
+  if (push) {
+    ex.hist = ex.hist.slice(0, ex.histIdx + 1);
+    if (ex.hist[ex.histIdx] !== orgId) { ex.hist.push(orgId); ex.histIdx = ex.hist.length - 1; }
+  }
+  exEnsureVisible(orgId);
+  const tree = $('#exTree');
+  if (tree) { tree.innerHTML = exTreeHTML(); bindExplorerTree(); }
+  exRenderAddr();
+  exLoad();
+}
+
+function exUp() {
+  const id = state.ex.orgId;
+  if (!id || id === EX_NONE) return;
+  const row = (state.ex.data?.flat || []).find((o) => o.id === id);
+  exNavigate(row?.parent_id || '');
+}
+
+/* ---------------- 内容区数据 ---------------- */
+
+async function exLoad() {
+  const ex = state.ex;
+  const body = $('#exBody');
+  if (body) body.innerHTML = `<div class="ex-loading"><span class="spin"></span> 正在读取…</div>`;
+
+  const q = new URLSearchParams();
+  q.set('page', '1');
+  q.set('page_size', String(ex.cap));
+  q.set('sort', 'updated_at');
+  q.set('order', 'desc');
+  // ⚠️ 搜索和「包含子文件夹」都是**在当前文件夹及其子文件夹范围内**找，
+  //    和资源管理器的搜索行为一致（搜索不会跑到别的文件夹里去）
+  if (ex.keyword) q.set('keyword', ex.keyword);
+  if (ex.status) q.set('status', ex.status);
+  if (ex.orgId === EX_NONE) q.set('no_org', '1');
+  else if (ex.orgId) {
+    q.set('org_id', ex.orgId);
+    if (!ex.includeChildren && !ex.keyword) q.set('org_direct', '1');
+  }
+
+  let data;
+  try { data = await api('/devices?' + q.toString()); } catch (e) {
+    if (body) body.innerHTML = `<div class="ex-empty">${esc(e.message)}</div>`;
+    return;
+  }
+
+  // 子文件夹当项目列出来（文件夹排前面）
+  const folders = exChildFolders();
+  const devices = data.items.slice().sort(exDeviceComparator());
+  ex.rows = [
+    ...folders.map((f) => ({ kind: 'org', key: exRowKey('org', f.id), org: f })),
+    ...devices.map((d) => ({ kind: 'device', key: exRowKey('device', d.id), dev: d })),
+  ];
+  ex.total = data.total;
+  ex.capped = data.total > data.items.length;
+  ex.folderCount = folders.length;
+
+  if (body) {
+    body.innerHTML = ex.rows.length ? (ex.view === 'details' ? exDetailsHTML() : exTilesHTML())
+      : exEmptyHTML();
+  }
+  bindExplorerBody();
+  exRenderStatus();
+  exRenderNavButtons();
+}
+
+/** 当前文件夹里直接挂着的子组织 */
+function exChildFolders() {
+  const ex = state.ex;
+  const d = ex.data;
+  if (!d) return [];
+  const statsById = new Map((d.stats || []).map((s) => [s.id, s]));
+  let parentId = ex.orgId === EX_NONE ? EX_NONE : ex.orgId;
+  if (parentId === EX_NONE) return [];
+  // 全部设备（''）时，把所有根组织当子文件夹列出来
+  const kids = (d.flat || []).filter((o) => (o.parent_id || '') === parentId);
+  return kids
+    .map((o) => {
+      const st = statsById.get(o.id) || {};
+      return {
+        ...o,
+        own_count: o.device_count || 0,
+        total_count: st.total ?? o.device_count ?? 0,
+        child_count: (d.flat || []).filter((x) => x.parent_id === o.id).length,
+      };
+    })
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-CN'));
+}
+
+/** 按当前排序列比较两台设备（资源管理器点列头就是改这个） */
+function exDeviceComparator() {
+  const { sort, order } = state.ex;
+  const dir = order === 'asc' ? 1 : -1;
+  const val = (d) => {
+    switch (sort) {
+      case 'asset_no': return d.asset_no || '';
+      case 'sn': return d.sn || '';
+      case 'status': return state.options?.statuses?.find((s) => s.id === d.status)?.label || d.status || '';
+      case 'owner_name': return d.owner_name || '';
+      case 'org': return d.org_path || '';
+      case 'updated_at': return d.updated_at || '';
+      default: return [d.brand, d.model].filter(Boolean).join(' ') || d.asset_no || '';
+    }
+  };
+  return (a, b) => {
+    const x = val(a); const y = val(b);
+    if (sort === 'updated_at') return String(x).localeCompare(String(y)) * dir;
+    return String(x).localeCompare(String(y), 'zh-CN') * dir;
+  };
+}
+
+/* ---------------- 详细信息视图 ---------------- */
+
+const EX_COLUMNS = [
+  { key: 'name', label: '名称', cls: 'ex-col-name' },
+  { key: 'asset_no', label: '资产编号' },
+  { key: 'sn', label: '序列号' },
+  { key: 'status', label: '状态' },
+  { key: 'owner_name', label: '使用人' },
+  { key: 'org', label: '所在位置' },
+  { key: 'updated_at', label: '修改日期' },
+];
+
+function exDetailsHTML() {
+  const ex = state.ex;
+  const arrow = (k) => (ex.sort === k ? `<span class="ex-sort">${ex.order === 'asc' ? '▲' : '▼'}</span>` : '');
+  return `<div class="ex-details">
+    <div class="ex-head">
+      ${EX_COLUMNS.map((c) => `<div class="ex-th ${c.cls || ''}" data-sort="${c.key}">${esc(c.label)}${arrow(c.key)}</div>`).join('')}
+    </div>
+    <div class="ex-rows" id="exRows">
+      ${ex.rows.map((r, i) => (r.kind === 'org' ? exFolderRowHTML(r.org, i) : exDeviceRowHTML(r.dev, i))).join('')}
+    </div>
+  </div>`;
+}
+
+function exFolderRowHTML(o, i) {
+  const ex = state.ex;
+  const key = exRowKey('org', o.id);
+  const cnt = ex.includeChildren ? o.total_count : o.own_count;
+  return `<div class="ex-item folder${ex.sel.has(key) ? ' sel' : ''}" data-key="${key}" data-idx="${i}" data-drop="1">
+    <div class="ex-col-name"><span class="ex-ico">${svgIcon('folder', 16)}</span>
+      <span class="ex-t">${esc(o.name)}</span>
+      ${o.child_count ? `<span class="ex-muted">（${o.child_count} 个子文件夹）</span>` : ''}
+    </div>
+    <div class="ex-muted mono"></div>
+    <div class="ex-muted mono"></div>
+    <div class="ex-muted"></div>
+    <div class="ex-muted"></div>
+    <div class="ex-muted">${esc(o.path || o.name)}</div>
+    <div class="ex-muted">${esc((o.updated_at || '').replace('T', ' ').slice(0, 16))}</div>
+    <div class="ex-item-badge">${cnt} 项</div>
+  </div>`;
+}
+
+function exDeviceRowHTML(d, i) {
+  const ex = state.ex;
+  const key = exRowKey('device', d.id);
+  return `<div class="ex-item device${ex.sel.has(key) ? ' sel' : ''}" data-key="${key}" data-idx="${i}" draggable="true">
+    <div class="ex-col-name"><span class="ex-ico" style="color:${esc(d.category_color || 'var(--ink-3)')}">${iconOf(d.category_icon, 16)}</span>
+      <span class="ex-t">${esc([d.brand, d.model].filter(Boolean).join(' ') || '(未填型号)')}</span>
+      <span class="ex-muted">${esc(d.category_name || '未分类')}</span>
+    </div>
+    <div class="mono">${esc(d.asset_no || '—')}</div>
+    <div class="mono">${esc(d.sn || '—')}</div>
+    <div>${statusBadge(d.status)}</div>
+    <div>${esc(d.owner_name || '')}</div>
+    <div class="ex-muted">${esc(d.org_path || '未分配')}</div>
+    <div class="ex-muted">${esc((d.updated_at || '').replace('T', ' ').slice(0, 16))}</div>
+    <div></div>
+  </div>`;
+}
+
+/* ---------------- 大图标视图 ---------------- */
+
+function exTilesHTML() {
+  const ex = state.ex;
+  return `<div class="ex-tiles">
+    ${ex.rows.map((r, i) => {
+    if (r.kind === 'org') {
+      const o = r.org;
+      const key = exRowKey('org', o.id);
+      return `<div class="ex-tile folder${ex.sel.has(key) ? ' sel' : ''}" data-key="${key}" data-idx="${i}" data-drop="1">
+        <div class="ex-tile-ico">${svgIcon('folder', 40)}</div>
+        <div class="ex-tile-name">${esc(o.name)}</div>
+        <div class="ex-tile-sub">${ex.includeChildren ? o.total_count : o.own_count} 项</div>
+      </div>`;
+    }
+    const d = r.dev;
+    const key = exRowKey('device', d.id);
+    return `<div class="ex-tile device${ex.sel.has(key) ? ' sel' : ''}" data-key="${key}" data-idx="${i}" draggable="true">
+      <div class="ex-tile-ico" style="color:${esc(d.category_color || 'var(--ink-3)')}">${iconOf(d.category_icon, 40)}</div>
+      <div class="ex-tile-name" title="${esc([d.brand, d.model].filter(Boolean).join(' '))}">${esc([d.brand, d.model].filter(Boolean).join(' ') || '(未填型号)')}</div>
+      <div class="ex-tile-sub mono">${esc(d.asset_no || '')}</div>
+      <div class="ex-tile-sub">${statusBadge(d.status)}</div>
+      <div class="ex-tile-sub ex-muted">${esc(d.owner_name || '未分配使用人')}</div>
+    </div>`;
+  }).join('')}
+  </div>`;
+}
+
+function exEmptyHTML() {
+  const ex = state.ex;
+  const kw = ex.keyword ? `没有找到匹配「${esc(ex.keyword)}」的项目。` : '这个文件夹是空的。';
+  return `<div class="ex-empty">
+    <div class="ex-empty-ico">${svgIcon('folder-open', 38)}</div>
+    <p>${kw}</p>
+    <p class="ex-muted">${ex.keyword ? '换个关键字试试。' : '可以把设备从别处拖进来，或右键新建子文件夹。'}</p>
+  </div>`;
+}
+
+/* ---------------- 选中 / 打开 / 拖放 / 右键 ---------------- */
+
+function exItems() { return $$('#exBody .ex-item, #exBody .ex-tile'); }
+
+function exSelect(key, { ctrl = false, shift = false, toggle = false } = {}) {
+  const ex = state.ex;
+  if (shift && ex.anchor != null && ex.rows[ex.anchor]) {
+    const to = ex.rows.findIndex((r) => r.key === key);
+    if (to >= 0) {
+      if (!ctrl) ex.sel.clear();
+      const [a, b] = ex.anchor <= to ? [ex.anchor, to] : [to, ex.anchor];
+      for (let i = a; i <= b; i++) ex.sel.add(ex.rows[i].key);
+    }
+  } else if (ctrl || toggle) {
+    if (ex.sel.has(key)) ex.sel.delete(key); else ex.sel.add(key);
+    ex.anchor = ex.rows.findIndex((r) => r.key === key);
+  } else {
+    ex.sel.clear();
+    ex.sel.add(key);
+    ex.anchor = ex.rows.findIndex((r) => r.key === key);
+  }
+  exPaintSelection();
+  exRenderStatus();
+}
+
+function exPaintSelection() {
+  for (const el of exItems()) {
+    const on = state.ex.sel.has(el.getAttribute('data-key'));
+    if (el.classList) el.classList.toggle('sel', on);
+  }
+}
+
+function exSelectedDevices() {
+  return [...state.ex.sel].filter((k) => exRowKind(k) === 'device').map(exRowId);
+}
+
+function exOpen(key) {
+  if (exRowKind(key) === 'org') exNavigate(exRowId(key));
+  else openDeviceDetail(exRowId(key));
+}
+
+function bindExplorerBody() {
+  const ex = state.ex;
+
+  // 列头排序
+  $$('#exBody [data-sort]').forEach((th) => {
+    th.onclick = () => {
+      const k = th.getAttribute('data-sort');
+      if (ex.sort === k) ex.order = ex.order === 'asc' ? 'desc' : 'asc';
+      else { ex.sort = k; ex.order = 'asc'; }
+      exLoad();
+    };
+  });
+
+  exItems().forEach((el) => {
+    const key = el.getAttribute('data-key');
+    const kind = exRowKind(key);
+
+    el.onclick = (e) => {
+      e.stopPropagation();
+      exSelect(key, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey });
+    };
+    el.ondblclick = (e) => { e.stopPropagation(); exOpen(key); };
+
+    // 右键菜单
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!ex.sel.has(key)) exSelect(key);
+      exMenu(e, kind === 'org' ? exFolderMenu(exRowId(key)) : exDeviceMenu());
+    });
+
+    if (kind === 'device') {
+      el.addEventListener('dragstart', (e) => {
+        if (!ex.sel.has(key)) exSelect(key);
+        e.dataTransfer?.setData('text/plain', exSelectedDevices().join(','));
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        el.classList.add('dragging');
+      });
+      el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    }
+    // 文件夹可以当拖放目标（内容区里的子文件夹）
+    if (kind === 'org') {
+      el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drop'); });
+      el.addEventListener('dragleave', () => el.classList.remove('drop'));
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        el.classList.remove('drop');
+        const ids = String(e.dataTransfer?.getData('text/plain') || '').split(',').filter(Boolean);
+        if (ids.length) exMoveTo(exRowId(key), ids);
+      });
+    }
+  });
+
+  // 点空白处取消选择（资源管理器就是这样）
+  const host = $('#exBody');
+  if (host) {
+    host.onclick = (e) => {
+      if (e.target === host || e.target.id === 'exRows' || (e.target.classList && e.target.classList.contains('ex-details'))) {
+        ex.sel.clear();
+        exPaintSelection();
+        exRenderStatus();
+      }
+    };
+    host.addEventListener('contextmenu', (e) => {
+      if (e.target === host || e.target.id === 'exRows' || (e.target.classList && e.target.classList.contains('ex-details'))) {
+        e.preventDefault();
+        ex.sel.clear();
+        exPaintSelection();
+        exRenderStatus();
+        exMenu(e, exEmptyMenu());
+      }
+    });
+  }
+}
+
+/* ---------------- 右键菜单 ---------------- */
+
+function exMenu(evt, items) {
+  exCloseMenu();
+  const m = document.createElement('div');
+  m.className = 'ex-menu';
+  m.id = 'exMenu';
+  m.innerHTML = items.map((it) => (it === '-'
+    ? '<div class="ex-menu-sep"></div>'
+    : `<button class="ex-menu-item${it.disabled ? ' disabled' : ''}${it.danger ? ' danger' : ''}" data-act="${it.act}" ${it.disabled ? 'disabled' : ''}>
+         <span class="ex-menu-ico">${it.ico ? svgIcon(it.ico, 14) : ''}</span>${esc(it.label)}${it.hint ? `<span class="ex-menu-hint">${esc(it.hint)}</span>` : ''}
+       </button>`)).join('');
+  document.body.appendChild(m);
+  // 贴边处理：别让菜单跑出屏幕
+  const w = m.offsetWidth || 200; const h = m.offsetHeight || 200;
+  const x = Math.min(evt.clientX, window.innerWidth - w - 6);
+  const y = Math.min(evt.clientY, window.innerHeight - h - 6);
+  m.style.left = `${Math.max(4, x)}px`;
+  m.style.top = `${Math.max(4, y)}px`;
+
+  m.querySelectorAll('[data-act]').forEach((b) => {
+    b.onclick = () => {
+      const act = b.getAttribute('data-act');
+      exCloseMenu();
+      const fn = exMenuActions[act];
+      if (fn) fn();
+    };
+  });
+  setTimeout(() => {
+    document.addEventListener('mousedown', exCloseMenuOnOutside, true);
+  }, 0);
+}
+function exCloseMenu() {
+  const m = $('#exMenu');
+  if (m) m.remove();
+  document.removeEventListener('mousedown', exCloseMenuOnOutside, true);
+}
+function exCloseMenuOnOutside(e) {
+  const m = $('#exMenu');
+  if (m && !m.contains(e.target)) exCloseMenu();
+}
+
+function exDeviceMenu() {
+  const ex = state.ex;
+  const n = exSelectedDevices().length;
+  const one = n === 1;
+  const d = ex.rows.find((r) => r.key === [...ex.sel][0])?.dev;
+  return [
+    { act: 'open', label: '打开', ico: 'search', disabled: !one },
+    { act: 'edit', label: '编辑属性', ico: 'pencil', disabled: !one },
+    '-',
+    { act: 'move', label: '移动到…', ico: 'folder', hint: n > 1 ? `${n} 台` : '' },
+    { act: 'export', label: '导出所选', ico: 'download', disabled: !hasPerm('excel.export') },
+    '-',
+    { act: 'copy', label: '复制资产编号', disabled: !one },
+    { act: 'delete', label: '删除', ico: 'trash', danger: true, hint: n > 1 ? `${n} 台` : '' },
+  ].filter(Boolean).map((it) => (it.act === 'copy' && !d ? { ...it, disabled: true } : it));
+}
+
+function exFolderMenu(orgId) {
+  const o = (state.ex.data?.flat || []).find((x) => x.id === orgId);
+  const selOrg = [...state.ex.sel].filter((k) => exRowKind(k) === 'org').length;
+  return [
+    { act: 'enter', label: '打开', ico: 'folder-open' },
+    { act: 'newsub', label: '新建子文件夹', ico: 'plus' },
+    '-',
+    { act: 'rename', label: '重命名', ico: 'pencil' },
+    { act: 'deletebg', label: '删除文件夹', ico: 'trash', danger: true, hint: selOrg > 1 ? `${selOrg} 个` : '' },
+    '-',
+    { act: 'exportorg', label: '导出这个文件夹的设备', ico: 'download', disabled: !hasPerm('excel.export') },
+    { act: 'props', label: `属性：${o?.path || ''}`, disabled: true },
+  ];
+}
+
+function exEmptyMenu() {
+  return [
+    { act: 'newsub', label: '新建文件夹', ico: 'plus' },
+    { act: 'refresh', label: '刷新', ico: 'refresh' },
+    '-',
+    { act: 'all', label: '全选', ico: 'check-circle' },
+    { act: 'view-details', label: '查看：详细信息', ico: 'list', disabled: state.ex.view === 'details' },
+    { act: 'view-tiles', label: '查看：大图标', ico: 'devices', disabled: state.ex.view === 'tiles' },
+    '-',
+    { act: 'toggle-children', label: state.ex.includeChildren ? '只显示本级内容' : '包含子文件夹内容', ico: 'folder-open' },
+    { act: 'exportorg', label: '导出当前文件夹设备', ico: 'download', disabled: !hasPerm('excel.export') },
+  ];
+}
+
+const exMenuActions = {
+  open: () => { const k = [...state.ex.sel][0]; if (k) exOpen(k); },
+  enter: () => { const k = [...state.ex.sel].find((x) => exRowKind(x) === 'org'); if (k) exNavigate(exRowId(k)); },
+  edit: () => { const ids = exSelectedDevices(); if (ids.length === 1) openDeviceForm(ids[0]); },
+  move: () => exMoveDialog(exSelectedDevices()),
+  export: () => exExportSelected(),
+  copy: () => {
+    const d = ex.rows.find((r) => r.key === [...state.ex.sel][0])?.dev;
+    if (d) copyText(d.asset_no || d.sn || '');
+  },
+  delete: () => exDeleteSelected(),
+  newsub: () => exNewFolder(),
+  rename: () => {
+    const k = [...state.ex.sel].find((x) => exRowKind(x) === 'org');
+    if (k) exRenameFolder(exRowId(k));
+  },
+  deletebg: () => exDeleteFolders([...state.ex.sel].filter((x) => exRowKind(x) === 'org').map(exRowId)),
+  refresh: () => renderExplorer(),
+  all: () => { state.ex.rows.forEach((r) => state.ex.sel.add(r.key)); exPaintSelection(); exRenderStatus(); },
+  'view-details': () => { state.ex.view = 'details'; exLoad(); },
+  'view-tiles': () => { state.ex.view = 'tiles'; exLoad(); },
+  'toggle-children': () => exToggleChildren(!state.ex.includeChildren),
+  exportorg: () => exExportFolder(),
+  props: () => { /* 只读提示项 */ },
+};
+
+/* ---------------- 状态栏 / 导航按钮 ---------------- */
+
+function exRenderStatus() {
+  const box = $('#exStatus');
+  if (!box) return;
+  const ex = state.ex;
+  const selDev = exSelectedDevices().length;
+  const selFolder = [...ex.sel].filter((k) => exRowKind(k) === 'org').length;
+  const bits = [];
+  if (selDev || selFolder) {
+    bits.push(`选中 ${[selDev ? `${selDev} 台设备` : '', selFolder ? `${selFolder} 个文件夹` : ''].filter(Boolean).join(' + ')}`);
+  } else {
+    bits.push(`${ex.rows.length} 个项目`);
+  }
+  if (ex.folderCount) bits.push(`${ex.folderCount} 个文件夹`);
+  if (ex.total != null && ex.rows.length - ex.folderCount !== ex.total) bits.push(`${ex.total} 台设备`);
+  box.innerHTML = `
+    <span class="ex-status-left">${esc(bits.join('　·　'))}${ex.includeChildren ? '　·　<b>包含子文件夹</b>' : ''}${ex.keyword ? `　·　搜索「${esc(ex.keyword)}」` : ''}</span>
+    <span class="ex-status-right">
+      ${ex.capped ? `<span class="ex-warn">只显示前 ${ex.cap} 台，请用搜索缩小范围</span>` : ''}
+      <label class="ex-switch" title="勾上后连子文件夹里的设备一起列出（数字口径也会跟着变）">
+        <input type="checkbox" id="exRecur" ${ex.includeChildren ? 'checked' : ''}> 包含子文件夹
+      </label>
+    </span>`;
+  const rc = $('#exRecur');
+  if (rc) rc.onchange = () => exToggleChildren(rc.checked);
+}
+
+function exToggleChildren(on) {
+  state.ex.includeChildren = !!on;
+  const tree = $('#exTree');
+  if (tree) { tree.innerHTML = exTreeHTML(); bindExplorerTree(); }
+  exLoad();
+}
+
+function exRenderNavButtons() {
+  const ex = state.ex;
+  const back = $('#exBack'); const fwd = $('#exFwd'); const up = $('#exUp');
+  if (back) { back.disabled = ex.histIdx <= 0; back.classList.toggle('off', back.disabled); }
+  if (fwd) { fwd.disabled = ex.histIdx >= ex.hist.length - 1; fwd.classList.toggle('off', fwd.disabled); }
+  if (up) {
+    const canUp = !!ex.orgId && ex.orgId !== EX_NONE;
+    up.disabled = !canUp;
+    up.classList.toggle('off', !canUp);
+  }
+}
+
+function exGoBack() {
+  const ex = state.ex;
+  if (ex.histIdx <= 0) return;
+  ex.histIdx -= 1;
+  exNavigate(ex.hist[ex.histIdx], { push: false });
+}
+function exGoFwd() {
+  const ex = state.ex;
+  if (ex.histIdx >= ex.hist.length - 1) return;
+  ex.histIdx += 1;
+  exNavigate(ex.hist[ex.histIdx], { push: false });
+}
+
+function bindExplorerToolbar() {
+  const ex = state.ex;
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on('#exBack', exGoBack);
+  on('#exFwd', exGoFwd);
+  on('#exUp', exUp);
+  on('#exRefresh', () => renderExplorer());
+
+  const kw = $('#exKw');
+  if (kw) {
+    // 资源管理器是"打字即搜"，不需要按回车
+    let timer = null;
+    kw.oninput = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { state.ex.keyword = kw.value.trim(); exLoad(); }, 260);
+    };
+    kw.onkeydown = (e) => {
+      if (e.key === 'Enter') { state.ex.keyword = kw.value.trim(); exLoad(); }
+      if (e.key === 'Escape') { kw.value = ''; state.ex.keyword = ''; exLoad(); }
+      e.stopPropagation();
+    };
+  }
+  $$('.ex-vt').forEach((b) => {
+    b.onclick = () => { state.ex.view = b.getAttribute('data-view'); exLoad(); };
+  });
+}
+
+/* ---------------- 键盘：照搬资源管理器 ---------------- */
+
+function exKeyHandler(e) {
+  if (state.view !== 'explorer') return;
+  const tag = (e.target?.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const ex = state.ex;
+  const keys = ex.rows.map((r) => r.key);
+
+  const move = (delta) => {
+    if (!keys.length) return;
+    let idx = keys.findIndex((k) => ex.sel.has(k));
+    if (idx < 0) idx = delta > 0 ? -1 : keys.length;
+    const next = Math.max(0, Math.min(keys.length - 1, idx + delta));
+    ex.sel.clear();
+    ex.sel.add(keys[next]);
+    ex.anchor = next;
+    exPaintSelection();
+    exRenderStatus();
+    const el = exItems().find((x) => x.getAttribute('data-key') === keys[next]);
+    el?.scrollIntoView?.({ block: 'nearest' });
+  };
+
+  if (e.key === 'Enter') {
+    const k = [...ex.sel][0];
+    if (k) { e.preventDefault(); exOpen(k); }
+  } else if (e.key === 'F2') {
+    e.preventDefault();
+    const k = [...ex.sel][0];
+    if (!k) return;
+    if (exRowKind(k) === 'org') exRenameFolder(exRowId(k));
+    else openDeviceForm(exRowId(k));
+  } else if (e.key === 'Delete') {
+    e.preventDefault();
+    const orgs = [...ex.sel].filter((k) => exRowKind(k) === 'org');
+    if (orgs.length) exDeleteFolders(orgs.map(exRowId));
+    else exDeleteSelected();
+  } else if (e.key === 'F5') {
+    e.preventDefault();
+    renderExplorer();
+  } else if (e.key === 'Backspace') {
+    e.preventDefault();
+    exUp();
+  } else if (e.key === 'ArrowDown') { e.preventDefault(); move(1); } else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); } else if (e.key === 'Home') { e.preventDefault(); move(-keys.length); } else if (e.key === 'End') { e.preventDefault(); move(keys.length); } else if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+    e.preventDefault();
+    keys.forEach((k) => ex.sel.add(k));
+    exPaintSelection();
+    exRenderStatus();
+  } else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); exGoBack(); } else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); exGoFwd(); } else if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); exUp(); }
+}
+// 全局键盘快捷键（照搬资源管理器：Enter/F2/Delete/F5/Backspace/方向键/Alt+左右）。
+// 挂之前先探一下，别在缺 addEventListener 的极简环境里直接把模块打死。
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('keydown', exKeyHandler);
+}
+
+/* ---------------- 操作实现 ---------------- */
+
+async function exMoveTo(orgId, ids) {
+  if (!ids?.length) return;
+  if (!orgId) { toast('请拖到具体的文件夹上', 'warn'); return; }
+  const target = orgId === EX_NONE ? null : orgId;
+  const label = orgId === EX_NONE ? '未分配组织'
+    : (state.ex.data?.flat.find((o) => o.id === orgId)?.path || '该组织');
+  const ok = await confirmBox(`移动 ${ids.length} 个项目`, `要把 ${ids.length} 台设备移动到「${label}」吗？`);
+  if (!ok) return;
+  try {
+    const r = await api('/devices/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, action: 'move', payload: { org_id: target } }),
+    });
+    toast(`已移动 ${r.ok ?? ids.length} 台设备`);
+    state.ex.sel.clear();
+    await renderExplorer();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function exMoveDialog(ids) {
+  if (!ids.length) { toast('先选中要移动的设备', 'warn'); return; }
+  const flat = state.ex.data?.flat || [];
+  const opts = [
+    ...flat.map((o) => `<option value="${o.id}" ${o.id === state.ex.orgId ? 'selected' : ''}>${esc(o.path)}</option>`),
+    `<option value="${EX_NONE}">未分配组织（清空归属）</option>`,
+  ].join('');
+  openModal(`
+    <div class="modal-head"><h2>移动 ${ids.length} 个项目</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>目标文件夹</label><select id="exMoveOrg">${opts}</select></div>
+      <p class="muted" style="margin:0">移动会写进每台设备的流转记录，可追溯。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="closeModal();exMoveTo(document.getElementById('exMoveOrg').value, ${JSON.stringify(ids)})">移动</button>
+    </div>`, { slim: true });
+}
+
+async function exDeleteSelected() {
+  const ids = exSelectedDevices();
+  if (!ids.length) { toast('先选中要删除的设备', 'warn'); return; }
+  const ok = await confirmBox(`删除 ${ids.length} 台设备`, '删除后可以在「回收站」里恢复。');
+  if (!ok) return;
+  try {
+    const r = await api('/devices/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, action: 'delete' }),
+    });
+    toast(`已删除 ${r.ok ?? ids.length} 台设备（可在回收站恢复）`);
+    state.ex.sel.clear();
+    await renderExplorer();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function exDeleteFolders(orgIds) {
+  if (!orgIds.length) return;
+  const names = orgIds.map((id) => state.ex.data?.flat.find((o) => o.id === id)?.name || id);
+  const ok = await confirmBox(
+    `删除 ${orgIds.length} 个文件夹`,
+    `将删除：${names.join('、')}。文件夹里还有子文件夹或设备时删不掉（会提示），需要先清空或移动走。`,
+  );
+  if (!ok) return;
+  let done = 0; const errs = [];
+  for (const id of orgIds) {
+    try { await api('/orgs/' + id, { method: 'DELETE' }); done++; }
+    catch (e) { errs.push(`${state.ex.data?.flat.find((o) => o.id === id)?.name || id}：${e.message}`); }
+  }
+  // 删掉的如果是当前所在文件夹，退到上级
+  if (orgIds.includes(state.ex.orgId)) state.ex.orgId = '';
+  toast(done ? `已删除 ${done} 个文件夹${errs.length ? `，${errs.length} 个失败` : ''}` : '删除失败', errs.length ? 'warn' : 'ok');
+  if (errs.length) console.warn('删除文件夹失败：', errs);
+  await renderExplorer();
+}
+
+async function exRenameFolder(orgId) {
+  const o = (state.ex.data?.flat || []).find((x) => x.id === orgId);
+  if (!o) return;
+  openModal(`
+    <div class="modal-head"><h2>重命名文件夹</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>组织名称</label><input id="exRnName" value="${esc(o.name)}"></div>
+      <p class="muted" style="margin:0">只改组织名称，里面的设备不受影响。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" id="exRnSave">保存</button>
+    </div>`, { slim: true });
+  const btn = $('#exRnSave');
+  if (btn) btn.onclick = async () => {
+    const name = $('#exRnName').value.trim();
+    if (!name) { toast('名称不能为空', 'warn'); return; }
+    try {
+      await api('/orgs/' + orgId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+      closeModal();
+      toast('已重命名');
+      await renderExplorer();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+}
+
+function exNewFolder() {
+  const id = state.ex.orgId;
+  const parent = (!id || id === EX_NONE) ? null : id;
+  const parentName = parent ? (state.ex.data?.flat.find((o) => o.id === parent)?.path || '') : '（根，作为顶级组织）';
+  openModal(`
+    <div class="modal-head"><h2>新建文件夹</h2><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>上级文件夹</label><input id="exNfParent" value="${esc(parentName)}" disabled></div>
+      <div class="field"><label>名称 <span class="req">*</span></label><input id="exNfName" placeholder="如 运维组"></div>
+      <div class="field"><label>类型</label><select id="exNfType">
+        ${(state.options?.org_types || [{ id: 'department', label: '部门' }]).map((t) => `<option value="${t.id}" ${t.id === (parent ? 'team' : 'department') ? 'selected' : ''}>${t.label}</option>`).join('')}
+      </select></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" id="exNfSave">创建</button>
+    </div>`, { slim: true });
+  const btn = $('#exNfSave');
+  const inp = $('#exNfName');
+  if (inp) inp.onkeydown = (e) => { if (e.key === 'Enter') btn?.click(); };
+  if (btn) btn.onclick = async () => {
+    const name = $('#exNfName').value.trim();
+    if (!name) { toast('名称不能为空', 'warn'); return; }
+    try {
+      const r = await api('/orgs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, parent_id: parent, type: $('#exNfType').value }),
+      });
+      closeModal();
+      toast(`已创建「${name}」`);
+      exNavigate(r.id);
+    } catch (e) { toast(e.message, 'error'); }
+  };
+}
+
+/** 导出当前文件夹（或选中）的设备 */
+async function exExportFolder() {
+  if (!hasPerm('excel.export')) { toast('没有导出权限', 'warn'); return; }
+  const q = {};
+  if (state.ex.orgId === EX_NONE) q.no_org = '1';
+  else if (state.ex.orgId) { q.org_id = state.ex.orgId; if (!state.ex.includeChildren) q.org_direct = '1'; }
+  if (state.ex.keyword) q.keyword = state.ex.keyword;
+  if (state.ex.status) q.status = state.ex.status;
+  try {
+    const ids = await api('/devices/ids?' + new URLSearchParams(q).toString());
+    if (!ids.ids?.length) { toast('这个文件夹里没有可导出的设备', 'warn'); return; }
+    await doExport({ ids: ids.ids, split: true });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function exExportSelected() {
+  const ids = exSelectedDevices();
+  if (!ids.length) { toast('先选中要导出的设备', 'warn'); return; }
+  if (!hasPerm('excel.export')) { toast('没有导出权限', 'warn'); return; }
+  doExport({ ids, split: true }).catch((e) => toast(e.message, 'error'));
+}
+
+window.renderExplorer = renderExplorer;
+window.exNavigate = exNavigate;
+window.exMoveTo = exMoveTo;
+window.exGoBack = exGoBack;
+window.exGoFwd = exGoFwd;
+window.exUp = exUp;
+// 便于自动化测试：渲染冒烟用的假 DOM 看不到 innerHTML 里新建的元素，
+// 所以把渲染函数直接暴露出来断言产出（和 photoPanelHTML 同样的路子）。
+window.exDetailsHTML = exDetailsHTML;
+window.exFolderRowHTML = exFolderRowHTML;
+window.exDeviceRowHTML = exDeviceRowHTML;
+window.exTilesHTML = exTilesHTML;
+window.exEmptyHTML = exEmptyHTML;
+window.exCrumbs = exCrumbs;
+window.exDeviceMenu = exDeviceMenu;
+window.exFolderMenu = exFolderMenu;
+window.exEmptyMenu = exEmptyMenu;
+window.exMenuActions = exMenuActions;
+window.exKeyHandler = exKeyHandler;
 
 // 暴露给内联 onclick
 window.openDeviceDetail = openDeviceDetail;
@@ -3304,6 +4596,9 @@ window.openLoginLog = openLoginLog;
 window.copyText = copyText;
 window.showLiveGuide = showLiveGuide;
 window.showMultiSheetGuide = showMultiSheetGuide;
+window.showExcelGuide = showExcelGuide;
+window.xlPreview = xlPreview;
+window.xlPickBase = xlPickBase;
 window.copyLiveLink = copyLiveLink;
 window.resetLiveToken = resetLiveToken;
 window.doLogout = doLogout;

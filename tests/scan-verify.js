@@ -1258,6 +1258,139 @@ assert(
   '条码入口的提示改成「贴近条码、让它铺满画面宽度」',
 );
 
+/* ================= ⑧ 拍照识别：倒着 / 横着拍也必须能认 =================
+ * 用户反馈：「必须把标签正面放进识别框，一旦翻转倾斜就识别不了」。
+ * 修法：先判文字走向，再按 0/90/180/270 轮着试，读到东西就停。
+ * 两个方向都要钉住：
+ *   (a) 正常照片**只发一次** —— 容错不能变成平白多花钱、多等；
+ *   (b) 第一趟读不出来时确实会换角度重试，且重试不重复归档。
+ */
+console.log('\n  —— ⑧ 拍照识别的方向容错 ——');
+
+{
+  // 合成灰度图验方向判定。做成「文字行 + 行间空隙 + 字间空隙」，
+  // 不是干净的条纹 —— 干净条纹会让另一轴的投影恒为常数（ratio 变成天文数字），
+  // 那种图真实照片里不存在，验不出东西。
+  const stripes = (w, h, vertical) => {
+    const g = new Uint8Array(w * h).fill(235);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const along = vertical ? y : x;    // 文字行的走向
+        const across = vertical ? x : y;   // 一行一行换的方向
+        const inLine = Math.floor(across / 8) % 2 === 0;
+        const letterGap = Math.floor(along / 6) % 5 === 4;
+        if (inLine && !letterGap) g[y * w + x] = 20;
+      }
+    }
+    return g;
+  };
+  const aH = g.textAxisOf(stripes(240, 80, false), 240, 80);
+  const aV = g.textAxisOf(stripes(240, 80, true), 240, 80);
+  assert(aH.axis === 'h', '横排文字的铭牌判成「横排」（实得 ' + aH.axis + '，ratio=' + aH.ratio.toFixed(2) + '）');
+  assert(aV.axis === 'v', '竖排文字的铭牌判成「竖排」（实得 ' + aV.axis + '，ratio=' + aV.ratio.toFixed(2) + '）');
+  assert(aH.ratio > 1.3 && aV.ratio > 1.3,
+    '判据要够明确（横排 ratio=' + aH.ratio.toFixed(2) + '、竖排 ratio=' + aV.ratio.toFixed(2) + '，都得 >1.3）—— 否则等于没判，重试顺序也就没意义');
+  const blank = g.textAxisOf(new Uint8Array(240 * 80).fill(235), 240, 80);
+  assert(blank.axis === 'h' && blank.ratio === 1, '全白/无对比的图不给意见（别凭空把好好的照片转 90°）');
+  const solid = g.textAxisOf(new Uint8Array(240 * 80).fill(0), 240, 80);
+  assert(solid.ratio === 1, '纯色块没有行结构，同样不给意见');
+  assert(g.textAxisOf(null, 0, 0).axis === 'h', '参数不合法时不抛，安静退回默认');
+}
+
+{
+  const anglesOf = (x) => [...new Set(x)].sort((p, q) => p - q).join(',');
+  assert(anglesOf(g.retryAngles('h')) === '90,180,270', '横排时重试角度覆盖 90/180/270（实得 ' + anglesOf(g.retryAngles('h')) + '）');
+  assert(anglesOf(g.retryAngles('v')) === '90,180,270', '竖排时重试角度也一个不漏（实得 ' + anglesOf(g.retryAngles('v')) + '）');
+  assert(g.retryAngles('h')[0] === 180, '横排先把「倒置 180°」排第一 —— 铭牌倒着拍是最常见的情况');
+  assert(g.retryAngles('v')[0] === 90 && g.retryAngles('v')[1] === 270, '竖排先试 90/270');
+}
+
+{
+  assert(g.usableResult({ sn: 'YLX22196', sn_confidence: 0.99 }), '读到 SN 就算「读出来了」');
+  assert(g.usableResult({ brand: 'DELL', model: 'U2723QE' }), '品牌 + 型号都读到也算');
+  assert(!g.usableResult({ brand: 'DELL' }), '只读到品牌不算（可能根本没读对标签）');
+  assert(!g.usableResult(null), '空结果不算');
+}
+
+// 提示词里必须交代「照片可能是倒的/歪的」——模型不会自己想到
+{
+  const srcOcr = fs.readFileSync(path.join(ROOT, 'server/lib/ocr.js'), 'utf8');
+  assert(/【照片方向】/.test(srcOcr), '识别提示词里说明了「照片可能倒置/拍歪，别因此判断没有文字」');
+}
+
+// 行为级：用桩替掉 /api/ocr，数一数到底发了几趟
+{
+  const realFetch2 = globalThis.fetch;
+  const calls = [];
+  let weakUntil = 2;              // 前 (weakUntil - 1) 趟故意「什么都没读到」
+  // 只有第一趟会带图回来：重试那趟带的是 save=0，服务端不归档、图地址自然是空的。
+  // 这一点必须如实模拟，否则「最终结果要沿用第一趟的图地址」那条断言是空的。
+  const payload = (ok, first) => ({
+    brand: ok ? 'DELL' : null, brand_confidence: ok ? 0.9 : 0, brand_source: ok ? 'text' : null,
+    model: ok ? 'U2723QE' : null, model_confidence: ok ? 0.8 : 0,
+    sn: ok ? 'YLX22196' : null, sn_confidence: ok ? 0.99 : 0,
+    sn_fix: null, sn_candidates: [], duplicate: { exists: false, items: [] },
+    mocked: false, note: null, category_hint: 'MON',
+    image_path: first ? '/uploads/a.jpg' : null,
+    original_path: first ? '/uploads/o.jpg' : null,
+    thumb_path: first ? '/uploads/t.jpg' : null,
+    lines: [], text: '',
+  });
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url).includes('/api/ocr')) {
+      const fields = {};
+      if (opts.body && typeof opts.body.entries === 'function') {
+        for (const [k, v] of opts.body.entries()) fields[k] = typeof v === 'string' ? v : (v?.name || 'file');
+      }
+      calls.push(fields);
+      return new Response(JSON.stringify(payload(calls.length >= weakUntil, calls.length === 1)), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return realFetch2(url, opts);
+  };
+
+  try {
+    g.mobileState.busy = false;
+    g.mobileState.capturedBlob = new Blob([new Uint8Array(2048)], { type: 'image/jpeg' });
+    g.mobileState.originalBlob = new Blob([new Uint8Array(4096)], { type: 'image/jpeg' });
+    g.mobileState.thumbBlob = new Blob([new Uint8Array(256)], { type: 'image/jpeg' });
+
+    weakUntil = 2;
+    calls.length = 0;
+    g.mobileState.busy = false;
+    await g.startRecognize();
+    assert(calls.length === 2, '第一趟读不出 SN 时会换角度重试（实际发了 ' + calls.length + ' 趟）');
+    assert(calls[0]?.original, '第一趟带上了原图（要归档）');
+    assert(calls[1]?.save === '0', '重试那趟带 save=0 —— 否则每换个角度就多归档三张重复图');
+    assert(!calls[1]?.original, '重试那趟不再重复上传原图 / 缩略图');
+    assert(g.mobileState.recognizeResult?.sn === 'YLX22196', '最终采用读到 SN 的那一趟结果（实得 ' + JSON.stringify(g.mobileState.recognizeResult?.sn) + '）');
+    assert(!!g.mobileState.recognizeResult?.note, '结果里说明了「照片是转正后识别的」，别让用户以为系统乱认');
+    assert(g.mobileState.recognizeResult?.image_path === '/uploads/a.jpg', '照片地址仍用第一趟的（那才是用户真正拍下的那张）');
+
+    // 正常照片：第一趟就读到 → 不许再发第二趟
+    weakUntil = 1;
+    calls.length = 0;
+    g.mobileState.busy = false;
+    await g.startRecognize();
+    assert(calls.length === 1, '正常照片只发一趟识别（容错不能变成平白多花时间和额度）');
+
+    // 四个角度都读不出来：不许抛，也不许把结果丢掉（界面还要能人工改）
+    weakUntil = 99;
+    calls.length = 0;
+    g.mobileState.busy = false;
+    let threw = null;
+    try { await g.startRecognize(); } catch (e) { threw = e; }
+    assert(!threw, '四个方向都读不出来时不抛异常' + (threw ? '（实得：' + threw.message + '）' : ''));
+    assert(calls.length === 4, '四个角度全试过后就停手（实得 ' + calls.length + ' 趟，不该无限重试）');
+  } finally {
+    globalThis.fetch = realFetch2;
+    g.mobileState.capturedBlob = null;
+    g.mobileState.originalBlob = null;
+    g.mobileState.thumbBlob = null;
+  }
+}
+
 /* ================= 结果 ================= */
 if (failures.length) {
   console.log('\n=== 扫码核对：失败 ' + failures.length + ' 项 ===\n');

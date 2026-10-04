@@ -44,6 +44,7 @@ const SUITES = [
   { file: 'charts.js', label: '统计图表', server: true },
   { file: 'm-dashboard-slim.js', label: '手机首页瘦身', server: true },
   { file: 'render-smoke.js', label: '页面渲染', server: true },
+  { file: 'explorer.js', label: '资源管理器', server: true },
   { file: 'scan-verify.js', label: '扫码核对流程', server: true },
   { file: 'agent.js', label: 'GLPI Agent 对接', server: true },
   { file: 'account.js', label: '账户与权限', server: true },

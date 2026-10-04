@@ -3,11 +3,13 @@
  * 运行：node tests/selftest.js
  */
 import assert from 'node:assert';
+import os from 'node:os';
 import { buildXlsx, parseXlsx, zipRead } from '../server/lib/xlsx.js';
 import { qrcodeEncode, qrcodeSvg } from '../server/lib/qrcode.js';
 import { interpret, detectSN, detectBrand, stripSNLabels, snPatternFrom, snCandidates } from '../server/lib/recognize.js';
 import { buildTemplate, exportDevices, importDevices, allColumns } from '../server/excel.js';
-import { migrate, seedIfEmpty, scalar } from '../server/db.js';
+import { migrate, seedIfEmpty, scalar, setSetting } from '../server/db.js';
+import { rankLocalIPs } from '../server/lib/net.js';
 import * as svc from '../server/services.js';
 
 let pass = 0;
@@ -288,6 +290,123 @@ await t('SN 重复会被拒绝', () => {
   assert.throws(() => svc.deviceCreate({ category_id: cat.id, sn, brand: 'B' }, 'selftest'), /已存在/);
 });
 
+await t('分类专属字段：使用人 / 存放位置 由分类配置驱动', () => {
+  /*
+   * 这两项原来是手机端表单里写死的输入框，任何分类都有。现在归分类管：
+   * 能改名、能改类型、能按分类去掉。所以必须保证——
+   *   ① 出厂默认的每个分类都带它们（否则升级后手机端会突然少两个框）
+   *   ② 它们的 key 在 COLUMN_TRACKING_KEYS 里（否则会存进 extra，而不是设备的正式字段）
+   */
+  const cats = svc.categoryList();
+  assert.ok(cats.length >= 5, '默认分类应该都在');
+  for (const c of cats) {
+    const keys = (c.tracking_fields || []).map((f) => f.key);
+    assert.ok(keys.includes('owner_name'), `分类「${c.name}」缺「使用人」字段`);
+    assert.ok(keys.includes('location'), `分类「${c.name}」缺「存放位置」字段`);
+  }
+  assert.ok(svc.COLUMN_TRACKING_KEYS.includes('owner_name'), 'owner_name 应写进设备正式列');
+  assert.ok(svc.COLUMN_TRACKING_KEYS.includes('location'), 'location 应写进设备正式列');
+
+  // 值真的落到设备表的列上（而不是 extra）
+  const pc = cats.find((c) => c.code === 'PC') || cats[0];
+  const d = svc.deviceCreate({
+    category_id: pc.id, sn: `OWNCOL${Date.now()}`, status: 'in_use',
+    owner_name: '张伟', location: '3 楼机房', extra: {},
+  }, 'selftest');
+  assert.strictEqual(d.owner_name, '张伟', '使用人应写进 owner_name 列');
+  assert.strictEqual(d.location, '3 楼机房', '存放位置应写进 location 列');
+
+  // 管理员按分类删掉之后，升级逻辑不能又给它加回来（靠 app_setting 标记只跑一次）
+  const less = (pc.tracking_fields || []).filter((f) => f.key !== 'location');
+  svc.categoryUpdate(pc.id, {
+    name: pc.name, code: pc.code, code_prefix: pc.code_prefix, icon: pc.icon, color: pc.color,
+    tracking_fields: less,
+  });
+  migrate();   // 再跑一次迁移
+  const after = svc.categoryList().find((c) => c.id === pc.id).tracking_fields.map((f) => f.key);
+  assert.ok(!after.includes('location'), '管理员删掉的字段不该被迁移逻辑加回来');
+
+  // 复原，别影响后面的用例
+  svc.categoryUpdate(pc.id, {
+    name: pc.name, code: pc.code, code_prefix: pc.code_prefix, icon: pc.icon, color: pc.color,
+    tracking_fields: pc.tracking_fields,
+  });
+});
+
+await t('手机录入默认值：默认「在用」，配置里的死 id 必须被忽略', () => {
+  /*
+   * 用户要求：录入表单里那些下拉要能预设默认项（现场一台接一台录，省掉重复点选）。
+   * 关键在**校验**：分类/组织可能后来被删掉，配置里留下的死 id 若不忽略，
+   * 手机端会 select 到一个不存在的选项 —— 界面看起来「什么都没选」，保存时还会写空值。
+   */
+  const d0 = svc.mobileDefaults();
+  assert.strictEqual(d0.status, 'in_use', '没配置时状态默认应为「在用」');
+  assert.strictEqual(d0.category_id, null);
+  assert.strictEqual(d0.org_id, null);
+
+  setSetting('mobile', { category_id: 'no-such-id', org_id: 'no-such-id', supplier: '不存在的供应商', status: 'not-a-status' });
+  const d1 = svc.mobileDefaults();
+  assert.strictEqual(d1.category_id, null, '不存在的分类应被忽略');
+  assert.strictEqual(d1.org_id, null, '不存在的组织应被忽略');
+  assert.strictEqual(d1.supplier, null, '不在供应商选项里的值应被忽略');
+  assert.strictEqual(d1.status, 'in_use', '非法状态应回落到「在用」');
+
+  const pc = svc.categoryList()[0];
+  setSetting('mobile', { category_id: pc.id, status: 'idle' });
+  const d2 = svc.mobileDefaults();
+  assert.strictEqual(d2.category_id, pc.id, '有效分类应保留');
+  assert.strictEqual(d2.status, 'idle', '有效状态应保留');
+
+  // 专属字段的默认值要能存下来（下拉字段的默认值必须是选项之一，前端负责过滤，这里只验存取）
+  svc.categoryUpdate(pc.id, {
+    name: pc.name, code: pc.code, code_prefix: pc.code_prefix, icon: pc.icon, color: pc.color,
+    tracking_fields: [
+      { key: 'cpu', label: 'CPU', type: 'text', default: 'i5-13500' },
+      { key: 'os_name', label: '操作系统', type: 'select', options: ['Win10', 'Win11'], default: 'Win11' },
+      { key: 'memory', label: '内存', type: 'text' },
+    ],
+  });
+  const saved = svc.categoryList().find((c) => c.id === pc.id).tracking_fields;
+  assert.strictEqual(saved.find((f) => f.key === 'cpu').default, 'i5-13500', '文本字段默认值没存住');
+  assert.strictEqual(saved.find((f) => f.key === 'os_name').default, 'Win11', '下拉字段默认值没存住');
+  assert.strictEqual(saved.find((f) => f.key === 'memory').default, undefined, '没填默认值的字段不该凭空多出 default');
+
+  // 复原
+  svc.categoryUpdate(pc.id, {
+    name: pc.name, code: pc.code, code_prefix: pc.code_prefix, icon: pc.icon, color: pc.color,
+    tracking_fields: pc.tracking_fields,
+  });
+  setSetting('mobile', {});
+});
+
+await t('本机地址挑选：虚拟网卡/链路本地排除，Windows 热点网段不冒头', () => {
+  /*
+   * 实测踩到的坑：os.networkInterfaces() 排前面的可能是 192.168.137.1
+   * （Windows 移动热点/ICS 的固定网段），真正的办公网往往在无线网卡上（如 192.168.1.x）。
+   * 拿错地址的后果是静默的：导出的 Excel 照片链接打不开、Agent 安装地址上报不上来、
+   * Excel 实时链接取不到数 —— 所以这条必须有测试钉住。
+   */
+  const fake = {
+    'vEthernet (WSL)': [{ family: 'IPv4', address: '172.28.96.1', internal: false }],
+    'Hyper-V Virtual Ethernet': [{ family: 'IPv4', address: '172.20.0.1', internal: false }],
+    以太网: [{ family: 'IPv4', address: '192.168.137.1', internal: false }],
+    WLAN: [{ family: 'IPv4', address: '192.168.1.100', internal: false }],
+    '以太网 2': [{ family: 'IPv4', address: '169.254.3.125', internal: false }],
+    Loopback: [{ family: 'IPv4', address: '127.0.0.1', internal: true }],
+  };
+  const r = rankLocalIPs(fake);
+  assert.strictEqual(r[0], '192.168.1.100', '应该优先给出真正的办公网地址，实得 ' + r[0]);
+  assert.ok(!r.includes('172.28.96.1'), '虚拟网卡（WSL）不该出现');
+  assert.ok(!r.includes('172.20.0.1'), '虚拟网卡（Hyper-V）不该出现');
+  assert.ok(!r.includes('169.254.3.125'), '链路本地地址不该出现');
+  assert.ok(!r.includes('127.0.0.1'), '回环地址不该出现');
+  assert.strictEqual(r[r.length - 1], '192.168.137.1', '192.168.137.x（共享/热点网段）应排在最后');
+  // 真机上也必须至少给出一个可用地址（本机跑测试时就是这个分支）
+  const real = rankLocalIPs(os.networkInterfaces());
+  assert.ok(real.length >= 0, '真实网卡不应抛错');
+  assert.ok(real.every((ip) => !ip.startsWith('169.254.') && !ip.startsWith('127.')), '真实结果里不该有链路本地/回环');
+});
+
 await t('统计看板数据结构完整', () => {
   const d = svc.dashboard();
   assert.ok(d.kpi.total > 0);
@@ -448,6 +567,47 @@ await t('导出 -> 导入到空表能完全还原（抽样字段）', async () =
   assert.ok(dev, '导出的 SN 应能在库中找到');
   assert.strictEqual(dev.asset_no, sample['资产编号']);
   assert.strictEqual(dev.brand, sample['品牌']);
+});
+
+await t('导出列完全由「设备分类」决定：核心 7 列 + 该分类配的字段，没配的一律不出现', async () => {
+  /*
+   * 用户的原话：「设备分类里没有这些字段，为什么还要加在这里，导致我导出的 excel
+   * 特别长，而且都是一些没用的」。
+   * 所以现在列数只有一个来源：设备分类 → 专属字段。
+   * 这条测试盯住两件事：① 核心列就是那 7 个；② 分类没配的字段绝不出现在表头里。
+   */
+  const { categoryColumns } = await import('../server/excel.js');
+  const pc = svc.categoryList().find((c) => c.code === 'PC');
+  const original = pc.tracking_fields;
+  const CORE = ['资产编号', '设备分类', '品牌', '型号', 'SN 序列号', '所属组织', '状态'];
+
+  // ① 模拟用户的配置：台式主机只留「使用人 / 存放位置」
+  svc.categoryUpdate(pc.id, {
+    name: pc.name, code: pc.code, code_prefix: pc.code_prefix, icon: pc.icon, color: pc.color,
+    tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
+    ],
+  });
+  const cols = categoryColumns(svc.categoryList().find((c) => c.code === 'PC')).map((c) => c.header);
+  assert.deepStrictEqual(cols, [...CORE, '使用人', '存放位置'], '台式主机应只有 7 核心列 + 2 个配置字段，实得：' + cols.join('|'));
+
+  // ② 真正导出一份，表头必须和上面一致（照片列是按设置追加的，单独判断）
+  const { buffer } = await exportDevices({ category_id: pc.id });
+  const parsed = parseXlsx(buffer, { sheet: '设备台账' });
+  const headers = parsed.headers;
+  for (const h of cols) assert.ok(headers.includes(h), `导出的表头缺少「${h}」`);
+  const NOT_CONFIGURED = ['使用人工号', '使用人电话', '采购日期', '保修到期', '采购金额',
+    '合同号', '成色', 'CPU', '内存', '硬盘', 'IP 地址', 'MAC 地址', '操作系统', '屏幕尺寸', '备注'];
+  for (const h of NOT_CONFIGURED) {
+    assert.ok(!headers.includes(h), `分类没配的字段不该出现在表头里：「${h}」`);
+  }
+
+  // ③ 复原配置
+  svc.categoryUpdate(pc.id, {
+    name: pc.name, code: pc.code, code_prefix: pc.code_prefix, icon: pc.icon, color: pc.color,
+    tracking_fields: original,
+  });
 });
 
 console.log(`\n=== 结果：${pass} 通过 / ${failCount} 失败 ===\n`);

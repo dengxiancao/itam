@@ -67,7 +67,42 @@ export function migrate() {
     photo_thumb_path: 'TEXT',      // 缩略图（导出 Excel 嵌入用）
   });
   upgradeSeedColors();
+  upgradeOwnerLocationFields();
   logger.info(`数据库就绪: ${DB_FILE}`);
+}
+
+/**
+ * 老库升级：把「使用人 / 存放位置」补进每个分类的专属字段。
+ *
+ * 为什么需要：这两项原来是**手机端表单里写死的两个输入框**，任何分类都会出现。
+ * 现在改成由分类配置驱动（可改名、可改类型、也可按分类去掉），
+ * 所以老库必须把它们补进已有分类 —— 否则升级后手机端会突然少掉这两个框。
+ *
+ * ⚠️ 只补缺的、而且**只跑一次**（用 app_setting 打标记）：
+ *    这样管理员之后主动删掉它们时，不会每次重启又被加回来。
+ */
+function upgradeOwnerLocationFields() {
+  if (getSetting('tracking_owner_added', null)) return;
+  const ADD = [
+    { key: 'owner_name', label: '使用人', type: 'text' },
+    { key: 'location', label: '存放位置', type: 'text' },
+  ];
+  let n = 0;
+  for (const c of all('SELECT id, tracking_fields FROM device_category')) {
+    let list = [];
+    try { list = JSON.parse(c.tracking_fields || '[]'); } catch { list = []; }
+    if (!Array.isArray(list)) list = [];
+    const has = new Set(list.filter(Boolean).map((f) => f.key));
+    const add = ADD.filter((f) => !has.has(f.key));
+    if (!add.length) continue;
+    update('device_category', c.id, {
+      tracking_fields: JSON.stringify([...add, ...list]),
+      updated_at: nowISO(),
+    });
+    n++;
+  }
+  setSetting('tracking_owner_added', true);
+  if (n) logger.info(`数据库升级：${n} 个分类补上了「使用人 / 存放位置」字段`);
 }
 
 /**
@@ -289,6 +324,10 @@ const DEFAULT_CATEGORIES = [
   {
     name: '台式主机', code: 'PC', code_prefix: 'PC', icon: 'pc', color: '#2563eb', sort_order: 10,
     tracking_fields: [
+      // 「使用人 / 存放位置」放在最前面：它们原来是手机端写死的两个输入框，
+      // 现在归到分类专属字段里（能改名、能改类型、也能按分类去掉），默认每个分类都带。
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
       { key: 'cpu', label: 'CPU', type: 'text' },
       { key: 'memory', label: '内存', type: 'text' },
       { key: 'disk', label: '硬盘', type: 'text' },
@@ -300,6 +339,8 @@ const DEFAULT_CATEGORIES = [
   {
     name: '显示器', code: 'MON', code_prefix: 'MON', icon: 'monitor', color: '#8b5cf6', sort_order: 30,
     tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
       { key: 'screen_size', label: '屏幕尺寸', type: 'select', options: ['24寸', '27寸'] },
       { key: 'resolution', label: '分辨率', type: 'text' },
       { key: 'interface', label: '接口类型', type: 'select', options: ['HDMI', 'DP', 'VGA', 'DVI', 'Type-C'] },
@@ -308,6 +349,8 @@ const DEFAULT_CATEGORIES = [
   {
     name: '笔记本电脑', code: 'NB', code_prefix: 'NB', icon: 'laptop', color: '#0ea5e9', sort_order: 20,
     tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
       { key: 'cpu', label: 'CPU', type: 'text' },
       { key: 'memory', label: '内存', type: 'text' },
       { key: 'disk', label: '硬盘', type: 'text' },
@@ -319,6 +362,8 @@ const DEFAULT_CATEGORIES = [
   {
     name: '打印机', code: 'PRT', code_prefix: 'PRT', icon: 'printer', color: '#f59e0b', sort_order: 40,
     tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
       { key: 'print_type', label: '打印类型', type: 'text' },
       { key: 'ip_address', label: 'IP 地址', type: 'text' },
     ],
@@ -326,6 +371,8 @@ const DEFAULT_CATEGORIES = [
   {
     name: '网络设备', code: 'NET', code_prefix: 'NET', icon: 'network', color: '#00b8d9', sort_order: 50,
     tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
       { key: 'ip_address', label: '管理 IP', type: 'text' },
       { key: 'mac_address', label: 'MAC 地址', type: 'text' },
       { key: 'ports', label: '端口数', type: 'text' },
@@ -334,6 +381,8 @@ const DEFAULT_CATEGORIES = [
   {
     name: '服务器', code: 'SRV', code_prefix: 'SRV', icon: 'server', color: '#ef4444', sort_order: 60,
     tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
       { key: 'cpu', label: 'CPU', type: 'text' },
       { key: 'memory', label: '内存', type: 'text' },
       { key: 'disk', label: '硬盘', type: 'text' },
@@ -344,13 +393,18 @@ const DEFAULT_CATEGORIES = [
   {
     name: '手机/平板', code: 'MB', code_prefix: 'MB', icon: 'phone', color: '#ec4899', sort_order: 70,
     tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
       { key: 'imei', label: 'IMEI', type: 'text' },
       { key: 'phone_no', label: '手机号', type: 'text' },
     ],
   },
   {
     name: '外设配件', code: 'ACC', code_prefix: 'ACC', icon: 'box', color: '#64748b', sort_order: 80,
-    tracking_fields: [],
+    tracking_fields: [
+      { key: 'owner_name', label: '使用人', type: 'text' },
+      { key: 'location', label: '存放位置', type: 'text' },
+    ],
   },
 ];
 

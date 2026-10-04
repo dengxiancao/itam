@@ -32,6 +32,7 @@ import {
   stats as agentStats, matchCandidates as agentMatchCandidates,
 } from './lib/agent.js';
 import { readBody, readJson, parseMultipart, mimeOf, extOf } from './lib/http-util.js';
+import { rankLocalIPs } from './lib/net.js';
 import { clientIp, isInsideDir, createRateLimiter, createGate, applySecurityHeaders } from './lib/guard.js';
 import {
   ensureAdminUser, authenticate, verifyPassword, signSession, setSessionCookie, clearSessionCookie,
@@ -715,6 +716,8 @@ async function routeApi(ctx) {
         tree: svc.orgList({ tree: true }),
         flat: svc.orgFlatWithPath().map(({ children, ...o }) => o),
         stats: svc.orgDeviceStats(),
+        // 资源管理器里的「未分配组织」文件夹要用
+        unassigned: svc.orgUnassignedCount(),
         types: svc.ORG_TYPES,
       };
     }
@@ -776,6 +779,11 @@ async function routeApi(ctx) {
         keyword: q.keyword || q.q,
         category_id: q.category_id,
         org_id: q.org_id,
+        // ⚠️ 这两个是资源管理器（树状浏览）在用的：只看直接归属 / 只看没归属的。
+        //    路由这里是**白名单**式的，新参数忘了加进来就会静默失效 ——
+        //    服务层明明实现了，接口却当作没传（tests/explorer.js 特意钉了这条）。
+        org_direct: q.org_direct,
+        no_org: q.no_org,
         status: q.status,
         brand: q.brand,
         supplier: q.supplier,
@@ -818,6 +826,27 @@ async function routeApi(ctx) {
       return { found: items.length > 0, items };
     }
     if (method === 'GET' && seg[1] === 'brands') { require('device.read'); return { items: svc.brandOptions() }; }
+    /*
+     * 按筛选条件取出设备 id 列表（资源管理器「导出当前文件夹」用）。
+     * ⚠️ 必须放在下面那条 `GET /devices/:id` 之前，否则 "ids" 会被当成一个设备 id 去查。
+     *    筛选口径复用 svc.deviceIdsByQuery → deviceList，和列表页**同一套 where**，
+     *    所以「导出的台数」永远等于「列表上看到的台数」。
+     */
+    if (method === 'GET' && seg[1] === 'ids') {
+      require('device.read');
+      return {
+        ids: svc.deviceIdsByQuery({
+          keyword: q.keyword || q.q,
+          category_id: q.category_id,
+          org_id: q.org_id,
+          org_direct: q.org_direct,
+          no_org: q.no_org,
+          status: q.status,
+          brand: q.brand,
+          supplier: q.supplier,
+        }),
+      };
+    }
 
     /* ---- 回收站（软删除设备）---- */
     if (route === '/devices/trash' && method === 'GET') {
@@ -1208,7 +1237,7 @@ async function routeApi(ctx) {
   /* ---------------- 实时数据链接（Excel/WPS 直连自动刷新，用 token 鉴权） ---------------- */
   if (route.startsWith('/live/')) {
     if (!checkLiveToken(q.token)) {
-      throw new HttpError(401, '实时数据链接已失效（token 不正确或已被重置），请在「Excel 对接」页重新复制链接');
+      throw new HttpError(401, '实时数据链接已失效（token 不正确或已被重置），请到系统的「Excel 表格」页重新复制链接');
     }
     const base = baseUrlOf(req);      // 取数地址：Excel 从哪拉数据，尊重用户选的地址
     const photoBase = linkBaseOf(req); // 照片地址：要在别的电脑/手机上点开，本机地址自动替换
@@ -1522,6 +1551,14 @@ function download(res, buffer, filename) {
   return undefined;
 }
 
+/**
+ * 本机可用的局域网 IPv4 地址，按可信度排序（越靠前越可能是"别的电脑该用的那个"）。
+ * 挑选规则见 server/lib/net.js —— 那里是纯函数，单独有测试钉住。
+ */
+function localIPs() {
+  return rankLocalIPs(os.networkInterfaces());
+}
+
 /* ================================================================== *
  * 启动
  * ================================================================== */
@@ -1595,16 +1632,6 @@ function liveLinksPayload(req) {
 
   // 顶层再放一份「第一个地址」的数据，保持旧调用方式（all / sheets / manifest）依然可用
   return { token, bases, current_base: baseUrlOf(req), ...(bases[0] || {}) };
-}
-
-function localIPs() {
-  const out = [];
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const i of list || []) {
-      if (i.family === 'IPv4' && !i.internal) out.push(i.address);
-    }
-  }
-  return out;
 }
 
 /**

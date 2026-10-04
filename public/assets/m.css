@@ -80,11 +80,13 @@
 /* hidden 属性必须真正隐藏，不能被组件自身的 display 规则覆盖 */
 [hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; }
+html { overscroll-behavior-y: none; }
 body {
   font-family: var(--font);
   background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5;
   -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
   text-size-adjust: 100%; -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
 }
 /* 底部留出标签栏高度 + 安全区，否则最后一张卡片会被导航条压住 */
 #app {
@@ -155,6 +157,20 @@ body {
   justify-content: center; gap: 3px; font-size: 11px; color: var(--text-3);
   cursor: pointer; font-family: inherit; -webkit-tap-highlight-color: transparent; transition: color .15s;
 }
+.m-tabbar .tab:focus-visible,
+.m-icon-btn:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--primary-ring);
+  outline-offset: 2px;
+}
+.m-tabbar .tab,
+button,
+a,
+label { touch-action: manipulation; }
 .m-tabbar .tab .em { display: inline-flex; align-items: center; }
 .m-tabbar .tab .em .ic { width: 22px; height: 22px; }
 .m-tabbar .tab.active { color: var(--primary); font-weight: 600; }
@@ -591,6 +607,25 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .empty .em { display: inline-flex; color: var(--ink-4); margin-bottom: 10px; }
 .empty .em .ic { width: 38px; height: 38px; }
 
+/* 小屏设备：减少横向挤压，保留操作按钮的可点击面积。 */
+@media (max-width: 359px) {
+  .m-main { padding-left: 10px; padding-right: 10px; }
+  .card { padding: 14px; }
+  .m-operator { padding-left: 8px; padding-right: 8px; }
+  .m-operator input { width: 52px; }
+  .m-brand-txt { font-size: 15.5px; }
+}
+
+/* 用户明确关闭动画时，避免页面切换、骨架屏和按钮动效造成不适。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
+
 /* ==================================================================
  *  概览（tab: dashboard）
  * ------------------------------------------------------------------
@@ -710,3 +745,12 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .rec-b { flex: none; }
+
+/* ============================================================
+ * 「补充信息」卡片：标题行 + 右上角「清除记忆」小按钮
+ * 用户要求：上次录入的内容自动填回来，所以要给一个显式的「清掉记忆」出口。
+ * ============================================================ */
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.card-head h3 { margin: 0; }
+.btn.xs { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: var(--radius-sm); gap: 4px; }
+.btn.xs.danger, .btn.sm.danger { background: var(--red-soft); border-color: var(--red-border); color: var(--red-text); }

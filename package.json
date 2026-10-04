@@ -25,7 +25,8 @@
     "security": "node tests/security.js",
     "security-mutate": "node __patch/mutate-security.mjs",
     "security-csp": "node __patch/csp-check.mjs",
-    "security-gate": "node __patch/gate-probe.mjs"
+    "security-gate": "node __patch/gate-probe.mjs",
+    "orientation-mutate": "node __patch/mutate-orient.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

@@ -57,17 +57,33 @@ export const STATUS_LABELS_ORDER = DEVICE_STATUS.map((s) => s.label);
 const BASE_BY_KEY = new Map(BASE_COLUMNS.map((c) => [c.key, c]));
 
 /**
- * 通用列：任何设备都会有，导出时一律保留。
- * 关键点是**硬件规格列不在这里**——那些由各分类的「专属字段」决定。
+ * 最小核心列：**任何分类都会导出**的那几列。
+ *
+ * 只有「少了它就不知道这一行是什么设备」的字段才配留在这里：
+ *   资产编号（业务主键）、设备分类（导入时靠它选分类）、品牌/型号/SN（身份）、
+ *   所属组织（归属）、状态（生命周期）。
+ *
+ * ⚠️ 这里**刻意只留 7 列**。以前是 18 列（使用人工号、电话、采购日期、保修、金额、
+ *    合同号、成色、备注…全都在），用户的原话是「导出的 excel 特别长，而且都是一些没用的」。
+ *    现在这些字段统一由「设备分类 → 专属字段」管理：分类里配了才导出，没配就不出现。
+ *    想加回来：设备分类 → 编辑 → 专属字段 → 添加一行（key 直接选 owner_employee_no 等）。
  */
 export const CORE_KEYS = [
   'asset_no', 'category_name', 'brand', 'model', 'sn', 'org_path', 'status_label',
+];
+
+/**
+ * 「可按分类配置启用」的基础列：key 被某个分类的专属字段点名时才导出。
+ * 这些字段值都住在设备表的真实列里，所以不需要走 extra。
+ */
+export const OPTIONAL_BASE_KEYS = [
   'owner_name', 'owner_employee_no', 'owner_phone', 'location',
+  'ip_address', 'mac_address', 'os_name', 'cpu', 'memory', 'disk', 'screen_size',
   'purchase_date', 'warranty_until', 'purchase_price', 'supplier', 'contract_no',
   'condition_grade', 'remark',
 ];
 
-/** 硬件规格列：显示器不该出现 CPU/内存/硬盘，主机不该出现屏幕尺寸——按分类专属字段决定 */
+/** 硬件规格列（历史名字，仍被 sheetColumnsFor 用）：属于上面那批可配置列 */
 export const CONTEXTUAL_KEYS = ['ip_address', 'mac_address', 'os_name', 'cpu', 'memory', 'disk', 'screen_size'];
 
 function customColumn(f, catName = '') {
@@ -96,15 +112,33 @@ function extraColumns() {
   return cols;
 }
 
+/**
+ * 所有分类的专属字段里出现过的 key（含映射到设备真实列的那些）。
+ * 用于「混合分类」的导出页：某个字段只要有**任何一个**分类在管它，就把列带上。
+ */
+function configuredKeys() {
+  const keys = new Set();
+  for (const cat of categoryList()) {
+    for (const f of cat.tracking_fields || []) if (f && f.key) keys.add(f.key);
+  }
+  return keys;
+}
+
+/** 全量列：最小核心列 + 被分类点名的可选基础列 + 分类自定义列（全部字段的并集） */
 export function allColumns({ withExtra = true } = {}) {
-  return withExtra ? [...BASE_COLUMNS, ...extraColumns()] : [...BASE_COLUMNS];
+  const conf = configuredKeys();
+  const base = BASE_COLUMNS.filter((c) => CORE_KEYS.includes(c.key) || conf.has(c.key));
+  return withExtra ? [...base, ...extraColumns()] : [...base];
 }
 
 /**
- * 某个设备分类该导出哪些列 —— 这是「分类分表」的核心：
- *   通用列（一定有） + 该分类专属字段里映射到真实列的硬件列 + 该分类自己的自定义列。
- * 显示器只配了「屏幕尺寸/分辨率/接口类型」，导出的就只有这几样，
- * 不会把 CPU、内存、硬盘、打印类型、IMEI 这些别的分类的字段一起带出来。
+ * 某个设备分类该导出哪些列 —— 这是「分类分表」的核心，也是列数的唯一来源：
+ *   最小核心列（7 列，任何分类都有） + 该分类专属字段点到的列（基础列或自定义列）。
+ *
+ * 于是：显示器只配了「屏幕尺寸/分辨率/接口类型」，导出的就只有这几样，
+ * 不会把 CPU、内存、硬盘、打印类型、IMEI 一起带出来；
+ * 台式主机只配了「使用人/存放位置」，导出的就只有这两列 + 核心 7 列。
+ * 列多列少完全由 **设备分类 → 专属字段** 说了算。
  */
 export function categoryColumns(cat) {
   const fields = (cat?.tracking_fields || []).filter((f) => f && f.key);
@@ -123,9 +157,34 @@ export function columnsOfCategory(categoryId) {
 }
 
 /**
+ * 「单表导出」（不拆工作表）该用哪些列。
+ *
+ * 以前一律用 allColumns()——所有分类字段的并集，于是**只导显示器也会带上 CPU、内存、硬盘**，
+ * 用户抱怨的「导出的 excel 特别长」有一半是这么来的。
+ * 现在按**这批数据里真正出现的分类**取列：
+ *   · 只出现一个分类 → 就用那个分类的列（核心 7 列 + 它配的字段）
+ *   · 多个分类混排   → 核心列 + 这些分类配置过的字段并集
+ */
+export function columnsForRows(rows = []) {
+  const names = [...new Set(rows.map((r) => r && r.category_name).filter(Boolean))];
+  const cats = categoryList().filter((c) => names.includes(c.name));
+  if (!cats.length) return sheetColumnsFor('', rows);
+  if (cats.length === 1) return categoryColumns(cats[0]);
+
+  const byKey = new Map();
+  for (const c of cats) {
+    for (const col of categoryColumns(c)) if (!byKey.has(col.key)) byKey.set(col.key, col);
+  }
+  // 基础列按 BASE_COLUMNS 的固定顺序排，自定义列追加在后面
+  const base = BASE_COLUMNS.filter((bc) => byKey.has(bc.key));
+  const custom = [...byKey.values()].filter((c) => !base.includes(c));
+  return [...base, ...custom];
+}
+
+/**
  * 按分类名取列集合。
  * 命中真实分类 → 用该分类的字段配置；
- * 命中不了（例如「未分类」这种混装页）→ 通用列 + 该页真正有值的扩展列，不再硬塞一堆空列。
+ * 命中不了（例如「未分类」这种混装页）→ 最小核心列 + 该页真正有值的列，不再硬塞一堆空列。
  */
 export function sheetColumnsFor(categoryName, rows = []) {
   const cat = categoryList().find((c) => c.name === categoryName);
@@ -328,7 +387,6 @@ export async function exportDevices(query = {}, {
   const anyOriginal = hasDistinctOriginal(data);
   const photoCols = baseUrl ? photoColumns({ embed, hasOriginal: anyOriginal }) : [];
   const withPhotoCols = (list) => (photoCols.length ? [...list, ...toCols(photoCols)] : list);
-  const cols = withPhotoCols(toCols(allColumns()));
 
   const stamp = new Date().toLocaleString('zh-CN');
   let sheets;
@@ -388,7 +446,8 @@ export async function exportDevices(query = {}, {
     sheets = [{
       name: '设备台账',
       title: `IT 资产设备台账  ·  共 ${data.length} 台  ·  导出时间 ${stamp}`,
-      columns: cols,
+      // 列由「这批数据里出现的分类」决定，而不是所有分类字段的并集
+      columns: withPhotoCols(toCols(columnsForRows(data))),
       rows: data,
     }];
   }
@@ -598,9 +657,17 @@ export function liveManifest(baseUrl, query = {}) {
   };
 }
 
-/** 生成导入模板（含下拉、字段说明、字典页） */
+/**
+ * 生成导入模板（含下拉、字段说明、字典页）。
+ *
+ * ⚠️ 模板用**全部基础列**，不用 allColumns()（那是"导出"的列，被分类配置裁过）。
+ *    两者定位不同：
+ *      · 导出表 = 别人看的结果 → 越贴合分类配置越好（用户抱怨过"特别长"）
+ *      · 导入模板 = 你要往里填的表 → 列越全越好，填哪些算哪些（没填的列留空即可）
+ *    所以模板保持"能填的字段都给一列"，导出那边才做裁剪。
+ */
 export async function buildTemplate() {
-  const columns = allColumns();
+  const columns = [...BASE_COLUMNS, ...extraColumns()];
 
   // 主表不放任何示例数据行，避免被误当成真实数据导入（示例统一放到「填写示例」页）
   const cols = columns.map((c) => ({
@@ -688,13 +755,13 @@ function helpSheets() {
         { col: '型号', required: '否', note: '如 U2723QE、ThinkPad X1 Carbon' },
         { col: 'SN 序列号', required: '否', note: '设备唯一序列号，建议填写；重复时会报错并跳过该行' },
         { col: '所属组织', required: '否', note: '支持「总公司 / 信息技术部」这样的路径写法，也支持只写部门名。不存在时会自动创建在根节点下' },
-        { col: '状态', required: '否', note: `可选：${STATUS_LABELS_ORDER.join(' / ')}；留空默认「库存」` },
+        { col: '状态', required: '否', note: `可选：${STATUS_LABELS_ORDER.join(' / ')}；留空默认「库存」（手机端录入默认「在用」）` },
         { col: '采购日期 / 保修到期', required: '否', note: '支持 2024-03-15、2024/3/15、2024年3月15日，Excel 日期格式也可直接识别' },
         { col: '采购金额', required: '否', note: '纯数字，不要带货币符号' },
         { col: '供应商', required: '否', note: '从下拉列表选择（可在「系统设置 → 企业信息」里维护供应商选项）' },
         { col: '成色', required: '否', note: '建议 A / B / C' },
-        { col: '硬件规格列', required: '否', note: 'IP 地址 / MAC 地址 / 操作系统 / CPU / 内存 / 硬盘 / 屏幕尺寸 这 7 列只在「按分类分表」里出现，且仅当该分类的「专属字段」配置了它——显示器不会有 CPU，主机不会有屏幕尺寸' },
-        { col: '分类自定义列', required: '否', note: '分辨率 / 接口类型 / 打印类型 / 端口数 / 机柜位 / IMEI 等，由各分类的「专属字段」决定，同样按分类分表导出' },
+        { col: '其他字段列', required: '否', note: '除了固定的 7 列（资产编号 / 设备分类 / 品牌 / 型号 / SN 序列号 / 所属组织 / 状态），其余列（使用人 / 存放位置 / 采购日期 / 保修到期 / 采购金额 / 供应商 / 合同号 / 成色 / 备注 / IP / MAC / 系统 / CPU / 内存 / 硬盘 / 屏幕尺寸…）都跟着「设备分类 → 专属字段」走：该分类配了才出现在导出的表里。想导别的字段，把它加到对应分类的专属字段即可' },
+        { col: '分类自定义列', required: '否', note: '分辨率 / 接口类型 / 打印类型 / 端口数 / 机柜位 / IMEI 等，同样由各分类的「专属字段」决定' },
       ],
     },
     {
@@ -733,9 +800,20 @@ function normHeader(h) {
     .toLowerCase();
 }
 
+/**
+ * 导入时认识哪些表头。
+ *
+ * ⚠️ 这里必须用**全部基础列**，不能用 allColumns()（那是"导出"的列，被分类配置裁过）。
+ *    两者用途不同：
+ *      · 导出列 = 用户想在表格里看到什么 → 越贴合配置越好（分类没配就不出现）
+ *      · 导入识别 = 用户可能填了什么 → 越宽容越好
+ *    绑定在一起的后果是：某个分类没把「采购日期」配进专属字段时，
+ *    导入别人填了采购日期的表会**静默忽略那一列**（数据看起来"没导进去"）。
+ *    实测就是这么被测试抓到的（导入新设备那条用例的 purchase_date 变 null）。
+ */
 function headerMap() {
   const map = new Map();
-  for (const c of allColumns()) {
+  for (const c of [...BASE_COLUMNS, ...extraColumns()]) {
     map.set(normHeader(c.header), c);
     map.set(normHeader(c.key), c);
     for (const a of c.aliases || []) map.set(normHeader(a), c);
@@ -917,8 +995,17 @@ export function importDevices(buffer, opts = {}) {
         // 分类
         if (flat.category_name) {
           const cat = findOrCreateCategory(flat.category_name);
-          if (!cat) throw new Error(`分类「${flat.category_name}」不存在（可勾选「自动创建缺失的分类」）`);
-          flat.category_id = cat.id;
+          if (cat) {
+            flat.category_id = cat.id;
+          } else if (!(dryRun && createMissing)) {
+            /*
+             * ⚠️ 试算（dry run）**不建**分类，但正式导入时勾了「自动创建」是能建出来的。
+             *    早期这里无条件报「分类不存在」，于是试算结果把"会自动新建"说成了失败——
+             *    用户看到一片红叉就不敢导入了，而真导入其实全都能成。
+             *    所以：试算 + 勾了自动创建 → 当作「会新建」，不算失败。
+             */
+            throw new Error(`分类「${flat.category_name}」不存在（可勾选「自动创建缺失的分类」）`);
+          }
         }
         delete flat.category_name;
 

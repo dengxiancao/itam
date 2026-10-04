@@ -272,6 +272,8 @@ async function boot() {
     state.categories = o.categories; state.orgs = o.orgs; state.statuses = o.statuses;
     state.suppliers = o.suppliers || [];
     state.columnTrackingKeys = o.column_tracking_keys || [];
+    // 录入表单的默认选中项（管理端「系统设置 → 手机录入默认值」里配）
+    state.mobileDefaults = o.mobile_defaults || {};
   } catch (e) {
     $('#main').innerHTML = `<div class="empty"><div class="em">${svgIcon('alert', 40)}</div>无法连接服务端<br><span class="muted">${esc(e.message)}</span></div>`;
     return;
@@ -296,6 +298,10 @@ function route(view) {
   state.view = view;
   // 切标签一定要把底部导航放回来：识别结果等流程页会临时把它藏起来
   setTabbar(true);
+  // 移动端切换主页面时回到内容起点，避免从「最近设备」的滚动位置进入新页面。
+  // DOM 桩和部分旧浏览器没有 scrollTo，缺失时不影响正常渲染。
+  try { window.scrollTo?.({ top: 0, left: 0, behavior: 'instant' }); } catch { /* ignore */ }
+  closeMore();
   const fn = { dashboard: renderDashboard, home: renderHome, scan: renderScan, recent: renderRecent }[view] || renderHome;
   fn();
 }
@@ -523,7 +529,7 @@ async function openCamera(mode, kind) {
     f2.style.top = '50%';
     f2.style.width = '82%';
     f2.style.height = '26%';
-    if (hint) hint.textContent = '把铭牌放进框内（只保留框里的画面，请让字完整入框）';
+    if (hint) hint.textContent = '把铭牌放进框内（只保留框里的画面，字要完整入框；倒着 / 斜着也能认）';
   }
   try {
     // 要最高的分辨率（原图要归档，糊了以后放大看不清铭牌小字），
@@ -872,8 +878,7 @@ async function capture() {
   const video = $('#cameraVideo');
   if (!video || !video.videoWidth) { toast('相机还未就绪，请稍等一下再拍', 'warn'); return; }
 
-  // ⚠️ 扫码核对模式和拍照入库是两件事，不能共用一个出口：
-  //    扫码模式下按快门 = 「拿当前这一帧去解条码」，绝不能掉进识别入库的流程。
+  // ⚠️ 扫码模式下按快门 = 「拿这一帧去解条码」，绝不能掉进识别入库的流程
   if (state.cameraPurpose === 'scan') {
     await captureForScan(video);
     return;
@@ -897,17 +902,12 @@ async function captureForScan(video) {
   try {
     let codes = [];
     if (detector) {
-      // ⚠️ 这里必须做多趟解码，不能直接 detect(video)：原帧不裁剪不放大、只解一次，
-      //    屏幕上 150px 的二维码换算回视频帧只剩几百像素，37 个模块一摊就糊了。
-      // 以前是直接 detect(video) —— 原帧不裁剪不放大、只解一次，
-      // 屏幕上 150px 的二维码换算回视频帧只剩几百像素，37 个模块一摊就糊了，
-      // 表现就是「快门按下去永远提示没识别到，但自动扫描有时反而能认」。
+      // ⚠️ 必须多趟解码，不能直接 detect(video)：不裁剪不放大只解一次，
+      //    屏幕上 150px 的二维码换算回帧内只剩几百像素，37 个模块一摊就糊了。
       try { codes = await decodeFrameMultiPass(video) || []; } catch { codes = []; }
     }
-    // 浏览器这条路走不通（iPhone 没这个 API、或安卓拍屏幕解不出来）→ 交给服务端解码器。
-    // ⚠️ 一维条码现在**也有兜底了**（server/lib/bardecode.js 的 Code128 / Code39），
-    //    以前这里写着 `kind === 'qr'`，条码根本没有第二条路 —— 用户反馈的
-    //    「二维码能扫、条码永远扫不出来」有一半是这个原因。
+    // ⚠️ 两种码都有兜底（服务端 bardecode.js 会解 Code128/Code39），
+    //    这里别只给二维码留后路 —— 否则「二维码能扫、条码永远扫不出来」。
     if (!codes.length) {
       const one = await serverDecodeFrame(video, kind);
       if (one) codes = [one];
@@ -924,8 +924,7 @@ async function captureForScan(video) {
         + '（本机没有网页扫码能力，已试过服务器解码）。可以直接输入 SN / 资产编号');
       return;
     }
-    // 解不出来就明确说清「这次要的是哪一种码」+ 给出**动作**建议（不是「拿远」）
-    // 「拿远到 10~20cm」这条提示对小条码是反的：离得越远条码越小。
+    // 提示要说清「这次要的是哪种码」+ 动作。小条码别劝「拿远」——离得越远条码越小
     toast('没认出' + scanKindOf(state.scanKind).label
       + (state.scanKind === 'bar'
         ? '，贴近条码让它铺满画面宽度、对准再按一次'
@@ -938,20 +937,14 @@ async function captureForScan(video) {
 }
 
 /**
- * 对当前这一帧做多趟解码，复用自动扫描那套「换姿势找」的思路。
- *
- * 为什么要多趟：BarcodeDetector.detect() 对输入尺寸很敏感。
- * 直接把 <video> 原帧喂进去时，浏览器内部会先缩放一次，二维码的小格子就被抹平了。
- * 先画到画布上、自己指定一个足够的宽高，等于替浏览器把「该缩到多少」决定好。
- *
- * 顺序是刻意的：先整帧（条码是长条，只有整帧装得下），再放大、再中心方形
- * （二维码是方的，中心方形让每格占的像素最多）。任一趟命中就立刻返回。
+ * 对当前这一帧按 SCAN_STEPS 轮着解码，任一趟命中就返回。
+ * 为什么要多趟：`detect()` 对输入尺寸很敏感，直接喂 <video> 原帧时浏览器会自己先缩放一次，
+ * 二维码的小格子就被抹平了；先画到画布上并指定宽高，等于替浏览器把「该缩到多少」定下来。
  */
 async function decodeFrameMultiPass(video) {
   const detector = getDetector(state.scanKind);
   if (!detector) return [];
-  // ⚠️ 必须按当前码型取步骤表 —— SCAN_STEPS 现在是 { qr:[...], bar:[...] }，
-  //    直接写 SCAN_STEPS.length 会得到 undefined，循环一次都不跑（什么都扫不出来）。
+  // ⚠️ 必须按码型取步骤表（SCAN_STEPS 是 {qr,bar} 两个数组，写 .length 会得到 undefined）
   const steps = stepsOf(state.scanKind);
   for (let i = 0; i < steps.length; i++) {
     let target = null;
@@ -969,9 +962,8 @@ async function decodeFrameMultiPass(video) {
 
 /**
  * 把画面（<video> 或 <img>）的一块区域画成灰度字节。
- *
- * 为什么发灰度而不是 JPEG：服务端解码器要的就是灰度像素，发图还得在服务端解一次码。
- * 直接发原始字节，前端少一次编码、后端少一次解码，路径最短。
+ * 发灰度而不是 JPEG：服务端解码器要的就是灰度像素，直接发原始字节，
+ * 前端少一次编码、后端少一次解码。
  */
 function grabGray(source, box, w, h) {
   const cv = document.createElement('canvas');
@@ -984,7 +976,7 @@ function grabGray(source, box, w, h) {
   ctx.drawImage(source, box.x, box.y, box.w, box.h, 0, 0, w, h);
   const d = ctx.getImageData(0, 0, w, h).data;
   const gray = new Uint8Array(w * h);
-  // 0.299/0.587/0.114：人眼亮度权重。直接用 (r+g+b)/3 会让红底黑字这类标签的对比度变差
+  // 0.299/0.587/0.114 人眼亮度权重：(r+g+b)/3 会让红底黑字这类标签对比度变差
   for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
     gray[i] = (d[j] * 299 + d[j + 1] * 587 + d[j + 2] * 114) / 1000 | 0;
   }
@@ -992,17 +984,11 @@ function grabGray(source, box, w, h) {
 }
 
 /**
- * 服务端兜底解码：浏览器这一帧解不出来时，把灰度图发上去让服务端解。
- *
- * 为什么必须有这条路：
- *   ① iPhone / Safari 根本没有 BarcodeDetector，以前只能劝用户「用系统相机扫」；
- *   ② 安卓对着显示器拍时，摩尔纹 + 视频压缩会让浏览器识别器整帧失手。
- *
- * ⚠️ 两种码走**完全不同**的服务端解码器（`kind` 查询参数），切法也不一样：
- *   二维码：定位图案 + 纠错，喂整块方形最有效 → 中心方形 / 整帧两块都试；
- *   一维码：逐行扫条空，**喂进去的那条必须窄且长**。所以先按取景框切扁带（和前端
- *           第一趟同一个矩形），切不到才退回整帧 —— 直接把整帧发上去，
- *           条码在 900px 宽的图里只占 ~50px，服务端再厉害也救不回来（实测过）。
+ * 服务端兜底解码：浏览器这一帧解不出来时，把灰度图发上去让服务端解
+ * （iPhone/Safari 根本没有 BarcodeDetector；安卓拍屏幕时摩尔纹也会让浏览器整帧失手）。
+ * ⚠️ 两种码走**不同**的服务端解码器（`kind` 参数），切法也不同：二维码喂方形最有效；
+ *    一维码要逐行扫条空，**喂进去的那条必须窄且长** —— 整帧发上去条码在 900px 里只占 ~50px，
+ *    服务端再厉害也救不回来，所以先按取景框切扁带（和前端第一趟同一个矩形）。
  */
 async function serverDecodeFrame(source, kind) {
   const k = kind || state.scanKind || 'qr';
@@ -1012,7 +998,7 @@ async function serverDecodeFrame(source, kind) {
 
   /** 发一块灰度图上去，命中返回 { rawValue, format, via:'server' } */
   const post = async (box, maxSide) => {
-    // 不放大：解码器要的是真实像素，放大只是把同样的信息铺开。只限制最大边，省流量。
+    // 不放大：解码器要真实像素，放大只是把同样的信息铺开。只压最大边省流量
     const scale = Math.min(1, maxSide / Math.max(box.w, box.h));
     const w = Math.max(8, Math.round(box.w * scale));
     const h = Math.max(8, Math.round(box.h * scale));
@@ -1036,8 +1022,7 @@ async function serverDecodeFrame(source, kind) {
   const full = { x: 0, y: 0, w: sw, h: sh };
   if (k === 'bar') {
     // 一维码：扁带优先（窄 → 每根条占更多像素），再退整帧。
-    // 取景框那趟用的是**视频帧**的尺寸（不是 <img>），所以只有 <video> 才走得通；
-    // 相册选图的 <img> 没有 videoWidth，直接用整图。
+    // 扁带用的是**视频帧**尺寸，所以只有 <video> 走得通；相册来的 <img> 直接用整图。
     const isVideo = source?.videoWidth > 0;
     if (isVideo) {
       const band = scanRegionOfFrameBand(source, 1);
@@ -1144,6 +1129,140 @@ function retakePhoto() {
   openCamera('capture');
 }
 
+/* ============ 方向容错：倒着 / 横着 / 拍歪了也要能认 ============ *
+ * 铭牌经常是倒着的（笔记本底部的标签相对取景方向就是反的），整幅转过的照片
+ * 识别模型基本读不出 SN。这里判一下「文字是横排还是竖排」，再按 0/90/180/270
+ * 轮着试，任一趟读出东西就停。
+ * 正常照片第一趟就命中，**不会多调一次识别服务、也不会多等**。
+ * ============================================================== */
+
+/** 墨量投影的两轴起伏。文字成行 → 该轴上是「行/空隙」交替，起伏大；另一轴平坦。 */
+function inkProfileCV(gray, w, h) {
+  const row = new Float64Array(h);
+  const col = new Float64Array(w);
+  for (let y = 0; y < h; y++) {
+    const base = y * w;
+    let sum = 0;
+    for (let x = 0; x < w; x++) {
+      const ink = 255 - gray[base + x];
+      sum += ink;
+      col[x] += ink;
+    }
+    row[y] = sum;
+  }
+  const cv = (arr, n) => {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += arr[i];
+    const mean = sum / n;
+    if (!(mean > 0)) return 0;
+    let v = 0;
+    for (let i = 0; i < n; i++) { const d = arr[i] - mean; v += d * d; }
+    return Math.sqrt(v / n) / mean;
+  };
+  return { row: cv(row, h), col: cv(col, w) };
+}
+
+/**
+ * 文字走向：'h' 横排 / 'v' 竖排，ratio 是判据强度（1 = 分不出来）。
+ * 只用来决定「先试哪个角度」，判错也只是多试一趟，不会改坏照片。
+ */
+function textAxisOf(gray, w, h) {
+  const none = { axis: 'h', ratio: 1 };
+  if (!gray || !w || !h || gray.length < w * h) return none;
+  const s = inkProfileCV(gray, w, h);
+  // 两边都太平（画面基本没字/没对比）→ 不给意见
+  if (s.row < 0.15 && s.col < 0.15) return none;
+  return s.row >= s.col
+    ? { axis: 'h', ratio: s.row / Math.max(s.col, 1e-6) }
+    : { axis: 'v', ratio: s.col / Math.max(s.row, 1e-6) };
+}
+
+/** 重试顺序：横排先试倒置 180（最常见），竖排先试转 90/270。90 的三种必全覆盖。 */
+function retryAngles(axis) {
+  return axis === 'v' ? [90, 270, 180] : [180, 90, 270];
+}
+
+/** 这一趟算不算「读出来了」：有 SN 最好；或者品牌 + 型号都读到了 */
+function usableResult(r) {
+  if (!r) return false;
+  if (r.sn) return true;
+  return !!(r.brand && r.model);
+}
+
+/** 旋转 Blob（只走 90 的整数倍）。失败就原样返回，不阻断识别。 */
+function rotateBlob(blob, angle) {
+  return new Promise((resolve) => {
+    if (!angle || typeof createImageBitmap !== 'function') { resolve(blob); return; }
+    createImageBitmap(blob).then((bmp) => {
+      try {
+        const swap = angle % 180 !== 0;
+        const canvas = document.createElement('canvas');
+        canvas.width = swap ? bmp.height : bmp.width;
+        canvas.height = swap ? bmp.width : bmp.height;
+        const ctx = canvas.getContext('2d');
+        // ⚠️ 画布尺寸和变换是两件事：只改 width/height 不 rotate，画面会转到画布外面去
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((angle * Math.PI) / 180);
+        ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
+        bmp.close?.();
+        if (typeof canvas.toBlob !== 'function') { resolve(blob); return; }
+        canvas.toBlob((b) => resolve(b && b.size ? b : blob), 'image/jpeg', 0.92);
+      } catch { resolve(blob); }
+    }).catch(() => resolve(blob));
+  });
+}
+
+/** 取灰度小图（判方向用，不用清晰）。拿不到就返回 null，走「不判方向」的默认路径。 */
+function grayOfBlob(blob, maxSide = 480) {
+  return new Promise((resolve) => {
+    if (typeof createImageBitmap !== 'function') { resolve(null); return; }
+    createImageBitmap(blob).then((bmp) => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+        const w = Math.max(16, Math.round(bmp.width * scale));
+        const h = Math.max(16, Math.round(bmp.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(bmp, 0, 0, w, h);
+        const d = ctx.getImageData(0, 0, w, h).data;
+        const gray = new Uint8Array(w * h);
+        for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
+          gray[i] = (d[j] * 299 + d[j + 1] * 587 + d[j + 2] * 114) / 1000 | 0;
+        }
+        bmp.close?.();
+        resolve({ gray, w, h });
+      } catch { resolve(null); }
+    }).catch(() => resolve(null));
+  });
+}
+
+/**
+ * 发一趟识别。`first` 那趟才带原图/缩略图并落盘；
+ * 重试那几趟只是同一张图转个方向，带 `save=0` 让服务端跳过归档，别刷出一堆重复文件。
+ */
+async function postOcr(blob, first, signal) {
+  const fd = new FormData();
+  fd.append('image', blob, 'nameplate.jpg');
+  if (state.operator) fd.append('operator', state.operator);   // 每一趟都要，审计日志才带得上录入人
+  if (first) {
+    if (state.originalBlob) fd.append('original', state.originalBlob, 'original.jpg');
+    if (state.thumbBlob) fd.append('thumb', state.thumbBlob, 'thumb.jpg');
+  } else {
+    fd.append('save', '0');
+  }
+  const res = await fetch('/api/ocr', { method: 'POST', body: fd, signal });
+  if (res.status === 401) {
+    location.href = '/login?next=' + encodeURIComponent('/m') + '&expired=1';
+    const e = new Error('登录已过期');
+    e.redirected = true;
+    throw e;
+  }
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error || body?.detail || `识别失败（HTTP ${res.status}）`);
+  return body?.data ?? body;
+}
+
 /* ================= 识别 ================= */
 async function startRecognize() {
   if (state.busy) return;
@@ -1161,26 +1280,29 @@ async function startRecognize() {
   const timer = setTimeout(() => ctrl.abort(), 120000);
   try {
     // 送去识别的那张先做灰度 + 对比度拉伸：铭牌小字会清楚很多
-    const ocrBlob = await enhanceForOcr(state.capturedBlob);
+    const ocrBlob = (await enhanceForOcr(state.capturedBlob)) || state.capturedBlob;
     if (ocrBlob !== state.capturedBlob) setPreviewInfo('已增强对比度，正在上传识别…', true);
 
-    // 用 multipart 上传，避免把几 MB 图片转成更大的 base64 字符串
-    const fd = new FormData();
-    fd.append('image', ocrBlob || state.capturedBlob, 'nameplate.jpg');
-    // 原图与缩略图一起发走：服务端自动归档，用户不需要任何额外操作
-    if (state.originalBlob) fd.append('original', state.originalBlob, 'original.jpg');
-    if (state.thumbBlob) fd.append('thumb', state.thumbBlob, 'thumb.jpg');
-    if (state.operator) fd.append('operator', state.operator);
+    // 判文字走向 → 决定先用哪个角度。拿不到灰度就按「先试 180」走
+    const probe = await grayOfBlob(ocrBlob);
+    const axis = probe ? textAxisOf(probe.gray, probe.w, probe.h) : { axis: 'h', ratio: 1 };
+    const angles = [0, ...retryAngles(axis.axis)];
 
-    const res = await fetch('/api/ocr', { method: 'POST', body: fd, signal: ctrl.signal });
-    if (res.status === 401) {
-      location.href = '/login?next=' + encodeURIComponent('/m') + '&expired=1';
-      return;
+    let best = null;
+    let bestAngle = 0;
+    let firstPaths = null;      // 图片地址只认第一趟的：那才是用户真正拍下的那张
+    for (let i = 0; i < angles.length; i++) {
+      const angle = angles[i];
+      const blob = angle === 0 ? ocrBlob : await rotateBlob(ocrBlob, angle);
+      if (i > 0) setPreviewInfo(`没读出内容，正在把照片转正 ${angle}° 再试一次…`, true);
+      const r = await postOcr(blob, i === 0, ctrl.signal);
+      if (i === 0) firstPaths = { image_path: r.image_path, original_path: r.original_path, thumb_path: r.thumb_path };
+      if (!best || overallConf(r) > overallConf(best)) { best = r; bestAngle = angle; }
+      if (usableResult(r)) break;   // 读到了就停，别浪费额度
     }
-    const body = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(body?.error || body?.detail || `识别失败（HTTP ${res.status}）`);
 
-    const r = body?.data ?? body;
+    const r = { ...best, ...firstPaths };
+    if (bestAngle) r.note = [r.note, `照片是转过来的，已自动旋转 ${bestAngle}° 后识别`].filter(Boolean).join('；');
     state.recognizeResult = r;
     $('#previewOverlay').hidden = true;
     setPreviewInfo('');
@@ -1188,6 +1310,7 @@ async function startRecognize() {
     // 识别成功的这张照片，顺手在手机里也留一份（可在首页关掉）
     autosaveShot(r.sn || '', r.image_path || null);
   } catch (e) {
+    if (e.redirected) return;
     const msg = e.name === 'AbortError'
       ? '识别超时（120 秒）。请检查手机与电脑是否同一 WiFi，或改用「从相册选图」重试。'
       : e.message;
@@ -1346,7 +1469,26 @@ function initShotGestures() {
 
 function renderRecognizeResult(r) {
   const catHint = r.category_hint;
-  const suggestedCat = state.categories.find((c) => c.code === catHint)?.id || '';
+  const dflt = state.mobileDefaults || {};
+  const last = mobileMemory();
+  /*
+   * 「补充信息」的取值优先级（从上到下，谁先有值用谁）：
+   *
+   *   设备分类： 识别提示  >  上次填的  >  系统设置的默认分类  >  列表第一个
+   *   其它下拉： 上次填的  >  系统设置的默认值  >  空
+   *   分类字段： 上次填的  >  该字段配置的默认值  >  空
+   *
+   * 为什么「设备分类」把识别排在最前：识别提示来自铭牌上的文字（认出"显示器"），
+   * 是关于**这一台**设备的证据；而"上次填的"只是上一台的记忆。
+   * 其余字段没有这种逐台的证据，所以记忆优先 —— 这正是用户要的
+   * 「上次输入的信息自动填充」。
+   */
+  const suggestedCat = state.categories.find((c) => c.code === catHint)?.id
+    || (state.categories.some((c) => c.id === last.category_id) ? last.category_id : '')
+    || (state.categories.some((c) => c.id === dflt.category_id) ? dflt.category_id : '');
+  const defOrg = pickValid([last.org_id, dflt.org_id], state.orgs.map((o) => o.id));
+  const defSupplier = pickValid([last.supplier, dflt.supplier], state.suppliers);
+  const defStatus = pickValid([last.status, dflt.status, 'in_use'], state.statuses.map((s) => s.id)) || 'in_use';
   const dup = r.duplicate?.exists;
   const conf = overallConf(r);
   // 这里底部要留给「保存入库」，标签栏先让位
@@ -1385,14 +1527,19 @@ function renderRecognizeResult(r) {
     </div>
 
     <div class="card">
-      <h3>补充信息</h3>
+      <div class="card-head">
+        <h3>补充信息</h3>
+        ${mobileMemory().category_id || Object.keys(mobileMemory().fields || {}).length
+    ? `<button type="button" class="btn xs ghost" id="memClearBtn" onclick="clearMobileMemoryConfirm()">${svgIcon('refresh', 13)} 清除记忆</button>` : ''}
+      </div>
+      ${mobileMemory().category_id || Object.keys(mobileMemory().fields || {}).length
+    ? '<p class="hint" style="margin:0 0 10px">已按<b>上次录入</b>的内容填好，直接改需要变的即可。想从空白开始点右上角「清除记忆」。</p>' : ''}
       <div class="field"><label>设备分类</label><select id="rCat">${state.categories.map((c) => `<option value="${c.id}" ${c.id === suggestedCat ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>所属组织</label><select id="rOrg"><option value="">未分配</option>${state.orgs.map((o) => `<option value="${o.id}" ${o.id === defOrg ? 'selected' : ''}>${esc(o.path || o.name)}</option>`).join('')}</select></div>
+      ${/* 使用人 / 存放位置 等，现在都由「设备分类」的专属字段决定，见 renderMobileTracking() */''}
       <div id="rTracking"></div>
-      <div class="field"><label>所属组织</label><select id="rOrg"><option value="">未分配</option>${state.orgs.map((o) => `<option value="${o.id}">${esc(o.path || o.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>使用人</label><input id="rOwner" placeholder="姓名"></div>
-      <div class="field"><label>存放位置</label><input id="rLocation" placeholder="如 3 楼机房"></div>
-      <div class="field"><label>供应商</label><select id="rSupplier"><option value="">— 未指定 —</option>${state.suppliers.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div>
-      <div class="field"><label>状态</label><select id="rStatus">${state.statuses.map((s) => `<option value="${s.id}" ${s.id === 'in_stock' ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
+      <div class="field"><label>供应商</label><select id="rSupplier"><option value="">— 未指定 —</option>${state.suppliers.map((s) => `<option value="${esc(s)}" ${s === defSupplier ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+      <div class="field"><label>状态</label><select id="rStatus">${state.statuses.map((s) => `<option value="${s.id}" ${s.id === defStatus ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
     </div>
 
     <div class="m-actionbar">
@@ -1449,30 +1596,177 @@ function bindSnChips() {
   });
 }
 
+/**
+ * 手机端表单里已经有固定输入框的 key。
+ * ⚠️ 分类专属字段里若出现这些 key，必须**过滤掉**：否则同一个东西会渲染出两个输入框，
+ *    保存时后写的那个还会把先写的值覆盖掉（管理端设备表单以前就踩过这个坑）。
+ */
+const MOBILE_FIXED_KEYS = ['asset_no', 'brand', 'model', 'sn', 'category_id', 'org_id', 'supplier', 'status'];
+
+/** 这个分类在手机端该显示哪些字段（使用人 / 存放位置 就在其中，由分类配置决定） */
+function mobileTrackingFields(cat) {
+  return (cat?.tracking_fields || []).filter((t) => t && t.key && !MOBILE_FIXED_KEYS.includes(t.key));
+}
+
 /** 渲染当前分类的专属字段（手机端） */
 function renderMobileTracking() {
   const box = $('#rTracking');
   if (!box) return;
   const cat = state.categories.find((c) => c.id === ($('#rCat')?.value || ''));
-  const fields = cat?.tracking_fields || [];
-  if (!fields.length) { box.innerHTML = ''; return; }
+  const fields = mobileTrackingFields(cat);
+  if (!cat || !fields.length) { box.innerHTML = ''; return; }
   box.innerHTML = `
     <div class="sub-group">
-      <div class="sub-group-hd">${esc(cat.name)} · 专属字段</div>
-      ${fields.map((t) => `<div class="field"><label>${esc(t.label)}</label>${mobileTrackingInput(t)}</div>`).join('')}
+      <div class="sub-group-hd">${esc(cat.name)}</div>
+      ${fields.map((t) => `<div class="field"><label>${esc(t.label)}</label>${mobileTrackingInput(t, mobileFieldValue(t))}</div>`).join('')}
     </div>`;
 }
 
-function mobileTrackingInput(t) {
+/**
+ * 分类字段的**默认值**（管理端在「设备分类 → 专属字段 → 默认值」里配）。
+ *
+ * 下拉字段只在「默认值确实还在选项里」时才用：选项被删过的话，
+ * 选一个不存在的值等于空选，还不如老老实实留空，让人工去选。
+ */
+function mobileFieldDefault(t) {
+  const d = t?.default === undefined || t?.default === null ? '' : String(t.default);
+  if (!d) return '';
+  if (t.type === 'select') return (Array.isArray(t.options) && t.options.includes(d)) ? d : '';
+  return d;
+}
+
+/* ==================================================================== *
+ * 「补充信息」的记忆功能
+ *
+ * 用户的原话：「做一记忆功能，上次输入的信息自动填充在里面」。
+ * 现场是一台接一台地录，同一批设备常常同部门、同供应商、同状态，
+ * 连使用人也经常连着好几台是同一个人（一个人配主机 + 显示器）。
+ * 每次都从空白开始填，纯属重复劳动。
+ *
+ * 存在**手机本地**（localStorage），不上传服务器：
+ *   · 每台手机记自己的，多人共用同一账号时不会互相干扰
+ *   · 不占服务端存储，也不需要额外的接口和权限
+ *   · 换手机 / 清了浏览器数据就没了 —— 此时自动回落到管理端配的默认值
+ *
+ * ⚠️ 存进去的值下次渲染前必须**再校验一遍**：组织可能被删、供应商可能改名、
+ *    下拉选项可能调整。用不存在的值填下拉 = 看着像没填，保存时还会写空值。
+ * ==================================================================== */
+
+const MOBILE_MEMORY_KEY = 'itam.mobile.lastFill';
+
+/** 读取上次填的内容（坏了/没有都当空对象，绝不让它把页面搞崩） */
+function mobileMemory() {
+  try {
+    const raw = localStorage.getItem(MOBILE_MEMORY_KEY);
+    if (!raw) return {};
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== 'object') return {};
+    return {
+      category_id: o.category_id || '',
+      org_id: o.org_id || '',
+      supplier: o.supplier || '',
+      status: o.status || '',
+      fields: (o.fields && typeof o.fields === 'object') ? o.fields : {},
+    };
+  } catch { return {}; }
+}
+
+/**
+ * 记住这次填的内容（保存成功后调用）。
+ * 入参形状：{ category_id, org_id, supplier, status, fields: {字段key: 值} }
+ * ⚠️ fields 是**嵌套对象**，别把它当成一个普通字段塞进去（会被 String() 成 "[object Object]"）。
+ */
+function rememberMobileFill(payload = {}) {
+  try {
+    const fields = {};
+    // 只记非空的：用户把某个字段清空，说明这次就是不填，下次也不该又冒出来
+    for (const [k, v] of Object.entries(payload.fields || {})) {
+      if (v === null || v === undefined || v === '') continue;
+      fields[k] = String(v);
+    }
+    localStorage.setItem(MOBILE_MEMORY_KEY, JSON.stringify({
+      category_id: payload.category_id || '',
+      org_id: payload.org_id || '',
+      supplier: payload.supplier || '',
+      status: payload.status || '',
+      fields,
+      at: new Date().toISOString(),
+    }));
+  } catch { /* 存不进去（隐私模式/配额）不影响入库 */ }
+}
+
+/** 清掉记忆（界面上给了「清除记忆」按钮，换批次/换部门时用） */
+function clearMobileMemory() {
+  try { localStorage.removeItem(MOBILE_MEMORY_KEY); } catch { /* ignore */ }
+}
+
+/**
+ * 界面上的「清除记忆」。
+ *
+ * m.js 里没有通用确认弹窗（那是管理端的组件），为这一个动作引入一整套弹窗不划算。
+ * 手机端更顺手的做法是**两段式确认**：第一次点变成「再点一次确认清除」，4 秒不点就复原。
+ * 既防误触，又不用弹窗、不用第二套对话框样式。
+ */
+let memClearArmed = false;
+let memClearTimer = null;
+function clearMobileMemoryConfirm() {
+  const btn = $('#memClearBtn');   // 用项目自己的 $()，不要用 document.getElementById
+  if (!memClearArmed) {
+    memClearArmed = true;
+    if (btn) {
+      btn.dataset.orig = btn.innerHTML;
+      btn.textContent = '再点一次确认清除';
+      btn.classList.add('danger');
+    }
+    toast('再点一次就清除记忆', 'warn');
+    clearTimeout(memClearTimer);
+    memClearTimer = setTimeout(() => {
+      memClearArmed = false;
+      const b = $('#memClearBtn');
+      if (b && b.dataset.orig) { b.innerHTML = b.dataset.orig; b.classList.remove('danger'); }
+    }, 4000);
+    return;
+  }
+  clearTimeout(memClearTimer);
+  memClearArmed = false;
+  clearMobileMemory();
+  toast('已清除，下次从空白开始填');
+  const r = state.recognizeResult;
+  if (r) renderRecognizeResult(r);
+}
+
+/** 从候选里挑第一个「确实存在于允许值里」的；都没有就返回空串 */
+function pickValid(candidates, allowed) {
+  const set = new Set(allowed || []);
+  for (const c of candidates) {
+    if (c && set.has(c)) return c;
+  }
+  return '';
+}
+
+/** 分类字段的取值：上次填的 > 字段默认值（下拉还要再校验一次选项还在不在） */
+function mobileFieldValue(t) {
+  const last = mobileMemory().fields || {};
+  const remembered = last[t.key] === undefined || last[t.key] === null ? '' : String(last[t.key]);
+  const dflt = mobileFieldDefault(t);          // 默认值本身已经过选项校验
+  if (t.type === 'select' && Array.isArray(t.options) && t.options.length) {
+    if (remembered && t.options.includes(remembered)) return remembered;
+    return dflt;
+  }
+  return remembered || dflt;                   // 文本/数字/日期：记忆优先，其次默认值
+}
+
+function mobileTrackingInput(t, value) {
   const id = `mt_${t.key}`;
+  const v = value === undefined || value === null ? '' : String(value);
   if (t.type === 'select' && Array.isArray(t.options) && t.options.length) {
     return `<select id="${id}">
       <option value="">— 未指定 —</option>
-      ${t.options.map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}
+      ${t.options.map((o) => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}
     </select>`;
   }
   const type = t.type === 'number' ? 'number' : t.type === 'date' ? 'date' : 'text';
-  return `<input id="${id}" type="${type}">`;
+  return `<input id="${id}" type="${type}" value="${esc(v)}">`;
 }
 
 function ringColor(r) {
@@ -1490,11 +1784,13 @@ async function saveRecognized() {
   const sn = $('#rSN').value.trim();
   if (!sn) { toast('请填写 SN 序列号', 'warn'); return; }
 
-  // 分类专属字段：映射到设备列的写列，其余写 extra
+  // 分类专属字段：映射到设备列的写列，其余写 extra。
+  // ⚠️ 「使用人 / 存放位置」现在也走这条路（它们是分类字段，key 是 owner_name / location，
+  //    在服务端的 COLUMN_TRACKING_KEYS 里 → 会写进设备表的真实列）。
   const cat = state.categories.find((c) => c.id === $('#rCat').value);
   const extra = {};
   const columnValues = {};
-  for (const t of (cat?.tracking_fields || [])) {
+  for (const t of mobileTrackingFields(cat)) {
     const el = $(`#mt_${t.key}`);
     if (!el) continue;
     const raw = String(el.value ?? '');
@@ -1509,8 +1805,6 @@ async function saveRecognized() {
     sn,
     category_id: $('#rCat').value,
     org_id: $('#rOrg').value || null,
-    owner_name: $('#rOwner').value.trim(),
-    location: $('#rLocation').value.trim(),
     supplier: $('#rSupplier')?.value || null,
     status: $('#rStatus').value,
     sn_source: r.mocked ? 'ocr-mock' : 'ocr',
@@ -1529,6 +1823,14 @@ async function saveRecognized() {
   btn.disabled = true; btn.textContent = '保存中…';
   try {
     const dev = await api('/devices', { method: 'POST', body: JSON.stringify(payload) });
+    // 保存成功才记：失败的记录进记忆里，下次会把错的内容又填回来
+    rememberMobileFill({
+      category_id: payload.category_id,
+      org_id: payload.org_id,
+      supplier: payload.supplier,
+      status: payload.status,
+      fields: columnValues,
+    });
     toast(`已入库：${dev.asset_no}`);
     renderHome();
   } catch (e) {
@@ -1543,20 +1845,8 @@ async function saveRecognized() {
 
 /* ================= 扫码 ================= */
 
-/**
- * 扫码核对：两种码型**分开**，各用各自的入口与识别器。
- *
- * 为什么必须分开（这是准确率的根因，不只是界面整理）：
- * `BarcodeDetector` 的 `formats` 是**白名单过滤器**。以前为了「一个入口啥都能扫」，
- * 把 qr_code 连同七八种一维条码一起塞进去，识别器每一帧都要在画面里找全部类型的候选 ——
- * 候选空间一大，就会**又慢又张冠李戴**：把条码的条纹误判成别的格式、把二维码直接漏掉。
- * 用户反馈的「自动识别很不准确」正是这个。
- *
- * 现在进哪个入口就只认那一类：
- *   扫二维码 → formats 只剩 qr_code
- *   扫条码   → formats 只剩 code_128 / code_39 / ... 那一族
- * 候选少了一个数量级，准确率和速度都明显变好。
- */
+/* 扫码核对：两种码型分开，各用各自的入口与识别器。
+   `formats` 是白名单**过滤器**不是候选表：一维条码和二维码混着解，候选暴增、又慢又张冠李戴。 */
 
 /** 两个入口各自的配置。formats 必须先用 getSupportedFormats() 求交集，绝不能直接传。 */
 const SCAN_KINDS = {
@@ -1597,13 +1887,9 @@ const detectorFormatsByKind = new Map();   // kind -> 实际生效的 formats
 const detectorTriedKinds = new Set();
 
 /**
- * 拿到识别器。**必须带 kind** —— 扫二维码和扫条码用不同的实例。
- *
- * 顺序很关键（和浏览器行为对着來的）：
- *   ① 先同步建一个「不限格式」的顶着 —— 不传 formats 就是「浏览器支持的全都要」，
- *      这一步几乎不会失败，保证调用方**永远拿得到能用的识别器**
- *   ② 再异步问浏览器支持哪些格式，与该入口要的格式求交集后收窄（更准更快）
- *   ③ 交集为空就保持「不限格式」—— 一样能扫，只是没那么快
+ * 拿到识别器。**必须带 kind**：两个入口各一个实例。
+ * 先同步建「不限格式」的顶着（不传 formats 就是全都要，几乎不会失败），
+ * 再异步求交集收窄；交集为空就维持全开。顺序不能反，否则会拿不到识别器。
  */
 function getDetector(kind) {
   if ('BarcodeDetector' in window === false) return null;
@@ -1653,36 +1939,21 @@ function detectorFormatLabel(kind) {
   return f.join(' / ');
 }
 
-/**
- * 丢掉缓存的识别器，下次 getDetector() 重新协商。
- * 正常流程用不到；真机上换了权限/摄像头，或自动化测试换桩时需要。
- */
+/** 丢掉缓存的识别器，下次 getDetector() 重新协商（换摄像头/换权限/自动化测试换桩时用） */
 function resetDetector() {
   barcodeDetectorByKind.clear();
   detectorFormatsByKind.clear();
   detectorTriedKinds.clear();
 }
 
-/**
- * 取景框 → 视频帧的几何反推。
- *
- * 为什么需要这一组函数：`<video>` 是 `object-fit: cover`，竖屏时画面横向被裁掉一大半
- * （实测 1920 宽的帧在 540 CSS px 的竖屏里只显示约 28% 的宽度）。
- * 用户把条码对着取景框摆得整整齐齐，程序却必须知道**框里的东西在帧的哪个位置**，
- * 否则只能猜 —— 旧版就是猜的（整帧 / 正中方形），两条都猜不中贴纸上的小条码。
- */
+/* 取景框 → 视频帧的几何反推。
+   `<video>` 是 object-fit:cover，竖屏时画面横向被裁掉大半（1920 宽的帧只显示约 28%），
+   所以屏幕上那个框不能直接当像素坐标用，必须先换算回帧内矩形。 */
 
 /**
  * 从取景框（屏幕 CSS 矩形）反推它在视频帧里的源矩形。
- *
- * cover 的映射关系（统一到一个缩放系数 k，取两个方向里大的那个，短边被裁）：
- *   k        = max(dispW / vw, dispH / vh)
- *   vw_vis   = dispW / k      // 屏幕上能看到的那部分源宽度
- *   vh_vis   = dispH / k
- * 源矩形居中，所以可见区左上角 = ((vw - vw_vis)/2, (vh - vh_vis)/2)。
- *
- * ⚠️ 返回的一定是**帧内**的矩形：取景框可能超出可视区（框比视频还宽），
- *    夹边界这一步不能省，否则 drawImage 会取到帧外的空白。
+ * cover：k = max(dispW / vw, dispH / vh)，可见区居中，左上角 = ((vw - vw_vis)/2, (vh - vh_vis)/2)。
+ * ⚠️ 返回值必须夹在帧内（框可能比视频还宽），否则 drawImage 会取到帧外的空白。
  */
 function frameRectOf(boxCSS, dispW, dispH, vw, vh) {
   const bw = Number(boxCSS?.w) || 0;
@@ -1703,15 +1974,9 @@ function frameRectOf(boxCSS, dispW, dispH, vw, vh) {
 }
 
 /**
- * 把一条扁带在**纵向上撑到够高**。
- *
- * 为什么需要：裁太扁会切坏码。Code128 的长宽比约 10:1，而扁框换算回竖版帧内可能只有
- * 3.4:1 —— 条码的上下会被切掉一截，切进编码区就认不出来了。
- * 一维条码解码只要**一行**穿过所有条就够了，但那一行必须穿过**完整的条高**，
- * 所以宁可多带一点上下背景，也不让它贴边。
- *
- * 撑到多少：至少 `0.25 × 帧宽`（够装下一整条码），最多不超过帧高。
- * 只在**不改变横向裁法**的前提下撑高 —— 横向精度（每根条多少像素）一分不损失。
+ * 把一条扁带在**纵向上撑到够高**：裁太扁会切坏码（Code128 长宽比约 10:1，
+ * 而扁框换算回帧内可能只有 3.4:1）。解码只要一行穿过所有条，但那一行要穿过完整条高。
+ * 撑到至少 0.25×帧宽；只撑高、不改横向裁法，每根条占多少像素一分不损失。
  */
 function growBandTall(box, vw, vh) {
   const minH = Math.min(vh, Math.max(box.h, vw * 0.25));
@@ -1722,11 +1987,9 @@ function growBandTall(box, vw, vh) {
 }
 
 /**
- * 取当前取景框在屏幕上的矩形（相对可视区左上角）。
- *
- * 取到就顺带收窄一点：框的**边框有 3px**、外面还有一圈半透明遮罩，
- * 用户是照着框内沿摆的，所以往里收 8%（编码区的留白本来就靠这个补）。
- * 取不到（测试桩没有 offsetWidth）就退回「屏幕短边 82% × 13%」的默认扁框，
+ * 取当前取景框在屏幕上的矩形（相对可视区左上角；框永远居中）。
+ * 往里收 8%：框本身有 3px 边框、外面还有一圈遮罩，用户照着框内沿摆，收一点正好当编码区留白。
+ * 量不到框（测试桩没有 offsetWidth）就退回「屏幕短边 82% × 13%」的默认扁框 ——
  * 别因为量不到框就把解码整趟跳过。
  */
 function scanBandBox() {
@@ -1748,12 +2011,9 @@ function scanBandBox() {
 
 /**
  * 给「取景框那一扁带」算输出尺寸。单独抽出来是为了能直接测（不必造 canvas 桩）。
- *
- * 一维条码的判定阀值是**每根条多少像素**，不是「整幅多大」：
- * 条码标签一般是 8~12 密尔，一根条按 2 倍安全系数折算约占码宽的 1.2%。
- * 所以码在画面里占 barPx 像素时，一根条 ≈ barPx × 0.012，要到 2px 以上才稳。
- * → **解码器输入里条码至少要有 ~170px、理想 250px。**
- * 这正是「扁带放大」那趟 upscale 拉到 8 的依据（实测把这个数从 50px 抬到 780px）。
+ * 判定阀值是**每根条多少像素**而不是整幅多大：8~12 密尔的标签，一根条约占码宽 1.2%，
+ * 要到 2px 以上才稳 → 解码器输入里条码至少 ~170px、理想 250px。
+ * 这就是「扁带放大」那趟 upscale 取 8 的依据。
  */
 function bandScoreOf(box, upscale) {
   const up = Number(upscale) || 1;
@@ -1764,9 +2024,8 @@ function bandScoreOf(box, upscale) {
   const outH = Math.max(1, Math.round(box.h * scale));
   // 上限制在 BAR_MAX_OUT_W 以内：再大只会拖慢解码，不会变准
   if (outW > BAR_MAX_OUT_W * 1.05) return null;
-  // ⚠️ 服务端兜底那条路要 POST 整张灰度图，`/api/scan` 有 4MB 上限（MAX_SCAN_BYTES）。
-  //    撑高之后 1500×750 这种尺寸就贴着线了，再大一点会被服务端拒掉 ——
-  //    表现是「服务端明明有解码器却一直没命中」。这里自己先卡住，别把球踢给服务端。
+  // ⚠️ 服务端兜底要 POST 整张灰度图，`/api/scan` 有 4MB 上限 —— 自己先卡住，
+  //    否则表现是「服务端明明有解码器却一直没命中」。
   if (outW * outH > BAND_PAYLOAD_MAX) return null;
   return { scale, outW, outH };
 }
@@ -1789,30 +2048,12 @@ function scanRegionOfFrameBand(video, upscale) {
 }
 
 /**
- * 解码的「切法」轮转表，按码型分。
- *
- * ⚠️ 旧实现按取景框去裁，是个真 bug：相机给的是横版画面，手机竖屏用 object-fit:cover
- *    铺满屏幕后横向被裁掉一大半，把取景框的屏幕坐标换算回视频坐标只剩「宽 21% × 高 18%」——
- *    用户对着框把码放得整整齐齐，程序解的却是画面正中很小一块，当然「老是报错」。
- *
- * 现在不猜用户把码放在哪，而是按码型挑最占便宜的切法轮着试：
- *   二维码是方的 → 先中心正方形（同样分辨率下每格占的像素最多）
- *   一维条码扁而长 → **先贴着取景框切那一扁带**（用户已经把码摆进框里了，这是最省像素的裁法）
- *
- * ⚠️⚠️ 条码那张表 2026-09-21 整体重做过。旧表 =
- *    整帧 → 转90 → 转270 → 翻180 → 整帧放大 → 中心方形放大。
- *    对「贴纸上的一条小条码」是**结构性失效**，不是参数没调好。逐趟算账
- *    （实测截图：1080×2340 物理 / DPR2 / 取景框 200×60 CSS / 条码 115 CSS px = 屏宽 21.3%）：
- *      ① 竖屏 + cover 把帧横向裁到只剩 ~28% → 条码映射回原生帧只有 ~106px = **帧宽的 5.5%**；
- *      ② 第 1 趟「整帧」把 1920 压到 900（×0.469）→ 条码只剩 **50px**。
- *         Code128 一根条 1~2px，50px 里挤 20+ 根条 → 必挂；
- *      ③ 第 2~4 趟「转 90/270/180」是换姿势，但整帧旋转**必须重采样**，
- *         双线性插值把黑白台阶抹成灰阶过渡 → 一维解码器要的「陡沿」没了；
- *      ④ 第 5 趟「整帧放大」不能恢复已丢失的信息，只是把糊的东西铺开；
- *      ⑤ 第 6 趟「中心方形放大」思路对（切小块放大），但**方形 + 正中**：
- *         条码是扁长的，方形框横向上只覆盖画面中段，条码不在正中就整条被切掉。
- *    新表把「贴着取景框切扁带 + 放大」提到第一、二趟，整帧降级为兜底，
- *    旋转挪到最后且**关掉插值**。实测扁带这趟给条码 479~1239px（旧表 50px）。
+ * 解码的「切法」轮转表，按码型分。不猜用户把码放在哪，按码型挑最省像素的切法轮着试：
+ *   二维码是方的 → 先中心正方形（同分辨率下每格占的像素最多）
+ *   一维条码扁而长 → 先贴着取景框切那一扁带（用户已经把码摆进框里了）
+ * ⚠️ 这个顺序是实测调出来的，别随手挪：整帧那趟会把 1920 压到 900，贴纸上的小条码
+ *    只剩 50px（Code128 一根条 1~2px，必挂）；扁带那趟能给它 479~1239px。
+ *    旋转趟一律排最后且关插值 —— 双线性插值会把黑白台阶抹成灰阶，一维解码器要的陡沿就没了。
  */
 const SCAN_STEPS = {
   qr: [
@@ -1820,26 +2061,18 @@ const SCAN_STEPS = {
     { label: '中心方形放大', mode: 'square', upscale: 1.6 },
     { label: '整帧', mode: 'full', upscale: 1 },
     { label: '整帧放大', mode: 'full', upscale: 2 },
-    // 兜底两趟：浏览器在个别设备上对「横版帧」的二维码有水土不服的
-    // （相机本身给的就是横版画面），补上两个旋转再试，失败面更小。
+    // 兜底两趟：个别设备对「横版帧」的二维码水土不服，多两个旋转失败面更小
     { label: '整帧转 90°', mode: 'full', upscale: 1, rot: 90 },
     { label: '整帧转 270°', mode: 'full', upscale: 1, rot: 270 },
   ],
-  // 一维条码**必须**多试几个角度：用户可能横握也可能竖握，
-  // 画面里的条码可能是躺着的、立着的、甚至倒着的。
-  // 与其劝用户「把手机横过来」，不如让程序把画面转正 —— 这是「扫条码要横握吗」的
-  // 工程答案：**不用横握**，横握只是让长条码占满画面宽边（每根条踩到更多像素），
-  // 更稳更快，但不是扫得出来的前提。
-  //
-  // 顺序 = 取景框扁带 → 取景框扁带放大 → 整帧 → 整帧放大 → 转 90° / 270° / 翻 180°。
-  // 前两趟就是为「贴纸上的小条码」准备的：只切用户对好的那一条，像素利用率最高。
+  // 条码可能躺着、立着、甚至倒着（用户不用把手机横过来，转正是程序的事），
+  // 所以多试几个角度：扁带 → 扁带放大 → 整帧 → 整帧放大 → 转 90/270 → 翻 180。
   bar: [
     { label: '取景框扁带', mode: 'band', upscale: 1 },
     { label: '取景框扁带放大', mode: 'band', upscale: 8 },
     { label: '整帧', mode: 'full', upscale: 1, rot: 0 },
     { label: '整帧放大', mode: 'full', upscale: 2, rot: 0 },
-    // 旋转趟一律 smooth:false：1~2px 的条经双线性插值直接没了，
-    // 最近邻至少保住「黑是黑、白是白」，一维解码器对硬边缘的容忍度高得多。
+    // 旋转趟一律 smooth:false：最近邻至少保住「黑是黑、白是白」，插值会把 1~2px 的条抹平
     { label: '整帧转 90°', mode: 'full', upscale: 1, rot: 90, smooth: false },
     { label: '整帧转 270°', mode: 'full', upscale: 1, rot: 270, smooth: false },
     { label: '整帧翻 180°', mode: 'full', upscale: 1, rot: 180, smooth: false },
@@ -1851,21 +2084,14 @@ const stepsOf = (kind) => SCAN_STEPS[SCAN_KINDS[kind] ? kind : 'qr'];
 /** 送进识别器的基准宽度。太小解不出码，太大又拖慢每一次解码。 */
 const BASE_OUT_W = 900;
 
-/**
- * 一维条码专用：解码器输入里条码的**目标宽度**与上限。
- *
- * 判定阀值是「每根条多少像素」而非整幅大小：标签一般是 8~12 密尔，
- * 一根条按 2 倍安全系数折算约占码宽的 1.2% → 码要 ~170px、理想 250px 才稳。
- * 上限 3000 是「再大只费时间」的分界（Code128 解码逐行扫描，成本随宽度线性涨）。
- */
+/** 一维条码专用：目标宽度、放大上限、输出上限。
+ *  判据是「每根条多少像素」（一根条约占码宽 1.2%，要 ≥2px → 码 ≥170px、理想 250px）。
+ *  上限 3000 是「再大只费时间」的分界（Code128 逐行扫描，成本随宽度线性涨）。 */
 const BAR_TARGET_W = 2500;
 const BAR_MAX_SCALE = 8;
 const BAR_MAX_OUT_W = 3000;
 
-/**
- * 扁带这趟能送出去的最大像素数。服务端 `/api/scan` 的 MAX_SCAN_BYTES 是 4MB，
- * 灰度图 1 字节/像素 → 4M 像素就是硬上限，这里按 95% 留点余量自己先卡住。
- */
+/** 扁带这趟送出去的最大像素数。服务端 `/api/scan` 上限 4MB，灰度 1 字节/像素 → 按 95% 卡住 */
 const BAND_PAYLOAD_MAX = 3800000;
 
 /** 当前走到第几步（给界面显示用） */
@@ -1875,8 +2101,7 @@ function scanStepLabel(attempt, kind) {
 }
 
 function scanRegion(attempt, videoEl, kind) {
-  // 允许调用方直接把手上的 <video> 传进来：快门那条路径拿到的就是它，
-  // 再回 DOM 里找一次既多余、在测试桩里也容易拿到 null。
+  // 允许直接传 <video>：快门那条路径手上就有，再回 DOM 找一次在测试桩里容易拿到 null
   const video = videoEl || $('#cameraVideo');
   if (!video || !video.videoWidth) return null;
   const vw = video.videoWidth;
@@ -1884,25 +2109,18 @@ function scanRegion(attempt, videoEl, kind) {
   const steps = stepsOf(kind || state.scanKind || 'qr');
   const step = steps[attempt % steps.length];
   try {
-    // square：中心最大正方形（二维码是方的，方框里每一格占的像素最多）
-    // band  ：取景框扁带（一维条码扁而长，贴着用户对好的那个框切最省像素）
-    // full  ：整帧（长条码被推出取景框时的兜底）
+    // square：中心最大正方形（二维码） band：取景框扁带（条码） full：整帧（兜底）
     let box;
     let outW = 0;
     let outH = 0;
-    // 这一趟的放大倍数。**扁带趟失败退回整帧时必须把它抹掉**：
-    // 「扁带」的 upscale 是按「扁带只有一两百像素宽」定的（要拉到 BAR_TARGET_W）。
-    // 一旦退回整帧（1920 宽），同一个 8 倍会把画布顶到 7200×12800 ≈ 9200 万像素 ——
-    // 实测测试桩里就是这么炸的（一个 9000 万像素的 canvas，浏览器直接卡死/内存爆掉）。
-    // 所以 fallback 走整帧时 upscale 归 1，交给下面 scale 公式按 BASE_OUT_W 自己算。
+    // ⚠️ 扁带退回整帧时**必须**把 upscale 抹掉：8 倍是按「扁带只有一两百像素宽」定的，
+    //    套到 1920 宽的整帧上会造出 9000 万像素的 canvas，浏览器直接卡死/OOM。
     let effUpscale = step.upscale;
     if (step.mode === 'square') {
       const side = Math.min(vw, vh);
       box = { x: (vw - side) / 2, y: (vh - side) / 2, w: side, h: side };
     } else if (step.mode === 'band') {
-      // ⚠️ 扁带这条路必须走「取景框 → 帧」的逆映射（见 frameRectOf）。
-      //    拿不到（测试桩没有 offsetWidth、或帧尺寸异常、或尺寸超预算）
-      //    就退回整帧，别让整趟失败 —— 但必须同时把 upscale 归 1（见上）。
+      // 走「取景框 → 帧」的逆映射（见 frameRectOf）；拿不到就退回整帧但 upscale 归 1
       const band = scanRegionOfFrameBand(video, step.upscale);
       if (band) {
         box = band.rect;
@@ -1917,22 +2135,17 @@ function scanRegion(attempt, videoEl, kind) {
     }
 
     const scale = (BASE_OUT_W / box.w) * effUpscale;
-    // ⚠️ 兜底硬上限：任何组合都不许造出巨幅画布。
-    //    这套公式里 scale 是浮动的，只要「箱小 + 倍数大」两项凑到一起（比如扁带拿不到
-    //    退回整帧却还带着 8 倍），就会算出 7200×12800 这种 9000 万像素的 canvas ——
-    //    浏览器直接卡死甚至 OOM。上限取 4000×4000（比服务端 4000 的上限对齐），
-    //    超出就等比缩回来。宁可少放大一点，也不能把用户的浏览器搞崩。
+    // ⚠️ 兜底硬上限（对齐服务端 4000）：scale 是浮动的，「箱小 + 倍数大」一凑就是 9000 万像素，
+    //    宁可少放大一点，也不能把用户的浏览器搞崩。
     const MAX_CANVAS_SIDE = 4000;
     const rawW = box.w * scale;
     const rawH = box.h * scale;
     const cap = Math.min(1, MAX_CANVAS_SIDE / Math.max(rawW, rawH, 1));
     const scaleCapped = scale * cap;
-    // rot：把裁出来的这块画面转正之后再送进识别器。
-    // 90° / 270° 会让长宽互换（原本 1080×1920 的竖画面旋转后变成 1920×1080 的横画面）。
+    // rot：把裁出来的这块转正再送识别器。90/270 会让长宽互换。
     const rot = step.rot || 0;
     const swap = rot === 90 || rot === 270;
-    // smooth:false 是一维条码的命根子：重采样插值会把 1~2px 的条抹成灰阶过渡，
-    // 最近邻缩放虽然「硬」，但保住了黑白两个值，解码器反而认得出来。
+    // smooth:false 是一维条码的命根子：插值会把 1~2px 的条抹成灰阶过渡，最近邻反而认得出来
     const smooth = step.smooth !== false;
 
     if (!rot) {
@@ -1949,9 +2162,8 @@ function scanRegion(attempt, videoEl, kind) {
       return canvas;
     }
 
-    // ⚠️ drawImage 的目标宽高必须用**未旋转**的 dw / dh —— 旋转是在 ctx 上做的，
-    //    写成互换后的尺寸等于再做一次不等比缩放，条码会被拉成变形长条（直接毁码）。
-    //    画布本身才要用互换后的 outW / outH，否则旋转后的画面四角会被裁掉。
+    // ⚠️ drawImage 的目标宽高用**未旋转**的 dw/dh（旋转是在 ctx 上做的，写成互换后
+    //    的尺寸等于再做一次不等比缩放，条码被拉成长条直接毁码）；**画布**才用互换后的尺寸。
     const dw = box.w * scaleCapped;
     const dh = box.h * scaleCapped;
     const ow = Math.max(1, Math.round(swap ? dh : dw));
@@ -1963,12 +2175,8 @@ function scanRegion(attempt, videoEl, kind) {
     ctx.imageSmoothingEnabled = smooth;
     if (smooth && ctx.imageSmoothingQuality) ctx.imageSmoothingQuality = 'high';
 
-    // ⚠️⚠️ 这四行是整套旋转逻辑的**全部作用点**，少一行上面所有尺寸计算都是白算：
-    //   画布尺寸换好了、注释写满了，但忘了在 ctx 上真的设置变换 ——
-    //   结果是「画布是横的、画面还是原样躺着的」，人眼看设置像做完了，码却依然立着。
-    //   2026-09-20 真栽过一次：`ctx.save/setTransform/translate/rotate/restore` 五行
-    //   被一次「整行替换」补丁连窝端掉，测试却全绿（当时只断言了尺寸没断言变换）。
-    //   → 现在测试同时钉**尺寸**与**变换**，缺一即红。
+    // ⚠️⚠️ 这四行是整套旋转逻辑的**全部作用点**：忘了在 ctx 上真的设置变换，
+    //    结果就是「画布是横的、画面还躺着」——只断言尺寸的测试照样全绿，所以测试同时钉尺寸与变换。
     try { ctx.save(); } catch { /* 老实现没有 save 就跳过，不影响正事 */ }
     try { ctx.setTransform(1, 0, 0, 1, 0, 0); } catch { /* 同上 */ }
     ctx.translate(ow / 2, oh / 2);
@@ -1982,21 +2190,15 @@ function scanRegion(attempt, videoEl, kind) {
 }
 
 /**
- * 扫码核对首页。**两个专用入口**：一个专门扫二维码，一个专门扫条码。
- *
- * 以前是一个按钮「扫码核对」进去自动识别所有类型 —— 用户反馈「很不准确」。
- * 原因不是相机，是 `BarcodeDetector` 同时开七八种格式时在画面里到处找候选，
- * 候选越多越容易张冠李戴。拆开之后每个入口只开一种，准确率显著提升。
- * 识别也不是「自动连续扫」，而是**对准后按圆钮才解码**（用户明确要求）。
+ * 扫码核对首页 —— 两个专用入口（一个只扫二维码、一个只扫条码），
+ * 对准后**按圆钮才解码**，不做「自动连续扫」。
  */
 function renderScan() {
   setTabbar(true);
   const secure = window.isSecureContext === true || location.hostname === 'localhost';
-  // ⚠️ 两个都要问，不能写成 getDetector('qr') || getDetector('bar') ——
-  //    短路会让后面那个永远不被构造，万一某台机器只支持一维条码，
-  //    这里就会误判成「完全不能扫码」，把明明能用的入口也藏掉。
-  // ⚠️ 二维码入口是**永远可用**的：浏览器没有 BarcodeDetector（iPhone）时，
-  //    这一帧会发给服务端解码器兜底，不依赖浏览器能力。
+  // ⚠️ 两个都要问，不能写成 getDetector('qr') || getDetector('bar')：短路会让后者永远不被
+  //    构造，只支持一维条码的机器会被误判成「完全不能扫码」，把能用的入口也藏掉。
+  //    二维码入口永远可用（本机没识别器就走服务端解码）。
   const canQr = true;
   const canBar = !!getDetector('bar');
   const canScan = canQr || canBar;
@@ -2096,13 +2298,8 @@ function manualLookup() {
 }
 
 /**
- * 扫到内容后的分流。三种码都要认：
- *   ① 网址码   http://x.x.x.x/m/#/device/<uuid>   → 直接开设备详情（离线也能跳）
- *   ② 资产编号码（系统「资产二维码」里放的，最常见）→ 本地匹配 → 命中就直接开
- *   ③ SN 条码                                       → 本地匹配 → 没命中再问服务端
- *
- * 本地能匹配就绝不多打一次接口：手机上少一次等服务器的往返，
- * 体验差别是「立刻打开」和「转圈两秒」。
+ * 扫到内容后的分流：网址码 → 直接开设备详情；资产编号 / SN → 先在本地最近设备里匹配，
+ * 命中就打开，没命中才问服务端（少一次往返 = 「立刻打开」和「转圈两秒」的差别）。
  */
 async function handleScanned(value) {
   let raw = String(value || '').trim();
@@ -2185,8 +2382,7 @@ async function scanImage(dataURL, kind) {
         } catch { /* 换下一种切法 */ }
       }
     }
-    // 识别器没有 / 没解出来 → 服务端兜底（相册里翻拍屏幕的照片尤其吃这一手）。
-    // 一维条码也有兜底了（见 serverDecodeFrame 的注释）。
+    // 识别器没有 / 没解出来 → 服务端兜底（相册里翻拍屏幕的照片尤其吃这一手）
     const one = await serverDecodeFrame(img, k);
     if (one) { handleScannedWithMode(one.rawValue); return; }
     toast('未在图片中识别到' + scanKindOf(k).label
@@ -2462,6 +2658,11 @@ window.pickFromGallery = pickFromGallery;
 window.closePreview = closePreview;
 window.retakePhoto = retakePhoto;
 window.enhanceForOcr = enhanceForOcr;
+window.textAxisOf = textAxisOf;
+window.retryAngles = retryAngles;
+window.usableResult = usableResult;
+window.rotateBlob = rotateBlob;
+window.grayOfBlob = grayOfBlob;
 window.snCandidatesHTML = snCandidatesHTML;
 window.frameCropRect = frameCropRect;
 window.shootFromVideo = shootFromVideo;
@@ -2489,6 +2690,13 @@ window.resetDetector = resetDetector;
 window.handleScanned = handleScanned;
 window.renderRecognizeResult = renderRecognizeResult;
 window.renderMobileTracking = renderMobileTracking;
+// 便于自动化测试：「补充信息」的记忆功能（纯逻辑，直接断言读写）
+window.mobileMemory = mobileMemory;
+window.rememberMobileFill = rememberMobileFill;
+window.clearMobileMemory = clearMobileMemory;
+window.clearMobileMemoryConfirm = clearMobileMemoryConfirm;
+window.mobileFieldValue = mobileFieldValue;
+window.mobileFieldDefault = mobileFieldDefault;
 window.shotPreviewHTML = shotPreviewHTML;
 window.mobilePhotoCard = mobilePhotoCard;
 window.shootFromImage = shootFromImage;

@@ -53,7 +53,7 @@ class FakeEl {
   remove() {}
 }
 
-const NAV_IDS = ['dashboard', 'devices', 'orgs', 'categories', 'agent', 'excel', 'trash', 'users', 'settings'];
+const NAV_IDS = ['dashboard', 'explorer', 'devices', 'orgs', 'categories', 'agent', 'excel', 'trash', 'users', 'settings'];
 let navItems = null;
 function navItemsFor(sel) {
   if (!String(sel).includes('nav-item')) return [];
@@ -73,6 +73,14 @@ globalThis.document = {
   querySelector: qs,
   querySelectorAll: (sel) => navItemsFor(sel),
   createElement: () => new FakeEl(),
+  // 全局事件监听：页面模块加载时会注册键盘快捷键（资源管理器那套 F2/F5/Delete/方向键）。
+  // 假 DOM 里给个记录器，既不会崩，也能顺带断言「有没有注册」。
+  _listeners: [],
+  addEventListener(type, fn) { this._listeners.push({ type, fn }); },
+  removeEventListener(type, fn) {
+    this._listeners = this._listeners.filter((l) => !(l.type === type && l.fn === fn));
+  },
+  body: new FakeEl(),
 };
 globalThis.location = {
   href: '/', pathname: '/', search: '', hash: '',
@@ -85,6 +93,10 @@ globalThis.localStorage = {
   removeItem(k) { delete this._d[k]; },
 };
 globalThis.window = globalThis;
+// 浏览器里 window.addEventListener 一定存在（页面模块会给滚动/键盘挂全局监听）。
+// 这里 window === globalThis，而 Node 的 globalThis 没有这俩方法，缺了就会在加载阶段直接崩。
+globalThis.addEventListener = () => {};
+globalThis.removeEventListener = () => {};
 
 /* ---------- 带会话 Cookie 的 fetch 代理 ---------- */
 import fs from 'node:fs';
@@ -157,6 +169,28 @@ if (loadError) {
 
 assert(true, 'admin.js 模块加载并执行');
 
+/* ---------- 0. 元素 id 不能跨渲染单元重名（2026-09 线上故障的看门测试） ----------
+ * 故障回顾：台账页筛选栏和编辑弹窗都用了 fBrand / fOrg / fStatus，
+ * `$('#id')` 只取 DOM 里第一个 → 弹窗保存时读到筛选栏的空值 →
+ * 「编辑保存后品牌被清空、所属组织变未分配、状态回落成库存」。
+ * 这里按源码扫描，任何两个渲染单元（函数/模板常量）之间出现同名 id 就报错。
+ */
+{
+  const { findIdCollisions } = await import('../scripts/check-ids.js');
+  const adminSrc = fs.readFileSync(path.join(process.cwd(), 'public', 'assets', 'admin.js'), 'utf8');
+  const mobileSrc = fs.readFileSync(path.join(process.cwd(), 'public', 'assets', 'm.js'), 'utf8');
+  const adminClash = findIdCollisions(adminSrc);
+  assert(adminClash.length === 0,
+    'admin.js 有 id 冲突：' + adminClash.map((c) => `${c.id}(${c.a} vs ${c.b})`).join('、'));
+  // 手机端各页面是互斥的（同一时刻只渲染一个），同名不算冲突；
+  // 但「同一个页面里同时存在」的两块仍然要拦，这里只报告不失败，作为提示。
+  const mobileClash = findIdCollisions(mobileSrc);
+  if (mobileClash.length) {
+    console.log('  \x1b[33m⚠\x1b[0m m.js 里同名 id（互斥页面，仅供参考）：' +
+      [...new Set(mobileClash.map((c) => c.id))].join('、'));
+  }
+}
+
 /* ---------- 1. 仪表盘 ---------- */
 const dash = els.get('#content')?._innerHTML || '';
 assert(dash.length > 200, '仪表盘内容已渲染（长度 ' + dash.length + '）');
@@ -182,6 +216,92 @@ if (settingsErr) {
   assert(set.includes('识别服务'), '系统设置页包含「识别服务」');
   assert(set.includes('ocrProvider'), '包含识别服务下拉框');
   assert(set.includes('saveOcr'), '包含保存识别配置按钮');
+  // 手机录入默认值卡片（用户要求：录入表单那几个下拉要能预设默认项）
+  assert(set.includes('手机录入默认值'), '系统设置含「手机录入默认值」卡片');
+  for (const id of ['mdCategory', 'mdOrg', 'mdSupplier', 'mdStatus', 'saveMobile']) {
+    assert(set.includes(`id="${id}"`), `默认值卡片含 #${id}`);
+  }
+  assert(typeof els.get('#saveMobile').onclick === 'function', '默认值的保存按钮已绑定');
+}
+
+/* ---------- 2a. 切到资源管理器（按组织架构浏览设备） ---------- */
+let exErr = null;
+try {
+  const exTab = navItems.find((e) => e.dataset.view === 'explorer');
+  assert(!!exTab, '侧边栏含「资源管理器」入口');
+  assert(typeof globalThis.renderExplorer === 'function', 'renderExplorer 已暴露');
+  await exTab.onclick();
+  await wait(900);
+} catch (e) { exErr = e; }
+
+if (exErr) {
+  console.log('  \x1b[31m✘\x1b[0m 资源管理器渲染抛错：' + exErr.message);
+  console.log(exErr.stack);
+  failures.push('explorer');
+} else {
+  const ex = els.get('#content')?._innerHTML || '';
+  assert(ex.length > 300, '资源管理器有内容（长度 ' + ex.length + '）');
+  // 骨架：左树 + 工具条（导航按钮/地址栏/搜索/视图）+ 内容区 + 状态栏
+  assert(ex.includes('ex-side') && ex.includes('ex-tree') && ex.includes('ex-main'), '左右两栏骨架都在');
+  assert(ex.includes('ex-toolbar'), '有资源管理器式工具条');
+  assert(ex.includes('exBack') && ex.includes('exFwd') && ex.includes('exUp') && ex.includes('exRefresh'),
+    '工具条有 后退/前进/向上一级/刷新 四个按钮');
+  assert(ex.includes('ex-addr'), '有地址栏（面包屑）');
+  assert(ex.includes('ex-search'), '有搜索框');
+  assert(ex.includes('ex-viewtoggle') && ex.includes('data-view="details"') && ex.includes('data-view="tiles"'),
+    '有 详细信息 / 大图标 两种视图切换');
+  assert(ex.includes('组织架构'), '左栏标题是组织架构');
+  assert(ex.includes('全部设备'), '树里有「全部设备」根节点');
+  assert(ex.includes('未分配组织'), '树里有「未分配组织」虚拟文件夹');
+  // 文件夹名就是组织机构名（数据来自 /api/orgs，默认组织里有「总公司」）
+  assert(ex.includes('总公司'), '树的文件夹名就是组织名称（找「总公司」）');
+
+  // 内容区里的两种行：子文件夹行、设备行（假 DOM 看不到 innerHTML 新建的元素，直接调渲染函数）
+  const folderRow = globalThis.exFolderRowHTML({
+    id: 'org-1', name: '运维组', path: '总公司 / 信息技术部 / 运维组',
+    device_count: 3, total_count: 9, child_count: 2, updated_at: '2026-09-20T10:00:00.000Z',
+  }, 0);
+  assert(folderRow.includes('运维组'), '文件夹行显示组织名');
+  assert(folderRow.includes('2 个子文件夹'), '文件夹行显示子文件夹个数');
+  assert(folderRow.includes('ex-item folder'), '文件夹行有 folders 专属样式');
+  assert(folderRow.includes('data-drop="1"'), '文件夹行是拖放目标（可以往里拖设备）');
+
+  const deviceRow = globalThis.exDeviceRowHTML({
+    id: 'dev-1', asset_no: 'PC-2026-0017', sn: 'YLX2K4K1', brand: '联想', model: 'ThinkCentre M720',
+    status: 'in_use', owner_name: '李娜', org_path: '总公司 / 信息技术部 / 运维组',
+    category_name: '台式主机', category_icon: 'pc', category_color: '#2563eb',
+    updated_at: '2026-09-20T10:00:00.000Z',
+  }, 1);
+  assert(deviceRow.includes('PC-2026-0017'), '设备行显示资产编号');
+  assert(deviceRow.includes('YLX2K4K1'), '设备行显示序列号');
+  assert(deviceRow.includes('ThinkCentre M720'), '设备行显示品牌型号');
+  assert(deviceRow.includes('李娜'), '设备行显示使用人');
+  assert(deviceRow.includes('总公司 / 信息技术部'), '设备行显示所在位置');
+  assert(deviceRow.includes('draggable="true"'), '设备行可拖动（拖到文件夹=改归属）');
+  assert(/badge/.test(deviceRow), '设备行显示状态徽标');
+  // ⚠️ 上一版每行都有「打开」按钮和勾选框，那是网页表格的做法。
+  //    资源管理器靠单击/Ctrl/Shift 选中，这里必须**没有**这些东西。
+  assert(!/data-open/.test(deviceRow), '设备行不再有「打开」按钮（双击打开）');
+  assert(!/type="checkbox"/.test(deviceRow), '设备行不再有勾选框（用 Ctrl/Shift 多选）');
+  assert(globalThis.exEmptyHTML().includes('拖进来'), '空文件夹提示可以拖设备进来');
+
+  // 右键菜单（三套：设备 / 文件夹 / 空白处）
+  const devMenu = globalThis.exDeviceMenu().filter((x) => x !== '-').map((x) => x.label).join('/');
+  assert(devMenu.includes('打开') && devMenu.includes('编辑属性') && devMenu.includes('移动到'),
+    '设备右键菜单有 打开/编辑/移动到：' + devMenu);
+  assert(devMenu.includes('删除'), '设备右键菜单有删除');
+  const folderMenu = globalThis.exFolderMenu('org-1').filter((x) => x !== '-').map((x) => x.label).join('/');
+  assert(folderMenu.includes('打开') && folderMenu.includes('新建子文件夹') && folderMenu.includes('重命名'),
+    '文件夹右键菜单有 打开/新建子文件夹/重命名：' + folderMenu);
+  const emptyMenu = globalThis.exEmptyMenu().filter((x) => x !== '-').map((x) => x.label).join('/');
+  assert(emptyMenu.includes('新建文件夹') && emptyMenu.includes('刷新') && emptyMenu.includes('全选'),
+    '空白处右键菜单有 新建文件夹/刷新/全选：' + emptyMenu);
+
+  // 全局键盘快捷键已注册（Enter/F2/Delete/F5/Backspace/方向键/Alt+左右）
+  const kd = (els.get('#content'), null);
+  const listeners = globalThis.document._listeners || [];
+  assert(listeners.some((l) => l.type === 'keydown'), '已注册全局键盘监听（资源管理器快捷键）');
+  assert(typeof globalThis.exKeyHandler === 'function', 'exKeyHandler 已暴露（便于将来单独测按键）');
 }
 
 /* ---------- 2b0. 切到自动盘点（GLPI Agent） ---------- */
@@ -244,9 +364,27 @@ if (formErr) {
   failures.push('device-form');
 } else {
   const m = els.get('#modal')?._innerHTML || '';
-  assert(m.includes('供应商'), '新增设备表单含「供应商」字段');
-  assert(m.includes('易点云') && m.includes('小熊'), '供应商为下拉且含「易点云 / 小熊」');
-  assert(m.includes('id="fSupplier"') && m.includes('<select'), '供应商渲染成下拉框');
+  // 2026-09 改版：表单只固定显示 7 个核心字段，其余字段由「设备分类 → 专属字段」决定；
+  // 分类没点名的收进底部折叠区「其他字段」（仍在 DOM 里，所以数据能看能改）。
+  for (const core of ['df_asset_no', 'df_cat', 'df_brand', 'df_model', 'df_sn', 'df_org', 'df_status']) {
+    assert(m.includes(`id="${core}"`), `核心字段 #${core} 必须始终显示`);
+  }
+  /*
+   * ⚠️ 弹窗字段必须用 df_ 前缀：台账页的筛选栏已经占了 fOrg / fStatus / fBrand 这几个 id，
+   *    而 $('#id') 只返回 DOM 里第一个匹配的元素 —— 一旦重名，保存时读到的是筛选栏的空值，
+   *    表现就是「编辑保存后品牌被清空、组织变未分配、状态回落成库存」（2026-09 线上真实故障）。
+   */
+  for (const clash of ['fOrg', 'fStatus', 'fBrand', 'fKeyword', 'fCategory', 'fSupplier']) {
+    assert(!m.includes(`id="${clash}"`), `弹窗里不许再用页面级 id「${clash}」（会和筛选栏抢）`);
+  }
+  assert(!m.includes('id="fOwner"') && !m.includes('id="fCPU"') && !m.includes('id="fGrade"'),
+    '以前那批写死的字段（使用人/CPU/成色…）不再直接铺在表单上');
+  assert(m.includes('field-extra') && m.includes('其他字段'), '没被分类点名的字段收进折叠区「其他字段」');
+  assert(m.includes('id="optFieldsSlot"') && m.includes('id="catFieldsSlot"'), '专属字段区 / 其他字段区两个插槽都在');
+  // 折叠区里仍然真的渲染了输入控件（否则已存数据没法改）
+  assert(m.includes('id="o_supplier"'), '供应商在折叠区里仍渲染成输入控件');
+  assert(m.includes('易点云') && m.includes('小熊'), '供应商下拉含「易点云 / 小熊」');
+  assert(/id="o_supplier"[\s\S]{0,300}<option/.test(m) || m.includes('<select id="o_supplier"'), '供应商是下拉而不是纯文本');
 }
 
 /* ---------- 2d. 用户管理页 ---------- */
@@ -287,18 +425,34 @@ try {
   assert(!!monitor?.tracking_fields?.find((t) => t.key === 'screen_size' && t.type === 'select'),
     '显示器分类的「屏幕尺寸」是下拉类型');
 
-  const catSel = els.get('#fCat');
+  const catSel = els.get('#df_cat');
   catSel.value = monitor.id;
   await catSel.onchange();
   await wait(200);
 
-  const box = els.get('.modal-body');
-  const appended = box?._appended || [];
-  const last = appended[appended.length - 1];
-  const html = last?.innerHTML || '';
+  // 2026-09 改版：换分类不再往弹窗尾部追加一个 div，而是**重建专属字段插槽的内容**
+  // （这样上面已经填好的品牌/SN 不会被整表单重绘抹掉）
+  const html = els.get('#catFieldsSlot')?.innerHTML || '';
   assert(html.includes('屏幕尺寸'), '管理端：选显示器后出现「屏幕尺寸」');
   assert(html.includes('24寸') && html.includes('27寸'), '管理端：屏幕尺寸选项含 24寸 / 27寸');
   assert(html.includes('id="x_screen_size"') && html.includes('<select'), '管理端：屏幕尺寸渲染成下拉框');
+  // 换分类时「其他字段」也要跟着重算：显示器配了 screen_size，就不该在折叠区再出现一次
+  const optAfter = els.get('#optFieldsSlot')?.innerHTML || '';
+  assert(!optAfter.includes('id="o_screen_size"'), '分类已配置的字段不该在「其他字段」里重复出现');
+  assert(optAfter.includes('id="o_purchase_date"'), '分类没配置的字段仍留在「其他字段」里（数据能看能改）');
+
+  // 专属字段的「默认值」：新建设备时应按默认值预填/预选（管理端也要跟上，不然手机端配了默认值、
+  // 电脑端却没有，两边行为不一致会让人以为配置没生效）
+  const withDefault = options.categories.map((c) => c);
+  const target = withDefault.find((c) => c.code === 'MON');
+  if (target) {
+    // 临时给这个分类加一个带默认值的字段，直接调渲染函数看产出
+    const html2 = globalThis.trackingInputHTML({ key: 'screen_size', label: '屏幕尺寸', type: 'select', options: ['24寸', '27寸'], default: '27寸' }, globalThis.fieldDefault({ key: 'screen_size', type: 'select', options: ['24寸', '27寸'], default: '27寸' }));
+    assert(html2.includes('value="27寸" selected'), '默认值直接作用到专属字段控件上');
+    assert(globalThis.fieldDefault({ key: 'x', type: 'select', options: ['a'], default: 'z' }) === '',
+      '下拉默认值不在选项里时返回空（不能选一个不存在的值）');
+    assert(globalThis.fieldDefault({ key: 'y', type: 'text', default: 'abc' }) === 'abc', '文本字段默认值直接可用');
+  }
 } catch (e) { trackErr = e; }
 
 if (trackErr) {
@@ -345,6 +499,156 @@ try {
   assert(mPhoto.includes('data-original="/uploads/a/orig.jpg"'), '手机端详情可切到原图');
   assert(mPhoto.includes('devShotSave'), '手机端详情可把照片存到手机');
   assert(globalThis.mobilePhotoCard({ id: 'y', asset_no: 'N' }) === '', '没有照片时不渲染照片卡');
+
+  /* —— 识别结果页的「补充信息」：使用人 / 存放位置 由分类字段驱动，状态默认「在用」 ——
+   * 2026-09 用户要求：① 把使用人、存放位置改成设备分类里可编辑的字段（能改名/删掉）；
+   *                  ② 状态默认从「库存」改成「在用」。
+   */
+  assert(!mainHTML.includes('id="rOwner"'), '手机端不再写死「使用人」输入框');
+  assert(!mainHTML.includes('id="rLocation"'), '手机端不再写死「存放位置」输入框');
+  assert(mainHTML.includes('id="rTracking"'), '改为由分类专属字段区渲染');
+  // 状态默认必须是「在用」（in_use），不能是「库存」
+  assert(mainHTML.includes('id="rStatus"'), '状态选择框在');
+  assert(!/id="rStatus"[\s\S]{0,400}?value="in_stock" selected/.test(mainHTML), '状态默认不该是「库存」');
+  assert(/id="rStatus"[\s\S]{0,400}?value="in_use" selected/.test(mainHTML), '状态默认应该是「在用」');
+  // 专属字段区里应该有使用人 / 存放位置（键名来自分类配置）
+  const pcCat = (globalThis.mobileState?.categories || []).find((c) => c.code === 'PC');
+  assert(!!pcCat, '手机端已加载「台式主机」分类');
+  assert(pcCat.tracking_fields.some((f) => f.key === 'owner_name')
+    && pcCat.tracking_fields.some((f) => f.key === 'location'),
+    '台式主机分类的专属字段里带「使用人 / 存放位置」');
+  // 指定分类后重渲染专属字段（假 DOM 里 #rCat 的 value 要手动给）
+  els.get('#rCat').value = pcCat.id;
+  globalThis.renderMobileTracking();
+  await wait(120);
+  const trackHTML = els.get('#rTracking')?.innerHTML || '';
+  assert(trackHTML.includes('id="mt_owner_name"'), '「使用人」由分类字段渲染出输入框');
+  assert(trackHTML.includes('id="mt_location"'), '「存放位置」由分类字段渲染出输入框');
+  assert(trackHTML.includes('台式主机'), '专属字段区标了当前分类名');
+  // 显示器分类没有 cpu，但同样有使用人 / 存放位置
+  const monCat = (globalThis.mobileState?.categories || []).find((c) => c.code === 'MON');
+  if (monCat) {
+    els.get('#rCat').value = monCat.id;
+    globalThis.renderMobileTracking();
+    await wait(80);
+    const monTrack = els.get('#rTracking')?.innerHTML || '';
+    assert(monTrack.includes('id="mt_screen_size"'), '显示器分类显示出「屏幕尺寸」');
+    assert(monTrack.includes('id="mt_owner_name"'), '显示器分类也有「使用人」');
+  }
+
+  /* —— 录入表单的「默认选中项」：管理端配了默认值，手机上打开就该是它 ——
+   * 用户要求（2026-09）：这些下拉每次都要手点，太费时间，要能预设默认项。
+   */
+  const orgForTest = (globalThis.mobileState?.orgs || [])[0];
+  const supForTest = (globalThis.mobileState?.suppliers || [])[0];
+  const statusesForTest = globalThis.mobileState?.statuses || [];
+  const idleForTest = statusesForTest.find((s) => s.id === 'idle') || statusesForTest[0];
+  globalThis.mobileState.mobileDefaults = {
+    category_id: pcCat.id,
+    org_id: orgForTest?.id || null,
+    supplier: supForTest || null,
+    status: idleForTest?.id || 'in_use',
+  };
+  globalThis.renderRecognizeResult({
+    brand: 'Dell', model: 'XPS 13', sn: 'DEFAULTTEST01',
+    brand_confidence: 0.9, sn_confidence: 0.9, lines: [], duplicate: { exists: false },
+    image_path: '/uploads/2026-09-18/smoke-shot.jpg', provider: 'mock',
+  });
+  await wait(250);
+  const dfltHTML = els.get('#main')?._innerHTML || '';
+  assert(dfltHTML.includes(`value="${pcCat.id}" selected`), '设备分类默认选中了配置的分类');
+  if (orgForTest) assert(dfltHTML.includes(`value="${orgForTest.id}" selected`), '所属组织默认选中了配置的组织');
+  if (supForTest) assert(dfltHTML.includes(`value="${supForTest}" selected`), '供应商默认选中了配置的供应商');
+  if (idleForTest) assert(dfltHTML.includes(`value="${idleForTest.id}" selected`), '状态默认选中了配置的状态');
+
+  // 分类专属字段的默认值（下拉只在「默认值确实在选项里」时生效）
+  if (monCat) {
+    monCat.tracking_fields = [
+      { key: 'screen_size', label: '屏幕尺寸', type: 'select', options: ['24寸', '27寸'], default: '27寸' },
+      { key: 'resolution', label: '分辨率', type: 'text', default: '1920x1080' },
+    ];
+    els.get('#rCat').value = monCat.id;
+    globalThis.renderMobileTracking();
+    await wait(120);
+    const withDefault = els.get('#rTracking')?.innerHTML || '';
+    assert(withDefault.includes('value="27寸" selected'), '下拉字段按默认值预选（屏幕尺寸 27寸）');
+    assert(withDefault.includes('value="1920x1080"'), '文本字段按默认值预填');
+
+    // 默认值不在选项里 → 必须忽略，不能选一个不存在的值
+    monCat.tracking_fields = [
+      { key: 'screen_size', label: '屏幕尺寸', type: 'select', options: ['24寸', '27寸'], default: '32寸' },
+    ];
+    globalThis.renderMobileTracking();
+    await wait(120);
+    const badDefault = els.get('#rTracking')?.innerHTML || '';
+    assert(!badDefault.includes('value="32寸" selected'), '不在选项里的默认值必须被忽略');
+    assert(!/32寸/.test(badDefault), '连选项里都不该冒出这个值');
+  }
+
+  /* —— 「补充信息」的记忆功能 ——
+   * 用户要求（2026-09）：上次录入的内容下次自动填回来。
+   * 存手机本地（localStorage），并且**记忆优先于管理端配的默认值**（记忆更新、更贴近当下）。
+   */
+  // 先造一段"上次填过的内容"，再渲染，看是不是都填回来了
+  const memOrg = (globalThis.mobileState?.orgs || [])[1] || orgForTest;
+  const memSup = (globalThis.mobileState?.suppliers || [])[1] || supForTest;
+  const memStatus = statusesForTest.find((s) => s.id === 'repair') || idleForTest;
+  globalThis.rememberMobileFill({
+    category_id: pcCat.id,
+    org_id: memOrg?.id || '',
+    supplier: memSup || '',
+    status: memStatus?.id || '',
+    fields: { owner_name: '上次的那个人', location: '7楼懂车帝' },
+  });
+  const mem = globalThis.mobileMemory();
+  assert(mem.category_id === pcCat.id, '记忆里存住了分类');
+  assert(mem.fields.owner_name === '上次的那个人', '记忆里存住了分类字段的值');
+  assert(!('sn' in mem.fields) || mem.fields.sn === undefined, '识别出来的字段不该混进记忆');
+
+  globalThis.renderRecognizeResult({
+    brand: 'Dell', model: 'XPS 13', sn: 'MEMTEST01',
+    brand_confidence: 0.9, sn_confidence: 0.9, lines: [], duplicate: { exists: false },
+    image_path: '/uploads/2026-09-18/smoke-shot.jpg', provider: 'mock',
+  });
+  await wait(250);
+  const memHTML = els.get('#main')?._innerHTML || '';
+  // 记忆优先于管理端默认值：这里默认值是 idle/第一个组织，记忆里是 repair/第二个组织
+  if (memOrg) assert(memHTML.includes(`value="${memOrg.id}" selected`), '所属组织按「上次填的」回填');
+  if (memSup) assert(memHTML.includes(`value="${memSup}" selected`), '供应商按「上次填的」回填');
+  if (memStatus) assert(memHTML.includes(`value="${memStatus.id}" selected`), '状态按「上次填的」回填');
+  assert(memHTML.includes('上次录入') || memHTML.includes('清除记忆'), '界面提示了"已按上次录入填好"并给了清除入口');
+  // 分类字段也要按记忆回填
+  els.get('#rCat').value = pcCat.id;
+  globalThis.renderMobileTracking();
+  await wait(120);
+  const memTrack = els.get('#rTracking')?.innerHTML || '';
+  assert(memTrack.includes('value="上次的那个人"'), '「使用人」按上次填的回填');
+  assert(memTrack.includes('value="7楼懂车帝"'), '「存放位置」按上次填的回填');
+
+  // ⚠️ 记忆里的值如果已经失效（组织被删、供应商改名），必须忽略，不能填一个不存在的值
+  globalThis.rememberMobileFill({
+    category_id: pcCat.id, org_id: 'no-such-org', supplier: '不存在的供应商', status: 'no-such-status',
+    fields: { screen_size: '99寸' },
+  });
+  globalThis.renderRecognizeResult({
+    brand: 'Dell', model: 'XPS 13', sn: 'MEMTEST02',
+    brand_confidence: 0.9, sn_confidence: 0.9, lines: [], duplicate: { exists: false },
+    image_path: '/uploads/2026-09-18/smoke-shot.jpg', provider: 'mock',
+  });
+  await wait(220);
+  const deadHTML = els.get('#main')?._innerHTML || '';
+  assert(!deadHTML.includes('value="no-such-org" selected'), '失效的组织记忆必须被忽略');
+  assert(!deadHTML.includes('value="不存在的供应商" selected'), '失效的供应商记忆必须被忽略');
+  assert(!deadHTML.includes('value="no-such-status" selected'), '失效的状态记忆必须被忽略');
+  // 失效时应该回落到管理端默认值（这里默认 status 是 idle）
+  if (idleForTest) assert(deadHTML.includes(`value="${idleForTest.id}" selected`), '记忆失效后回落到管理端默认值');
+
+  // 清除记忆：两段式确认（第一次点只是"预备"，第二次才真清）
+  globalThis.clearMobileMemoryConfirm();
+  assert(globalThis.mobileMemory().category_id === pcCat.id, '第一次点「清除记忆」不该真的清掉（防误触）');
+  globalThis.clearMobileMemoryConfirm();
+  assert(!globalThis.mobileMemory().category_id, '第二次点才真的清掉');
+  assert(Object.keys(globalThis.mobileMemory().fields || {}).length === 0, '分类字段的记忆也一起清掉');
 
   // 扫码核对 ≠ 识别入库：这是两条完全不同的流程
   globalThis.mobileState.scanMode = 'scan';
@@ -607,41 +911,67 @@ if (sideErr) {
   failures.push('sidebar');
 }
 
-/* ---------- 2h. Excel 对接页（含实时链接卡片） ---------- */
+/* ---------- 2h. Excel 页（按「你要做什么」组织的三张任务卡） ---------- */
 let excelErr = null;
 try {
   const excelTab = navItems.find((e) => e.dataset.view === 'excel');
-  assert(!!excelTab && typeof excelTab.onclick === 'function', '侧边栏含「Excel 对接」入口');
+  assert(!!excelTab && typeof excelTab.onclick === 'function', '侧边栏含 Excel 入口');
   await excelTab.onclick();
   await wait(900);
 
   const x = els.get('#content')?._innerHTML || '';
-  assert(x.includes('按分类分表'), 'Excel 页含「按分类分表」按钮');
-  assert(x.includes('实时数据链接'), 'Excel 页含「实时数据链接」卡片');
-  assert(x.includes('id="liveBase"'), '含取数地址下拉');
-  assert(x.includes('id="liveFmt"'), '含链接格式下拉');
-  assert(x.includes('全部分类（多表）'), 'Excel 页含「全部分类（多表）」入口');
-  assert(x.includes('落在不同的工作表'), '有「每个分类落在不同工作表」的说明');
-  assert(typeof globalThis.showMultiSheetGuide === 'function', '多工作表引导函数已暴露');
 
-  // 分区结构：导出 / 导入 / 实时链接，各一张卡片，顺序按使用频率
-  assert(x.includes('导出到 Excel'), '分区①：导出卡片');
-  assert(x.includes('从 Excel 导入'), '分区②：导入卡片');
-  assert(x.includes('实时数据链接'), '分区③：实时链接卡片（在上面的断言里也提过一次）');
-  const iExport = x.indexOf('导出到 Excel');
-  const iImport = x.indexOf('从 Excel 导入');
-  const iLive = x.indexOf('实时数据链接');
-  // 注意：不能用 indexOf('实时数据链接') 判位置 —— 导出卡片的 help 文案里也提过
-  // 「实时数据链接」，那会让顺序判断误报。用各卡片自己的标题锚点。
-  const iLiveCard = x.indexOf('Excel / WPS 实时数据链接');
-  assert(iExport >= 0 && iExport < iImport, '卡片顺序：导出 → 导入');
-  assert(iImport >= 0 && iLiveCard >= 0 && iImport < iLiveCard, '卡片顺序：导入 → 实时链接');
-  assert(iLive >= 0, '页面里提到了实时数据链接（标题或帮助说明）');
-  // 长说明收进 <details> 原生折叠，不再一屏铺开
-  assert((x.match(/<details/g) || []).length >= 1, '长说明收进 <details> 折叠区');
-  assert(x.includes('导入历史'), '导入历史表已渲染');
+  // ① 这一页必须按"做什么"组织，而不是按技术手段组织
+  assert(x.includes('导出一份 Excel 文件'), '任务①：导出（说人话的标题）');
+  assert(x.includes('把填好的表传回来'), '任务②：导入（说人话的标题）');
+  assert(x.includes('让 Excel 自己跟着更新'), '任务③：自动更新（说人话的标题）');
+  const iE = x.indexOf('导出一份 Excel 文件');
+  const iI = x.indexOf('把填好的表传回来');
+  const iL = x.indexOf('让 Excel 自己跟着更新');
+  assert(iE >= 0 && iE < iI && iI < iL, '三件事按使用顺序排列：导出 → 导入 → 自动更新');
 
-  // 按钮/标签文案精简：长说明收进「?」里，不再堆在按钮上
+  // ② 技术词必须从主流程里消失（这才是"通俗易懂"的判据）
+  for (const jargon of ['取数地址', '链接格式', '实时数据链接', '导航器', '外部数据属性', '多表链接', 'Power Query']) {
+    assert(!x.includes(jargon), `主界面不再出现技术词「${jargon}」`);
+  }
+
+  // ③ 导出选项仍在（功能没丢），且收进折叠区
+  assert(x.includes('id="expSplit"') && x.includes('id="expPhotos"') && x.includes('id="expHelp"'),
+    '导出卡片仍有 3 个开关：分表 / 照片 / 说明页');
+  assert(x.includes('btnBackfill'), '仍能「补缩略图」');
+  assert(typeof globalThis.doExportExcel === 'function', 'doExportExcel 已暴露');
+  assert(!x.includes('onclick="doExport('), '导出按钮走 doExportExcel，不直接调 doExport');
+
+  // ④ 导入：三步说清楚 + 会先给试算结果（老页面那个"默认勾着仅预览"的坑）
+  assert(x.includes('下载模板') && x.includes('上传填好的文件'), '导入卡片有「下载模板 / 上传」两个动作');
+  assert(x.includes('先给你看结果'), '导入前说明了会先给结果确认');
+  assert(x.includes('id="importFile"'), '文件选择框在');
+  assert(x.includes('id="impCreate"') && x.includes('id="impUpdate"'), '导入选项两个开关仍在');
+
+  // ⑤ 自动更新：三步 + 三选一地址 + 两个按"结果"命名的复制按钮
+  assert(x.includes('第 1 步') && x.includes('第 2 步') && x.includes('第 3 步'), '自动更新是清楚的三步');
+  assert(x.includes('这个 Excel 文件会在哪台电脑上用'), '第 1 步问的是人话（在哪台电脑上用）');
+  assert(x.includes('id="liveBase"'), '地址选项容器在');
+  assert(x.includes('xl-choice-btn'), '地址是三个可点的选项（不再是下拉框）');
+  assert(x.includes('推荐'), '给了一个推荐项');
+  assert(x.includes('全部设备放一张表') && x.includes('每个分类各一张工作表'),
+    '复制按钮按"结果"命名（一张表 / 每类一张）');
+  assert(x.includes('copyLiveLink'), '复制链接按钮在');
+  assert(x.includes('只读口令'), '用"只读口令"解释权限，不再提"令牌"');
+
+  // ⑥ 排查与进阶都收进折叠区，且 WPS 的坑仍写着
+  assert((x.match(/<details/g) || []).length >= 4, '长说明收进 <details> 折叠（至少 4 处）');
+  assert(x.includes('无法获取数据'), '保留了 WPS「无法获取数据」的排查入口');
+  assert(x.includes('=IMAGE('), '说明了让照片显示出来的办法');
+
+  // ⑦ 交互绑定：地址按钮、重置、帮助点
+  // ⚠️ 假 DOM 的 querySelectorAll 只认导航项，看不到 innerHTML 里的按钮，
+  //    所以这里对 HTML 字符串断言；真正的点击行为用下面 ⑪ 调函数来验。
+  const baseBtnCount = (x.match(/xl-choice-btn/g) || []).length;
+  assert(baseBtnCount >= 1, '地址选项按钮已渲染（' + baseBtnCount + ' 处）');
+  assert(x.includes('data-base="0"'), '地址按钮带 data-base 索引');
+  assert(typeof els.get('#btnResetLive').onclick === 'function', '「重置链接」已绑定');
+  assert((x.match(/class="help"/g) || []).length >= 3, 'Excel 页至少放了 3 个帮助点');
   assert(typeof globalThis.help === 'function', 'help 组件已暴露');
   const h = globalThis.help('这是一段比较长的说明文字，不该出现在按钮上');
   assert(h.includes('class="help"') && h.includes('role="button"'), 'help 渲染成可点的圆点');
@@ -649,64 +979,49 @@ try {
   assert(!/<button/i.test(h), 'help 不能是 <button>（HTML 不允许按钮套按钮）');
   assert(typeof globalThis.showHelpTip === 'function' && typeof globalThis.hideHelpTip === 'function', '浮层的显示/隐藏方法已暴露');
 
+  // ⑧ 老按钮上的长文案不许回来
   for (const long of ['按分类分表导出（带照片）', '导出全部（单表）', '不带照片', '为老照片补缩略图',
-    '先看看页面里有几张表', '先在浏览器里试一下', '修改资料 / 密码', '多工作表怎么配']) {
+    '先看看页面里有几张表', '先在浏览器里试一下', '多工作表怎么配']) {
     assert(!x.includes(long), `按钮文案已精简：不再出现「${long}」`);
   }
-  // 重构后：导出不再有「单表导出」平级按钮，改用「按分类分表」开关表达两种口径。
-  // 保留原意图 —— 页面必须仍能让用户看懂「分表 / 单表」这件事。
-  assert(x.includes('按分类分表'), '精简后仍能看懂分表口径（「按分类分表」开关）');
-  assert(x.includes('id="expSplit"') && x.includes('id="expPhotos"') && x.includes('id="expHelp"'),
-    '导出卡片有 3 个开关：分表 / 照片 / 说明页');
-  assert(typeof globalThis.doExportExcel === 'function', 'doExportExcel 已暴露（3 开关 → doExport）');
-  assert(typeof globalThis.bindExcelEvents === 'function' || typeof globalThis.renderExcel === 'function',
-    'Excel 页事件绑定函数存在');
-  assert(!x.includes('onclick="doExport(') , '导出按钮改走 doExportExcel，不再直接调 doExport');
-  assert((x.match(/class="help"/g) || []).length >= 3, 'Excel 页至少放了 3 个帮助点');
 
-  // 帮助点的样式必须在 CSS 里（否则点了没反应）
+  // ⑨ 分类明细列表（收在折叠区里）与两个兼容入口
+  const liveBox = els.get('#liveTable');
+  const lh = liveBox?.innerHTML || '';
+  assert(lh.includes('copyLiveLink') || lh.includes('复制链接'), '分类明细里含复制链接按钮');
+  assert(typeof globalThis.showLiveGuide === 'function' || typeof globalThis.showExcelGuide === 'function',
+    '配置说明入口存在');
+  assert(typeof globalThis.showMultiSheetGuide === 'function', '「多工作表」老入口仍兼容（合并到同一个说明页）');
+  assert(typeof globalThis.xlPreview === 'function', '预览数据按钮有独立函数（不再写内联表达式）');
+
+  // ⑩ 帮助点的样式必须在 CSS 里（否则点了没反应）
   const adminCss = fs.readFileSync(path.join(process.cwd(), 'public', 'assets', 'admin.css'), 'utf8');
-  for (const sel of ['.help {', '.help-tip {', '.help-tip.on']) {
+  for (const sel of ['.help {', '.help-tip {', '.help-tip.on', '.xl-choice-btn', '.xl-step', '.xl-calc']) {
     assert(adminCss.includes(sel), `CSS 里有 ${sel}`);
   }
 
-  const liveBox = els.get('#liveTable');
-  const lh = liveBox?.innerHTML || '';
-  assert(lh.includes('全部设备'), '实时链接表格已渲染「全部设备」行');
-  assert(lh.includes('copyLiveLink'), '含复制链接按钮');
-
-  const baseSel = els.get('#liveBase');
-  assert(typeof baseSel.onchange === 'function', '取数地址下拉已绑定 onchange');
-  assert(typeof els.get('#liveFmt').onchange === 'function', '链接格式下拉已绑定 onchange');
-  assert(typeof els.get('#btnLiveGuide').onclick === 'function', '「配置步骤」按钮已绑定');
-  assert(typeof els.get('#btnResetLive').onclick === 'function', '「重置链接」按钮已绑定');
-
-  // 切到 CSV 再切回网页表格，应都能渲染
-  els.get('#liveFmt').value = 'csv';
-  await els.get('#liveFmt').onchange();
+  // ⑪ 切换「在哪台电脑上用」：选第一个（本机）后，「当前选用」标签必须跟着变。
+  //    假 DOM 里 #liveBaseLabel 是个可读可写的替身元素 —— xlPickBase 会往它写 textContent，
+  //    写进去的必须是服务器给的那个地址的 label（本机那个 label 里带「本机」两个字）。
+  assert(x.includes('id="liveBaseLabel"'), '「当前选用」标签已渲染');
+  globalThis.xlPickBase(0);
   await wait(150);
-  assert((els.get('#liveTable').innerHTML || '').includes('全部设备'), '切到 CSV 格式后表格仍正常');
+  const after = els.get('#liveBaseLabel')?.textContent || '';
+  assert(after.includes('本机'), `选「就在这台电脑上用」后标签应变成本机地址，实得「${after}」`);
+  const lh2 = els.get('#liveTable')?.innerHTML || '';
+  assert(lh2.includes('copyLiveLink'), '切地址后分类明细列表也重新渲染了');
 
-  // 打开配置引导，内容里要有 WPS 说明
-  els.get('#btnLiveGuide').onclick();
+  // ⑫ 配置说明弹窗：合并成一个，内容里要有 Excel / WPS / 排查
+  globalThis.showExcelGuide();
   await wait(200);
   const modal = els.get('#modal')?._innerHTML || '';
-  assert(modal.includes('WPS'), '配置引导弹窗包含 WPS 说明');
-  assert(modal.includes('网页表格'), '配置引导弹窗说明网页表格格式');
-  closeModal();
-
-  // 多工作表引导
-  globalThis.showMultiSheetGuide();
-  await wait(200);
-  const m2 = els.get('#modal')?._innerHTML || '';
-  assert(m2.includes('每个分类落在不同工作表'), '多工作表引导弹窗已打开');
-  assert(m2.includes('逐个导入'), '多工作表引导含「逐个导入」兜底方案');
-  assert(m2.includes('多表链接') || m2.includes('复制'), '多工作表引导含复制按钮');
+  assert(modal.includes('Excel') && modal.includes('WPS'), '配置说明同时讲了 Excel 和 WPS');
+  assert(modal.includes('无法获取数据'), '配置说明里带着排查段落');
   closeModal();
 } catch (e) { excelErr = e; }
 
 if (excelErr) {
-  console.log('  \x1b[31m✘\x1b[0m Excel 对接页渲染失败：' + excelErr.message);
+  console.log('  \x1b[31m✘\x1b[0m Excel 页渲染失败：' + excelErr.message);
   console.log(excelErr.stack);
   failures.push('excel-page');
 }

@@ -34,6 +34,11 @@ export function orgFlatWithPath() {
   return flattenTree(orgList({ tree: true }));
 }
 
+/** 没有归属组织的设备数（资源管理器里的那个「未分配」文件夹） */
+export function orgUnassignedCount() {
+  return scalarP('SELECT COUNT(*) AS c FROM device WHERE deleted_at IS NULL AND org_id IS NULL', []);
+}
+
 /** 某组织及其所有下级的 id */
 export function orgWithDescendants(orgId) {
   if (!orgId) return [];
@@ -237,12 +242,19 @@ function normalizeFields(fields) {
   if (!Array.isArray(arr)) return [];
   return arr
     .filter((f) => f && f.key)
-    .map((f) => ({
-      key: String(f.key).slice(0, 40),
-      label: String(f.label || f.key).slice(0, 40),
-      type: ['text', 'number', 'date', 'select'].includes(f.type) ? f.type : 'text',
-      options: Array.isArray(f.options) ? f.options.map((o) => String(o).slice(0, 40)) : undefined,
-    }));
+    .map((f) => {
+      const out = {
+        key: String(f.key).slice(0, 40),
+        label: String(f.label || f.key).slice(0, 40),
+        type: ['text', 'number', 'date', 'select'].includes(f.type) ? f.type : 'text',
+        options: Array.isArray(f.options) ? f.options.map((o) => String(o).slice(0, 40)) : undefined,
+      };
+      // 手机/电脑录入时的默认值（可空）。下拉字段只有「值确实在选项里」才生效，
+      // 由前端判断 —— 这里只负责原样存下来，别把用户写的默认值悄悄丢掉。
+      const dv = f.default === undefined || f.default === null ? '' : String(f.default).slice(0, 40);
+      if (dv) out.default = dv;
+      return out;
+    });
 }
 
 /* ================================================================== *
@@ -413,6 +425,13 @@ export function orgPath(id) {
 }
 
 /**
+ * 布尔型查询参数归一化。
+ * 从 URL 来的永远是字符串（'1' / 'true'），从内部调用来的可能是真布尔值，
+ * 两边都得认 —— 只判 `=== '1'` 的话，传 true 就会静默失效。
+ */
+const flag = (v) => v === true || v === 1 || v === '1' || v === 'true';
+
+/**
  * 设备列表（分页 + 多条件筛选）
  */
 export function deviceList(q = {}) {
@@ -438,12 +457,25 @@ export function deviceList(q = {}) {
     params.push(...q.category_ids);
   }
   if (q.org_id) {
-    const ids = orgWithDescendants(q.org_id);
-    if (ids.length) {
-      where.push(`d.org_id IN (${ids.map(() => '?').join(',')})`);
-      params.push(...ids);
+    /*
+     * 资源管理器（树状浏览）要的是「这个文件夹里**直接**放着的设备」，
+     * 而列表页的筛选一直是「含下级」的语义。两种都要，所以用 org_direct 区分：
+     *   org_direct=1 → 只有 org_id 恰好等于这个组织的（文件夹的直接内容）
+     *   否则         → 这个组织连同所有下级的（方便「看这个部门一共有什么」）
+     */
+    if (flag(q.org_direct)) {
+      where.push('d.org_id = ?');
+      params.push(q.org_id);
+    } else {
+      const ids = orgWithDescendants(q.org_id);
+      if (ids.length) {
+        where.push(`d.org_id IN (${ids.map(() => '?').join(',')})`);
+        params.push(...ids);
+      }
     }
   }
+  // 「未分配组织」那个虚拟文件夹：org_id 是空的设备
+  if (flag(q.no_org)) where.push('d.org_id IS NULL');
   if (q.status) {
     const list = Array.isArray(q.status) ? q.status : String(q.status).split(',').filter(Boolean);
     if (list.length) {
@@ -1066,6 +1098,36 @@ export function deviceOptions() {
     icons: CATEGORY_ICONS,
     // 前端用它判断分类专属字段该写进设备列还是 extra
     column_tracking_keys: COLUMN_TRACKING_KEYS,
+    // 手机端拍照录入表单的默认选中项（可改，见 mobileDefaults）
+    mobile_defaults: mobileDefaults(),
+  };
+}
+
+/* ================================================================== *
+ * 手机端「拍照识别入库」的默认选中项
+ * ================================================================== */
+
+/**
+ * 手机录入表单里那几个下拉的默认值（设备分类 / 所属组织 / 供应商 / 状态）。
+ *
+ * 为什么要有：现场是一台接一台地录，同一批设备往往同部门、同供应商、同状态。
+ * 每录一台都要手点三四个下拉，几十台下来就是几十次纯粹浪费的操作。
+ * 配好默认值后，大多数情况直接按「保存入库」就行。
+ *
+ * ⚠️ 这里做**校验而不是照抄配置**：分类/组织可能被后来删掉，
+ *    配置里留着的死 id 必须忽略，否则手机端会 select 到一个不存在的选项，
+ *    界面上看起来就是「什么都没选」，而且保存时会把空值写进库。
+ */
+export function mobileDefaults() {
+  const s = getSetting('mobile', {}) || {};
+  const sys = getSetting('system', {}) || {};
+  const suppliers = Array.isArray(sys.suppliers) ? sys.suppliers.filter(Boolean) : [];
+  return {
+    category_id: categoryList().some((c) => c.id === s.category_id) ? s.category_id : null,
+    org_id: orgFlatWithPath().some((o) => o.id === s.org_id) ? s.org_id : null,
+    supplier: suppliers.includes(s.supplier) ? s.supplier : null,
+    // 状态默认「在用」（用户明确要求：以前默认「库存」，每次都要改一下）
+    status: DEVICE_STATUS.some((x) => x.id === s.status) ? s.status : 'in_use',
   };
 }
 

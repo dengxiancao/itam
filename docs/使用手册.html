@@ -61,7 +61,7 @@ tbody tr:hover { background: #f8fafc; }
 <body>
 <div class="wrap">
 <h1 id="it-资产管理系统-使用手册">IT 资产管理系统 · 使用手册<a class="anchor" href="#it-资产管理系统-使用手册">#</a></h1>
-<blockquote><p>版本 1.0 · 适用于管理端网页、移动端网页与 Excel 对接</p><p>如有疑问先看 <strong>第九章 常见问题</strong>，仍有问题请联系系统管理员。</p></blockquote>
+<blockquote><p>版本 1.0 · 适用于管理端网页、移动端网页与 Excel 表格</p><p>如有疑问先看 <strong>第九章 常见问题</strong>，仍有问题请联系系统管理员。</p></blockquote>
 <hr>
 <h2 id="目录">目录<a class="anchor" href="#目录">#</a></h2>
 <ol>
@@ -204,10 +204,16 @@ tbody tr:hover { background: #f8fafc; }
 <li><strong>资产二维码</strong>：手机移动端扫码即可查到这台设备，可直接打印贴到设备上</li>
 </ul>
 <h3 id="44-新增设备">4.4 新增设备<a class="anchor" href="#44-新增设备">#</a></h3>
-<p>点 <strong>＋ 新增设备</strong>，表单字段说明：</p>
+<p>点 <strong>＋ 新增设备</strong>。表单分三块，<strong>字段多少由「设备分类」决定</strong>：</p>
 <div class="tw"><table>
-<thead><tr><th>分组</th><th>字段</th><th>说明</th></tr></thead>
-<tbody><tr><td>必填</td><td><strong>设备分类</strong></td><td>决定资产编号前缀，以及下面出现的「专属字段」</td></tr><tr><td>必填</td><td><strong>资产编号</strong></td><td>留空按「分类前缀-年份-流水号」自动生成，如 <code>MON-2026-0001</code></td></tr><tr><td>设备</td><td>品牌 / 型号 / <strong>SN 序列号</strong></td><td>SN 全库唯一，重复会报错</td></tr><tr><td>归属</td><td>所属组织 / 状态 / 使用人 / 工号 / 电话 / 存放位置</td><td></td></tr><tr><td>网络</td><td>IP 地址 / MAC 地址 / 操作系统</td><td></td></tr><tr><td>配置</td><td>CPU / 内存 / 硬盘 / 屏幕尺寸</td><td></td></tr><tr><td>采购</td><td>采购日期 / 保修到期 / 采购金额 / 供应商 / 合同号</td><td>保修到期会进「保修预警」</td></tr><tr><td>其它</td><td>成色（A/B/C）/ 备注</td><td></td></tr><tr><td>专属字段</td><td>随分类变化</td><td>例如选「显示器」会出现「分辨率」「接口类型」</td></tr></tbody>
+<thead><tr><th>区块</th><th>内容</th></tr></thead>
+<tbody><tr><td><strong>① 核心字段（固定 7 个）</strong></td><td>资产编号、设备分类、品牌、型号、SN 序列号、所属组织、状态 —— 少一个就说不清&quot;这是台什么设备&quot;，所以永远显示</td></tr><tr><td><strong>② 专属字段</strong></td><td>⭐ <strong>跟着「设备分类 → 专属字段」的配置走</strong>：那个分类配了什么就在这里出现什么（含顺序、名称、是否下拉）。没配就只显示一句提示，告诉你去哪里加</td></tr><tr><td><strong>③ 其他字段（折叠）</strong></td><td>分类<strong>没</strong>点名的设备字段（使用人工号、电话、采购日期、保修到期、金额、合同号、成色、备注、IP、MAC、系统、CPU、内存、硬盘、屏幕尺寸…）收在最下面的折叠区里。<strong>不占地方，但仍是真输入框</strong>：已有数据能看能改，不会因为&quot;界面上没有&quot;而被清空</td></tr></tbody>
+</table></div>
+<p>举例：把「台式主机」的专属字段配成只有「使用人 / 存放位置」，那么新增台式主机时就只看到 核心 7 个 + 使用人 + 存放位置，其余全在折叠区里 —— 表单短、录入快，也不会漏掉历史数据。</p>
+<blockquote><p>💡 <strong>表单显示什么、导出 Excel 有哪些列，都由「设备分类 → 专属字段」这一处统一决定</strong></p><p>（详见<a href="#六excel-批量导入与导出">第六章</a>与<a href="#82-设备分类">8.2</a>）。</p><p>想让「保修到期」出现在表单上？把它加到该分类的专属字段里即可（key 输入框点一下有下拉提示）。</p></blockquote>
+<div class="tw"><table>
+<thead><tr><th>说明</th><th>内容</th></tr></thead>
+<tbody><tr><td>资产编号</td><td>留空按「分类前缀-年份-流水号」自动生成，如 <code>MON-2026-0001</code></td></tr><tr><td>SN 序列号</td><td>全库唯一，重复会报错</td></tr><tr><td>状态</td><td>默认「库存」；手机端录入默认「在用」</td></tr><tr><td>保修到期</td><td>填了会进仪表盘的「保修预警」</td></tr></tbody>
 </table></div>
 <h3 id="45-编辑与批量操作">4.5 编辑与批量操作<a class="anchor" href="#45-编辑与批量操作">#</a></h3>
 <p><strong>编辑单台</strong>：列表行尾点「编辑」，改完保存。所有改动都会记进流转记录。</p>
@@ -231,9 +237,41 @@ tbody tr:hover { background: #f8fafc; }
 <p>设备台账右上角有两个导出入口，<strong>分得很清楚</strong>：</p>
 <div class="tw"><table>
 <thead><tr><th>按钮</th><th>导出范围</th></tr></thead>
-<tbody><tr><td><strong>⬇ 全部导出</strong>（右上角）</td><td>⭐ <strong>全部设备</strong>，不受上方筛选条件影响</td></tr><tr><td><strong>批量操作 → ⬇ 导出所选</strong></td><td><strong>只导出勾选的设备</strong>，不限本页、跨页也认</td></tr><tr><td><strong>📑 Excel 对接</strong> 页的按钮</td><td>按<strong>当前筛选结果</strong>导出，可选分表 / 带照片</td></tr></tbody>
+<tbody><tr><td><strong>⬇ 全部导出</strong>（右上角）</td><td>⭐ <strong>全部设备</strong>，不受上方筛选条件影响</td></tr><tr><td><strong>批量操作 → ⬇ 导出所选</strong></td><td><strong>只导出勾选的设备</strong>，不限本页、跨页也认</td></tr><tr><td><strong>📑 Excel 表格</strong> 页的按钮</td><td>按<strong>当前筛选结果</strong>导出，可选分表 / 带照片</td></tr></tbody>
 </table></div>
-<blockquote><p>三者都是导出 .xlsx，都默认带上设备照片（图片嵌在单元格里）。</p><p>只想导出某个筛选范围（比如「财务部的显示器」）→ 去 <strong>Excel 对接</strong> 页点导出。</p><p>详见<a href="#六excel-批量导入与导出">第六章</a>。</p></blockquote>
+<blockquote><p>三者都是导出 .xlsx，都默认带上设备照片（图片嵌在单元格里）。</p><p>只想导出某个筛选范围（比如「财务部的显示器」）→ 去 <strong>Excel 表格</strong> 页点导出。</p><p>详见<a href="#六excel-批量导入与导出">第六章</a>。</p></blockquote>
+<h3 id="48-资源管理器像-windows-一样按组织架构找设备">4.8 资源管理器：像 Windows 一样按组织架构找设备<a class="anchor" href="#48-资源管理器像-windows-一样按组织架构找设备">#</a></h3>
+<p>左侧导航 <strong>资源管理器</strong> —— 操作方式和 <strong>Windows 资源管理器一模一样</strong>：左边是文件夹树，右边是内容区， <strong>文件夹名就是组织机构名称</strong>，子文件夹也像资源管理器那样直接排在内容区里。</p>
+<pre><code>┌── 组织架构 ────────┬──────────────────────────────────────────────────────────────┐
+│ ▸ 全部设备     56  │ [←][→][↑][⟳]  📁 全部设备 › 总公司 › 信息技术部      [🔍搜索] ▤ ▦ │
+│ ▾ 总公司       23  ├──────────────────────────────────────────────────────────────┤
+│   ▾ 信息技术部  12  │ 名称                         资产编号      状态  使用人  修改日期  │
+│       运维组     5  │ 📁 运维组 (2 个子文件夹)                          9 项        │
+│       研发组     7  │ 📁 研发组                                        7 项        │
+│   ▸ 行政人事部   4  │ 💻 联想 ThinkCentre M720     PC-2026-0017 在用  李娜   09-20     │
+│ ▸ 华东分公司    18  │ 🖥 戴尔 U2723QE              MON-2026-0003 闲置  —     09-19     │
+│ ⚠ 未分配组织     3  │ 💻 联想 ThinkPad X1          NB-2026-0005 在用  王强   09-18     │
+├─────────────────────┼──────────────────────────────────────────────────────────────┤
+│                     │ 4 个项目　·　2 个文件夹　·　2 台设备      ☑ 包含子文件夹        │
+└─────────────────────┴──────────────────────────────────────────────────────────────┘</code></pre>
+<p><strong>操作方式（和资源管理器逐条对应）</strong></p>
+<div class="tw"><table>
+<thead><tr><th>资源管理器里怎么做</th><th>这里就怎么做</th></tr></thead>
+<tbody><tr><td>点文件夹</td><td>点左边树，或<strong>双击内容区里的文件夹</strong></td></tr><tr><td>上一级 / 后退 / 前进</td><td>工具条的 <strong>↑ / ← / →</strong>；键盘 <strong>Backspace / Alt+← / Alt+→</strong></td></tr><tr><td>看当前在哪</td><td><strong>地址栏</strong>（面包屑），点任一级跳过去；点地址栏空白处可以<strong>直接输路径</strong>（如 <code>总公司\信息技术部\运维组</code>）</td></tr><tr><td>选中一个</td><td>单击那一行</td></tr><tr><td>加选 / 连选 / 全选</td><td><strong>Ctrl+单击</strong> 加选 · <strong>Shift+单击</strong> 连选 · <strong>Ctrl+A</strong> 全选 · 点空白处取消</td></tr><tr><td>打开</td><td><strong>双击</strong>（文件夹=进入，设备=打开详情）；键盘 <strong>Enter</strong></td></tr><tr><td>右键</td><td>设备、文件夹、空白处各有自己的右键菜单</td></tr><tr><td>重命名文件夹</td><td>选中后按 <strong>F2</strong>，或右键 →「重命名」</td></tr><tr><td>删除</td><td>选中后按 <strong>Delete</strong>，或右键 →「删除」（设备进回收站，可恢复）</td></tr><tr><td>刷新</td><td><strong>F5</strong>，或工具条的 ⟳</td></tr><tr><td>按某列排序</td><td>点<strong>列头</strong>，再点一次反向（▲▼）</td></tr><tr><td>搜索</td><td>右上角搜索框，<strong>打字即搜</strong>（只在当前文件夹及其子文件夹里找）</td></tr><tr><td>新建文件夹</td><td>空白处右键 →「新建文件夹」，或文件夹上右键 →「新建子文件夹」</td></tr><tr><td>详细信息 / 大图标</td><td>工具条最右两个按钮</td></tr><tr><td>拖动移动</td><td>⭐ <strong>把设备拖到左边文件夹、或拖到内容区里的子文件夹上</strong> = 改归属；拖到「未分配组织」= 清空归属</td></tr></tbody>
+</table></div>
+<p><strong>快捷键一览</strong>（和资源管理器一致）</p>
+<p><code>Enter</code> 打开 · <code>F2</code> 重命名 · <code>Delete</code> 删除 · <code>F5</code> 刷新 · <code>Backspace</code> 向上一级 · <code>Alt+←/→</code> 后退/前进 · <code>↑↓</code> 移动选择 · <code>Home/End</code> 首尾 · <code>Ctrl+A</code> 全选</p>
+<p><strong>「包含子文件夹」开关</strong></p>
+<p>默认<strong>关</strong>（和资源管理器一样：文件夹只显示自己装的东西）。勾上后，右边会把所有下级文件夹里的设备一起列出来， 状态栏会显示「包含子文件夹」，同时<strong>左边每个文件夹上的数字也跟着变成含下级的总数</strong>—— 两边永远同一口径，不会出现&quot;文件夹写着 12 台、点进去只有 3 台&quot;。</p>
+<p><strong>几个设计上的讲究</strong></p>
+<ul>
+<li><strong>文件夹上的数字 = 点进去看到的条数</strong>，永远一致（这条有专门的自动化测试钉住）。</li>
+<li><strong>拖动是安全的</strong>：只改「归属组织」这一个字段，并写进每台设备的<strong>流转记录</strong>（谁、什么时候、从哪挪到哪），可追溯。</li>
+<li><strong>没有分页</strong>：一个文件夹就一屏滚到底。超过 500 台时状态栏会提示，用搜索缩小范围。</li>
+<li>这里和设备台账页看的是<strong>同一份数据</strong>，只是两种看法。</li>
+<li>窄屏（手机打开电脑版）会自动变成上下布局：树在上面限高可滚，内容区在下面。</li>
+</ul>
+<blockquote><p>小技巧：你现在有 <code>8-C</code>、<code>12-A</code>~<code>12-D</code> 几个组织挂在<strong>顶层</strong>。如果它们其实是某个公司下面的楼栋/区域，</p><p>到 <strong>组织架构</strong> 页把「上级组织」改一下，资源管理器里就自动变成嵌套结构。</p></blockquote>
 <hr>
 <h2 id="五手机端拍照识别入库">五、手机端：拍照识别入库<a class="anchor" href="#五手机端拍照识别入库">#</a></h2>
 <p>这是本系统最省事的功能：<strong>对着设备铭牌拍一张照，自动识别出品牌、型号、SN</strong>，核对后一键入库。</p>
@@ -291,19 +329,68 @@ tbody tr:hover { background: #f8fafc; }
 <li>补充信息：</li>
 </ol>
 <ul>
-<li><strong>设备分类</strong>（有识别提示会自动选好）</li>
-<li>⭐ <strong>分类专属字段</strong>：选好分类后会自动出现这个分类特有的字段。例如选「显示器」会多出 <strong>屏幕尺寸（24寸 / 27寸 下拉）</strong>、<strong>分辨率</strong>、<strong>接口类型</strong>；选「笔记本电脑」会出现 CPU / 内存 / 硬盘 / 屏幕尺寸等</li>
-<li>所属组织、使用人、存放位置、<strong>供应商</strong>、状态</li>
+<li><strong>设备分类</strong>（有识别提示会自动选好；识别猜不出来时用你配的默认分类）</li>
+<li>所属组织</li>
+<li>⭐ <strong>分类专属字段</strong>：选好分类后自动出现这个分类配置的字段。<strong>使用人、存放位置</strong>就在这里</li>
+</ul>
+<p>（出厂默认每个分类都带），此外还有分类特有的：选「显示器」会多出 <strong>屏幕尺寸（24寸 / 27寸 下拉）</strong>、 <strong>分辨率</strong>、<strong>接口类型</strong>；选「笔记本电脑」会出现 CPU / 内存 / 硬盘 / 屏幕尺寸等</p>
+<ul>
+<li><strong>供应商</strong>、状态（默认「在用」）</li>
 </ul>
 <ol>
 <li>点 <strong>💾 保存入库</strong></li>
 </ol>
+<blockquote><p>⚡ <strong>想让这些下拉一打开就是你要的选项？</strong> 下面两条一起用，基本就不用再手点了。</p></blockquote>
+<h4 id="自动记住上次填的推荐默认就开着">自动记住上次填的（推荐，默认就开着）<a class="anchor" href="#自动记住上次填的推荐默认就开着">#</a></h4>
+<p><strong>补充信息里的内容会被自动记住</strong>：保存入库成功后，下次再录设备，表单会<strong>直接按上次填好的带出来</strong> （设备分类、所属组织、供应商、状态，以及该分类的所有字段，比如使用人 / 存放位置 / CPU / 屏幕尺寸）。</p>
+<p>所以录一批同部门的机器时，通常只需要改 SN 和型号，剩下的直接按「保存入库」。</p>
+<div class="tw"><table>
+<thead><tr><th>想做什么</th><th>怎么做</th></tr></thead>
+<tbody><tr><td>用上次那套</td><td>什么都不用做，打开就是</td></tr><tr><td>改一项</td><td>直接在下拉里改（改完保存，记忆就更新成新的了）</td></tr><tr><td>某项这次不想填</td><td>清空它再保存（<strong>清空也会被记住</strong>，下次不会再冒出来）</td></tr><tr><td>整批换掉、从空白开始</td><td>点「补充信息」右上角的 <strong>「清除记忆」</strong>（要点两次确认，防误触）</td></tr></tbody>
+</table></div>
+<blockquote><p>🔒 记忆存在<strong>手机本地</strong>，不上传服务器：多人共用一个账号时互不干扰；换手机或清了浏览器数据就没了</p><p>（那种情况会自动回到下面的「预设默认值」）。</p></blockquote>
+<blockquote><p>⚠️ 记忆里的值会<strong>再校验一遍</strong>：如果某个组织被删了、供应商改名了、下拉选项调整了，</p><p>失效的旧值会被忽略并回落到默认值，不会出现&quot;看着填了其实没填&quot;。</p></blockquote>
+<h4 id="预设默认值第一次用或清掉记忆后的兜底">预设默认值（第一次用、或清掉记忆后的兜底）<a class="anchor" href="#预设默认值第一次用或清掉记忆后的兜底">#</a></h4>
+<p>现场是一台接一台地录，同一批设备往往<strong>同部门、同供应商、同状态</strong>。 把默认值配好，之后就按「保存入库」，不用每次点那些下拉。</p>
+<p><strong>全局默认值</strong>：管理端 → <strong>系统设置 → 手机录入默认值</strong></p>
+<div class="tw"><table>
+<thead><tr><th>可以预设</th><th>说明</th></tr></thead>
+<tbody><tr><td>默认设备分类</td><td>识别能猜出来时<strong>以识别为准</strong>；猜不出来才用这里的默认值</td></tr><tr><td>默认所属组织</td><td>常见情况选一个部门，之后不用再点</td></tr><tr><td>默认供应商</td><td>如「易点云」</td></tr><tr><td>默认状态</td><td>默认「在用」</td></tr></tbody>
+</table></div>
+<p><strong>分类字段的默认值</strong>：管理端 → <strong>设备分类 → 编辑 → 专属字段</strong></p>
+<p>每一行最后多了一个 <strong>「默认值」</strong> 输入框：</p>
+<div class="tw"><table>
+<thead><tr><th>字段类型</th><th>默认值怎么写</th></tr></thead>
+<tbody><tr><td>下拉选项（如屏幕尺寸）</td><td>填<strong>选项之一</strong>（如 <code>27寸</code>）。填了不在选项里的值会被忽略，避免选到不存在的项</td></tr><tr><td>文本 / 数字 / 日期</td><td>直接填要预填的内容（如 <code>i5-13500</code>）</td></tr></tbody>
+</table></div>
+<p>留空 = 不预设。配好后：</p>
+<ul>
+<li>手机上选到该分类时，这个字段<strong>已经按默认值选好/填好</strong>（仍然可以随时改）</li>
+<li>电脑端<strong>新增</strong>设备时同样预填；<strong>编辑已有设备</strong>时不会用默认值覆盖已存的值</li>
+</ul>
+<blockquote><p>💡 <strong>使用人 / 存放位置 想改名、想换成下拉、或者某个分类根本不想要？</strong></p><p>同样在 <strong>设备分类 → 编辑 → 专属字段</strong>：改「显示名」只影响界面（如把「使用人」改成「领用人」），</p><p>删掉整行则那个分类的录入界面就不再出现它。详见<a href="#八组织架构与设备分类">第八章 8.2</a>。</p></blockquote>
 <blockquote><p>🔁 <strong>识别不满意想重拍？</strong> 底部有 <strong>重拍</strong> 按钮，点一下<strong>直接回到相机</strong>（不用回首页再点一次「拍照识别入库」）。</p><p>拍照预览页上的「重拍」同理。</p></blockquote>
 <h4 id="为什么识别会更准了">为什么识别会更准了<a class="anchor" href="#为什么识别会更准了">#</a></h4>
 <div class="tw"><table>
 <thead><tr><th>改进</th><th>说明</th></tr></thead>
-<tbody><tr><td><strong>图像分辨率 1600 → 2200px</strong></td><td>铭牌上的序列号只占几十个像素，多给点像素明显更准</td></tr><tr><td><strong>送识别前先做灰度 + 对比度拉伸</strong></td><td>手机拍铭牌常偏灰、反光，拉伸后字和底分得更开（不动归档的原图）</td></tr><tr><td><strong>提示词明确要求逐字符确认易混字符</strong></td><td>明确告诉模型 <code>1/L/I</code>、<code>0/O/Q</code>、<code>8/B</code>、<code>5/S</code>、<code>2/Z</code>、<code>H/K</code> 要分清，且不许「猜一个合理的」</td></tr><tr><td><strong>同型号编号规律兜底</strong></td><td>同型号机器的编号长得极像（联想 ThinkCentre 全是 <code>YLX</code> 开头 8 位），拿档案一比就能把看错的字符纠回来</td></tr><tr><td><strong>只保留取景框内的画面</strong></td><td>见下</td></tr></tbody>
+<tbody><tr><td><strong>图像分辨率 1600 → 2200px</strong></td><td>铭牌上的序列号只占几十个像素，多给点像素明显更准</td></tr><tr><td><strong>送识别前先做灰度 + 对比度拉伸</strong></td><td>手机拍铭牌常偏灰、反光，拉伸后字和底分得更开（不动归档的原图）</td></tr><tr><td><strong>提示词明确要求逐字符确认易混字符</strong></td><td>明确告诉模型 <code>1/L/I</code>、<code>0/O/Q</code>、<code>8/B</code>、<code>5/S</code>、<code>2/Z</code>、<code>H/K</code> 要分清，且不许「猜一个合理的」</td></tr><tr><td><strong>同型号编号规律兜底</strong></td><td>同型号机器的编号长得极像（联想 ThinkCentre 全是 <code>YLX</code> 开头 8 位），拿档案一比就能把看错的字符纠回来</td></tr><tr><td><strong>倒置 / 横放 / 拍歪也能认</strong></td><td>见下</td></tr><tr><td><strong>只保留取景框内的画面</strong></td><td>见下</td></tr></tbody>
 </table></div>
+<h4 id="-铭牌倒着拍也能认不用把标签摆正">🧭 铭牌倒着拍也能认（不用把标签摆正）<a class="anchor" href="#-铭牌倒着拍也能认不用把标签摆正">#</a></h4>
+<p>以前有个不现实的要求：<strong>标签必须正面朝上放进取景框</strong>，一旦倒置、横放或拍歪就识别不出来。 可笔记本底部的铭牌相对取景方向本来就是反的，人还得扭着手机去对 —— 现在不用管方向了：</p>
+<ul>
+<li>程序先看画面的<strong>文字是横排还是竖排</strong>（靠「墨量投影」的起伏判断），再按</li>
+</ul>
+<p><strong>0° → 90° → 270° → 180°</strong> 的顺序轮着试，<strong>哪一趟读出内容就停</strong>。</p>
+<ul>
+<li>所以正常朝上的照片<strong>第一趟就命中</strong>，不会多花时间、也不会多调一次识别服务。</li>
+<li>只有第一趟什么都没读出来时才继续换角度，最坏试满 4 个方向。</li>
+<li>一旦确实转了角度才读出，结果上方会写一行「照片是转过来的，已自动旋转 N° 后识别」，</li>
+</ul>
+<p>不会让你以为系统认错了字。</p>
+<ul>
+<li>重试用的都是<strong>同一张原图</strong>的旋转副本，<strong>不会重复归档</strong>；最终存的照片始终是你按下快门的那一张。</li>
+</ul>
+<blockquote><p>提示词也同步改了：现在明确告诉识别模型「照片可能是倒的、斜的，先在心里摆正再逐字识别，</p><p>不要因为字是倒的就判断没有文字」。</p></blockquote>
 <h4 id="-只保留取景框内的画面省空间">📐 只保留取景框内的画面（省空间）<a class="anchor" href="#-只保留取景框内的画面省空间">#</a></h4>
 <p>拍照时<strong>只截取取景框里的那一块</strong>，框外的背景全部丢掉：</p>
 <div class="tw"><table>
@@ -315,7 +402,7 @@ tbody tr:hover { background: #f8fafc; }
 <li><strong>省空间</strong>：归档的原图从一两 MB 降到两三百 KB，服务器磁盘和手机存储都省</li>
 <li><strong>识别更准</strong>：同样的像素预算集中在铭牌上，字符更清楚</li>
 </ol>
-<blockquote><p>📌 <strong>怎么保证不会把字裁掉</strong>：</p><p>- 取景框四周额外留了 <strong>15% 余量</strong>，铭牌稍微出去一点也能带上</p><p>- 拍完的<strong>预览页显示的就是裁好的那张图</strong>——如果发现铭牌被切了，当场点「重拍」就行</p><p>- 相机顶部提示也改成了「把铭牌放进框内（只保留框里的画面，请让字完整入框）」</p></blockquote>
+<blockquote><p>📌 <strong>怎么保证不会把字裁掉</strong>：</p><p>- 取景框四周额外留了 <strong>15% 余量</strong>，铭牌稍微出去一点也能带上</p><p>- 拍完的<strong>预览页显示的就是裁好的那张图</strong>——如果发现铭牌被切了，当场点「重拍」就行</p><p>- 相机顶部提示也改成了「把铭牌放进框内（只保留框里的画面，字要完整入框；倒着 / 斜着也能认）」</p></blockquote>
 <blockquote><p>用 <strong>🖼️ 从相册选图</strong> 时<strong>不裁</strong>——你选的那张图本身就是你要的，按屏幕比例硬裁反而会切掉铭牌。</p></blockquote>
 <p>保存成功后提示「已入库：资产编号」，设备出现在台账里。</p>
 <blockquote><p>⚠️ 如果 SN 已存在，会提示冲突，不会重复建两条记录。此时可以改用「扫码核对」去查那台设备。</p></blockquote>
@@ -435,10 +522,10 @@ tbody tr:hover { background: #f8fafc; }
 </table></div>
 <hr>
 <h2 id="六excel-批量导入与导出">六、Excel 批量导入与导出<a class="anchor" href="#六excel-批量导入与导出">#</a></h2>
-<p>左侧 <strong>📑 Excel 对接</strong>。</p>
+<p>左侧 <strong>📑 Excel 表格</strong>。</p>
 <h3 id="61-导出设备台账一次性快照">6.1 导出设备台账（一次性快照）<a class="anchor" href="#61-导出设备台账一次性快照">#</a></h3>
 <blockquote><p>💡 <strong>界面上的「?」小圆点</strong>：鼠标悬停或点一下，会弹出这个设置/按钮的完整说明。</p><p>长解释都收在里面了，所以按钮上只留几个字——看不明白就点那个「?」。</p></blockquote>
-<p>在左侧 <strong>📑 Excel 对接</strong> 页，或直接在设备台账页点「⬇ 导出」：</p>
+<p>在左侧 <strong>📑 Excel 表格</strong> 页，或直接在设备台账页点「⬇ 导出」：</p>
 <div class="tw"><table>
 <thead><tr><th>按钮</th><th>说明</th></tr></thead>
 <tbody><tr><td><strong>按分类分表</strong></td><td>⭐ 主机、显示器、笔记本… <strong>各自一个工作表</strong>，另附一张「汇总」页（数量/占比/资产总值/对应表名）</td></tr><tr><td><strong>⬇ 导出全部（单表）</strong></td><td>所有设备放在一张「设备台账」表里</td></tr><tr><td><strong>🚫 不导出照片</strong></td><td>表格更小（比如只想看数据、或设备很多）</td></tr><tr><td><strong>不含说明页</strong></td><td>只导数据表，文件更小</td></tr><tr><td>设备台账页的「⬇ 导出」</td><td>只导出<strong>当前筛选结果</strong></td></tr></tbody>
@@ -460,7 +547,7 @@ tbody tr:hover { background: #f8fafc; }
 <blockquote><p>💡 行高会自动撑大让图放得下。如果设备很多导致文件偏大，点 <strong>不含照片</strong> 即可。</p></blockquote>
 <h4 id="导出的文件太大-下载很慢">导出的文件太大 / 下载很慢？<a class="anchor" href="#导出的文件太大-下载很慢">#</a></h4>
 <p>早期录入的设备（缩略图功能上线之前）只有一张 1600px 的大图，每张约 150 KB，几十台就是好几 MB。</p>
-<p><strong>Excel 对接</strong> 页有一个 <strong>补缩略图</strong> 按钮：点一下，浏览器会批量把这些老照片缩成 320px 小图回传， 之后导出的体积能降到<strong>十分之一</strong>左右（30 台从 4.5 MB → 约 0.6 MB），下载也快得多。</p>
+<p><strong>Excel 表格</strong> 页有一个 <strong>补缩略图</strong> 按钮：点一下，浏览器会批量把这些老照片缩成 320px 小图回传， 之后导出的体积能降到<strong>十分之一</strong>左右（30 台从 4.5 MB → 约 0.6 MB），下载也快得多。</p>
 <blockquote><p>新拍的照片本来就自带缩略图，不用管这个按钮。</p></blockquote>
 <blockquote><p>只导出了链接没图？说明那台设备的照片文件超过了 400 KB 的嵌入上限（没有缩略图的旧设备会这样），</p><p>链接照样可用；点上面的「补缩略图」就能让它们也显示成图片。</p></blockquote>
 <h4 id="快照-vs-实时链接照片怎么选">快照 vs 实时链接：照片怎么选<a class="anchor" href="#快照-vs-实时链接照片怎么选">#</a></h4>
@@ -469,73 +556,72 @@ tbody tr:hover { background: #f8fafc; }
 <thead><tr><th>你的需求</th><th>用哪个</th><th>Excel 里的照片长什么样</th></tr></thead>
 <tbody><tr><td>表格里<strong>直接看到图</strong>，不介意手动更新</td><td><strong>按分类分表</strong></td><td>图片嵌在单元格里</td></tr><tr><td>数据<strong>自动更新</strong>，照片点开看</td><td><strong>🔄 实时数据链接</strong></td><td>「打开照片」超链接，点一下浏览器打开</td></tr><tr><td><strong>两个都要</strong></td><td>实时链接 + 自己加一列公式</td><td>加 <code>=IMAGE(照片链接单元格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图会跟着变</td></tr></tbody>
 </table></div>
-<p><strong>Excel 对接</strong> 页上有一张对照表，随时可以看。</p>
+<p><strong>Excel 表格</strong> 页上有一张对照表，随时可以看。</p>
 <blockquote><p>⚠️ 导出的是<strong>快照</strong>，导完就固定了。想让数据自动更新，看下一节。</p></blockquote>
-<h4 id="每个分类的表只带自己的字段">每个分类的表<strong>只带自己的字段</strong><a class="anchor" href="#每个分类的表只带自己的字段">#</a></h4>
-<p>分表导出不是简单复制一份同样的表头，而是<strong>按每个分类在「设备分类」里配置的专属字段出列</strong>：</p>
+<h4 id="每个分类的表只带自己的字段列数由设备分类说了算">每个分类的表<strong>只带自己的字段</strong>（列数由「设备分类」说了算）<a class="anchor" href="#每个分类的表只带自己的字段列数由设备分类说了算">#</a></h4>
+<p>导出不是把所有字段都铺上去，而是<strong>按每个分类在「设备分类 → 专属字段」里的配置出列</strong>：</p>
 <div class="tw"><table>
-<thead><tr><th>通用列（所有分类都有）</th><th>资产编号、设备分类、品牌、型号、SN 序列号、所属组织、状态、使用人、使用人工号、使用人电话、存放位置、采购日期、保修到期、采购金额、供应商、合同号、成色、备注</th></tr></thead>
-<tbody><tr><td>硬件规格列（<strong>由分类专属字段决定</strong>）</td><td>IP 地址、MAC 地址、操作系统、CPU、内存、硬盘、屏幕尺寸</td></tr><tr><td>分类自定义列</td><td>分辨率、接口类型、打印类型、端口数、机柜位、IMEI、手机号…</td></tr></tbody>
+<thead><tr><th>列</th><th>内容</th></tr></thead>
+<tbody><tr><td><strong>核心列（固定 7 列，任何分类都有）</strong></td><td>资产编号、设备分类、品牌、型号、SN 序列号、所属组织、状态</td></tr><tr><td><strong>其余列</strong></td><td><strong>分类里配了什么就出什么</strong>：使用人 / 存放位置 / 采购日期 / 保修到期 / 采购金额 / 供应商 / 合同号 / 成色 / 备注 / CPU / 内存 / 硬盘 / 操作系统 / IP / MAC / 屏幕尺寸，以及分类自定义列（分辨率、接口类型、打印类型、端口数、机柜位、IMEI…）</td></tr><tr><td>照片列</td><td>固定追加在最后（照片 / 照片链接 / 原图链接）</td></tr></tbody>
 </table></div>
-<p>举例（按出厂默认配置）：</p>
+<p>举例：<strong>「台式主机」只配了「使用人 / 存放位置」→ 那张表就是 9 列</strong>（7 核心 + 2）， 不会再有 CPU、内存、硬盘、使用人工号、采购日期这些没配的列。</p>
 <div class="tw"><table>
-<thead><tr><th>工作表</th><th>除了通用列，还会有的列</th><th>不会出现的列</th></tr></thead>
-<tbody><tr><td><code>台式主机</code></td><td>CPU、内存、硬盘、操作系统、IP 地址、MAC 地址</td><td>屏幕尺寸、分辨率、打印类型、IMEI…</td></tr><tr><td><code>显示器</code></td><td><strong>屏幕尺寸、分辨率、接口类型</strong></td><td>CPU、内存、硬盘、操作系统、IP 地址、MAC 地址…</td></tr><tr><td><code>打印机</code></td><td>IP 地址、打印类型</td><td>CPU、内存、屏幕尺寸…</td></tr></tbody>
+<thead><tr><th>分类配置</th><th>导出列数</th></tr></thead>
+<tbody><tr><td>只配「使用人、存放位置」</td><td><strong>9 列</strong></td></tr><tr><td>加配「CPU、内存、硬盘、操作系统」</td><td>13 列</td></tr><tr><td>显示器配「使用人、存放位置、屏幕尺寸、分辨率、接口类型」</td><td>12 列</td></tr></tbody>
 </table></div>
-<blockquote><p>💡 想让某个分类多一列？去 <strong>设备分类 → 编辑</strong> 的「专属字段」里加上去，导出/实时链接里就会自动出现。</p><p>字段的 <code>key</code> 若是 <code>cpu</code>、<code>memory</code>、<code>disk</code>、<code>os_name</code>、<code>ip_address</code>、<code>mac_address</code>、<code>screen_size</code>，</p><p>会写进设备表对应列；其它 <code>key</code>（如 <code>resolution</code>）存在扩展字段里，导出时同样成列。</p></blockquote>
+<blockquote><p>💡 <strong>想让某个分类多导一列？</strong> 去 <strong>设备分类 → 编辑 → 专属字段</strong> 加一行就出现了（key 输入框点一下有下拉提示）。</p><p>反过来，不想要的列就在那里删掉 —— <strong>表单上显示什么、导出有哪些列，都由这一处统一决定</strong>。</p></blockquote>
+<blockquote><p>📌 单表导出（不拆工作表）也一样：列按<strong>这批数据里真正出现的分类</strong>取，只导显示器就不会带上 CPU。</p></blockquote>
 <blockquote><p>⚠️ 导出的是<strong>快照</strong>，导完就固定了。想让数据自动更新，看下一节。</p></blockquote>
-<h3 id="62-实时数据链接让-excel-wps-自动刷新推荐">6.2 🔄 实时数据链接：让 Excel / WPS 自动刷新（推荐）<a class="anchor" href="#62-实时数据链接让-excel-wps-自动刷新推荐">#</a></h3>
-<p><strong>痛点</strong>：每次都要重新导出一遍很麻烦。</p>
-<p><strong>解法</strong>：把表格软件接成系统的<strong>数据源</strong>，之后打开文件或点「刷新」就能拉到最新台账，<strong>再也不用导出</strong>。</p>
-<h4 id="先选对取数地址和链接格式">先选对「取数地址」和「链接格式」<a class="anchor" href="#先选对取数地址和链接格式">#</a></h4>
-<p><strong>Excel 对接</strong> 页的实时链接卡片上有两个下拉：</p>
+<blockquote><p>📄 <strong>导入模板是另一回事</strong>：模板是给你填的表，所以它仍然把<strong>所有可填的字段</strong>都列出来（列更全），</p><p>填哪些算哪些。导出才做裁剪。</p></blockquote>
+<h3 id="62-让-excel-自己跟着更新配一次以后一直有效">6.2 🔄 让 Excel 自己跟着更新（配一次，以后一直有效）<a class="anchor" href="#62-让-excel-自己跟着更新配一次以后一直有效">#</a></h3>
+<p><strong>痛点</strong>：每次都要重新导出很麻烦。</p>
+<p><strong>解法</strong>：把台账接成 Excel 的<strong>数据源</strong>，之后<strong>打开文件就是最新数据</strong>，不用再导出。 在 <strong>Excel 表格</strong> 页第 ③ 张卡（「让 Excel 自己跟着更新」）里，就三步：</p>
+<h4 id="第-1-步这个-excel-文件会在哪台电脑上用">第 1 步：这个 Excel 文件会在哪台电脑上用？<a class="anchor" href="#第-1-步这个-excel-文件会在哪台电脑上用">#</a></h4>
+<p>点一个就行，系统已经帮你选好了推荐项（打了「推荐」标签那个）：</p>
 <div class="tw"><table>
-<thead><tr><th>下拉</th><th>怎么选</th></tr></thead>
-<tbody><tr><td><strong>取数地址</strong></td><td>表格软件和服务器在<strong>同一台电脑</strong> → 选「本机」最快；在<strong>另一台电脑</strong> → 选「局域网」&lt;br&gt;⚠️ <strong>别用「当前访问地址」里的公网 https 链接</strong>（自签证书 + 隧道认证页会导致取不到数据）</td></tr><tr><td><strong>链接格式</strong></td><td>⭐ <strong>WPS 用户必须选「网页表格 · WPS / Excel 通用」</strong>&lt;br&gt;Excel 用户可选「CSV」，数字/日期会更规整</td></tr></tbody>
+<thead><tr><th>选项</th><th>什么时候选</th></tr></thead>
+<tbody><tr><td>就在这台电脑上用</td><td>Excel 和本系统开在<strong>同一台电脑</strong>上（最快）</td></tr><tr><td><strong>在办公室其他电脑上用</strong> ⭐推荐</td><td>文件会在办公室<strong>别的电脑</strong>上打开（大多数情况选这个）</td></tr><tr><td>在外网 / 家里用</td><td>电脑不在公司、得走公网访问</td></tr></tbody>
 </table></div>
-<blockquote><p>📌 <strong>WPS 的「自网站」只认网页里的 <code>&lt;table&gt;</code> 表格，不认 CSV</strong>——直接粘 CSV 链接会报</p><p><strong>「无法获取数据，请确认网络链接是否正常或输入网址是否正确」</strong>。</p><p>这是 WPS 的机制问题，不是链接坏了。<strong>换成「网页表格」格式即可。</strong></p></blockquote>
-<p><strong>不确定链接对不对？</strong> 点「📖 配置步骤」，在弹窗左下角点 <strong>「浏览器打开」</strong>——能看到一个表格页面就说明链接没问题。</p>
-<h4 id="配置步骤一次性">配置步骤（一次性）<a class="anchor" href="#配置步骤一次性">#</a></h4>
-<ol>
-<li>选好地址和格式 → 在列表里点 <strong>📋 复制链接</strong>（想每个分类一个表，就复制对应分类的）</li>
-<li><strong>Excel</strong>：菜单 <strong>数据</strong> → <strong>获取数据</strong> → <strong>自其他源</strong> → <strong>自网站</strong></li>
-</ol>
-<p><strong>WPS</strong>：菜单 <strong>数据</strong> → <strong>获取数据</strong> / <strong>自网站</strong></p>
-<ol>
-<li>粘贴链接 → 确定 → 在导航器里选 <strong>Table</strong>（表格）→ 点「加载」／「导入」</li>
-</ol>
-<h4 id="想让每个设备分类各占一个工作表">想让「每个设备分类各占一个工作表」？<a class="anchor" href="#想让每个设备分类各占一个工作表">#</a></h4>
-<p>系统提供了两种做法，<strong>推荐第 1 种</strong>：</p>
-<p><strong>做法 1：一次导入多张表（推荐）</strong></p>
-<p>点卡片上的 <strong>📋 复制「全部分类（多表）」链接</strong>——这条链接打开后是一个<strong>含多张表格的页面</strong> （台式主机一张、显示器一张……）：</p>
+<blockquote><p>这一步选错了的表现是 Excel 提示「<strong>无法获取数据</strong>」——换一个、重新复制链接即可。</p></blockquote>
+<h4 id="第-2-步点一下链接就复制好了">第 2 步：点一下，链接就复制好了<a class="anchor" href="#第-2-步点一下链接就复制好了">#</a></h4>
+<p>两个按钮，按你想要的<strong>结果</strong>选（不用管它内部是什么格式）：</p>
+<div class="tw"><table>
+<thead><tr><th>按钮</th><th>你会得到</th></tr></thead>
+<tbody><tr><td><strong>复制链接：全部设备放一张表</strong></td><td>一张表，所有设备都在里面。第一次用建议先试这个</td></tr><tr><td><strong>复制链接：每个分类各一张工作表</strong></td><td>「台式主机 / 显示器 / 打印机…」<strong>各占一张工作表</strong>，一次配好</td></tr></tbody>
+</table></div>
+<blockquote><p>链接里自带<strong>只读口令</strong>：别人拿到它只能看台账字段，看不到密码和密钥，也改不了任何数据。</p></blockquote>
+<h4 id="第-3-步粘到-excel-wps-里">第 3 步：粘到 Excel / WPS 里<a class="anchor" href="#第-3-步粘到-excel-wps-里">#</a></h4>
+<div class="tw"><table>
+<thead><tr><th></th><th>步骤</th></tr></thead>
+<tbody><tr><td><strong>Excel</strong></td><td>① 菜单 <strong>数据</strong> → <strong>获取数据</strong> → <strong>自其他源</strong> → <strong>自网站</strong>&lt;br&gt;② 粘贴链接 → 确定&lt;br&gt;③ 弹出的小窗口里出现表格 → 选 <strong>Table</strong> → 点 <strong>加载</strong></td></tr><tr><td><strong>WPS</strong></td><td>① 菜单 <strong>数据</strong> → <strong>获取数据</strong> / <strong>自网站</strong>&lt;br&gt;② 粘贴链接 → 确定&lt;br&gt;③ 在表格列表里选要的表格 → <strong>导入</strong></td></tr></tbody>
+</table></div>
+<p><strong>让它自动刷新</strong>：在生成的数据上右键 → <strong>属性</strong> → 勾选</p>
 <ul>
-<li><strong>Excel</strong>：数据 → 自网站 → 粘贴 → 导航器里 <strong>勾选全部表格</strong>（Ctrl 多选）→ 加载 →</li>
-</ul>
-<p>选「<strong>每个表放入新工作表</strong>」</p>
-<ul>
-<li><strong>WPS</strong>：数据 → 自网站 → 粘贴 → 表格列表里 <strong>全选</strong> → 导入</li>
-</ul>
-<p><strong>做法 2：逐个导入（最稳，一定能成）</strong></p>
-<ol>
-<li>在链接列表里点「台式主机」的 <strong>📋 复制链接</strong> → 数据 → 自网站 → 粘贴 → 加载到 <strong>Sheet1</strong>，</li>
-</ol>
-<p>把 Sheet1 重命名为「台式主机」</p>
-<ol>
-<li>换成「显示器」的链接，重复一次 → 放到 <strong>Sheet2</strong> → 重命名为「显示器」</li>
-<li>以后按 <strong>数据 → 全部刷新</strong>，所有工作表一起更新</li>
-</ol>
-<blockquote><p>点卡片上的 <strong>📖 多工作表怎么配</strong> 可以随时查看这两套步骤。</p><p>想先确认页面里有几张表，点弹窗里的「预览表格」。</p></blockquote>
-<h4 id="让它自动刷新">让它自动刷新<a class="anchor" href="#让它自动刷新">#</a></h4>
-<p>在生成的数据表上右键 → <strong>表格 → 外部数据属性</strong>（WPS 里叫「数据范围属性」）→ 勾选：</p>
-<ul>
-<li>☑ <strong>打开文件时刷新数据</strong></li>
-<li>☑ <strong>每 30 分钟刷新一次</strong>（按需调整）</li>
+<li>☑ 打开文件时刷新数据</li>
+<li>☑ 每 30 分钟刷新一次（按需调整）</li>
 </ul>
 <p>配置一次，以后打开就自动是最新的。</p>
+<h4 id="表格报无法获取数据怎么办">表格报「无法获取数据」怎么办<a class="anchor" href="#表格报无法获取数据怎么办">#</a></h4>
+<p>按顺序做这三件事，基本都能解决：</p>
+<ol>
+<li><strong>把链接粘到浏览器地址栏</strong>回车。能看到一张表格 → 链接没问题，是取数方式的问题（做第 3 条）；</li>
+</ol>
+<p>打不开 → 是第 2 条的问题。</p>
+<ol>
+<li><strong>回页面换一个「这个 Excel 文件会在哪台电脑上用」</strong>，重新复制链接再试。</li>
+<li><strong>WPS 必须用网页表格格式</strong>——第 2 步复制出来的默认就是它。WPS 的「自网站」不认 CSV，</li>
+</ol>
+<p>粘 CSV 链接一定报「无法获取数据」。</p>
+<blockquote><p>什么时候才需要 CSV？Excel（不是 WPS）里希望日期/金额是真正数字类型时。</p><p>页面「出问题了」折叠区里有一个「复制 CSV 链接」按钮，代价是纯数字 SN 可能变成科学计数法。</p></blockquote>
+<h4 id="只想同步某一个分类-想让照片显示出来">只想同步某一个分类 / 想让照片显示出来<a class="anchor" href="#只想同步某一个分类-想让照片显示出来">#</a></h4>
+<div class="tw"><table>
+<thead><tr><th>想做</th><th>怎么做</th></tr></thead>
+<tbody><tr><td>只同步一个分类</td><td>展开第 ③ 张卡里的 <strong>「只想同步某一个分类」</strong>，每个分类各有一条链接，粘到不同工作表即可</td></tr><tr><td>看某个分类有多少台</td><td>同上，那一列写着每个分类的设备数量</td></tr><tr><td><strong>让照片显示在单元格里</strong></td><td>导入后自己加一列，填 <code>=IMAGE(照片链接那一格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图片跟着变</td></tr><tr><td>想让照片<strong>一开始就嵌在文件里</strong></td><td>用第 ① 张卡的「导出一份 Excel 文件」（快照，不自动更新，但照片直接嵌好、发给谁都能看）</td></tr></tbody>
+</table></div>
 <h4 id="几点说明">几点说明<a class="anchor" href="#几点说明">#</a></h4>
 <div class="tw"><table>
 <thead><tr><th>事项</th><th>说明</th></tr></thead>
-<tbody><tr><td>数据范围</td><td>只读，只包含设备台账字段，<strong>不含任何密钥或账号信息</strong></td></tr><tr><td>列的多少</td><td><strong>按分类走</strong>：每个分类的表格只带该分类配置的字段（显示器不会出现 CPU/内存/硬盘，主机不会出现屏幕尺寸），和 6.1 的分表导出一致</td></tr><tr><td>照片</td><td>实时表里有 <strong>照片链接</strong> 列，单元格是可点击的「<strong>打开照片</strong>」（点一下浏览器打开图）。链接用的是<strong>局域网地址或你设置的「外部访问地址」</strong>，不会写成 <code>127.0.0.1</code>，所以同网段的电脑都能打开</td></tr><tr><td>想在实时表里直接看图</td><td>导入后在表格里自己加一列，填 <code>=IMAGE(照片链接那一格)</code>（Excel 365 / 较新版 WPS 支持）。数据刷新时图片会跟着变——<strong>这是唯一能「自动更新 + 直接看图」的办法</strong></td></tr><tr><td>「全部设备」那一行</td><td>是跨分类的汇总视图，保留<strong>完整列</strong>，方便一眼看全</td></tr><tr><td>链接安全</td><td>链接里带一个 token；<strong>点「🔁 重置链接」可让旧链接立即失效</strong>（照片链接是同一套 token）</td></tr><tr><td>数字变成科学计数法</td><td>用 CSV 格式时可能出现；网页表格格式不会（但所有列都会是文本）</td></tr><tr><td>想改数据</td><td>实时链接是<strong>只读</strong>的。要批量改数据，用导入功能（见 6.5）</td></tr><tr><td>导出点了没反应 / 浏览器报「网络问题」</td><td>系统已改成「先由页面把文件取回来、再触发下载」，失败时会明确告诉你原因（HTTP 状态、空文件等），不会再是含糊的网络错误。若仍失败，试试 <strong>不含照片</strong> 缩小体积，或点 <strong>补缩略图</strong></td></tr></tbody>
+<tbody><tr><td>数据范围</td><td>只读，只包含设备台账字段，<strong>不含任何密钥或账号信息</strong></td></tr><tr><td>列的多少</td><td><strong>按分类走</strong>：每个分类的表只带该分类配置的字段（显示器不会出现 CPU/内存/硬盘，主机不会出现屏幕尺寸），和 6.1 的分表导出一致</td></tr><tr><td>「全部设备」那一张</td><td>跨分类的汇总视图，保留<strong>完整列</strong>，方便一眼看全</td></tr><tr><td>照片链接</td><td>单元格里是可点击的「<strong>打开照片</strong>」（点一下浏览器打开图）。用的是局域网地址或你设置的「外部访问地址」，不会写成 <code>127.0.0.1</code>，所以同网段的电脑都能打开</td></tr><tr><td>链接安全</td><td>链接自带只读口令；<strong>点「重置链接」可让旧链接立即失效</strong>（照片链接是同一套口令）</td></tr><tr><td>什么时候该重置链接</td><td>换电脑/换网络后怎么都取不到数，或者链接被发到了不该发的地方</td></tr><tr><td>想改数据</td><td>实时链接是<strong>只读</strong>的。批量改数据用导入功能（见 6.5）</td></tr><tr><td>导出点了没反应 / 浏览器报「网络问题」</td><td>系统已改成「先由页面把文件取回来、再触发下载」，失败时会明确告诉你原因。若仍失败，试试 <strong>不含照片</strong> 缩小体积，或点 <strong>补缩略图</strong></td></tr></tbody>
 </table></div>
 <h3 id="63-下载导入模板">6.3 下载导入模板<a class="anchor" href="#63-下载导入模板">#</a></h3>
 <p>点 <strong>⬇ 下载导入模板</strong>，得到 <code>IT资产导入模板_日期.xlsx</code>，包含 5 个工作表：</p>
@@ -553,32 +639,29 @@ tbody tr:hover { background: #f8fafc; }
 <li>表头<strong>可以换位置、也可以用同义词</strong>（如「SN」「序列号」「Service Tag」都能识别）</li>
 <li>多余的列会被忽略，不会报错</li>
 </ul>
-<h3 id="65-导入流程三步">6.5 导入流程（三步）<a class="anchor" href="#65-导入流程三步">#</a></h3>
+<h3 id="65-导入流程只有一条路照着走就行">6.5 导入流程（只有一条路，照着走就行）<a class="anchor" href="#65-导入流程只有一条路照着走就行">#</a></h3>
 <ol>
-<li>点 <strong>📁 选择文件导入</strong>，选填好的 Excel</li>
-<li><strong>预览</strong>：系统显示识别到多少行、匹配成功多少列、前几行数据的样子</li>
+<li>点 <strong>① 下载模板</strong> → 在「设备台账」页填好数据（从第 3 行开始）</li>
+<li>点 <strong>② 上传填好的文件</strong> → 系统<strong>先算一遍</strong>，弹出「确认导入」窗口，上面四个数字说得很清楚：</li>
 </ol>
-<ul>
-<li>有「未匹配列」会黄字提示（这些列会被忽略）</li>
-<li>建议先勾选 <strong>仅预览（不写入数据库，先看结果）</strong> 跑一次</li>
-</ul>
-<ol>
-<li>点 <strong>开始导入</strong>，完成后提示：</li>
-</ol>
-<pre><code>导入完成：新增 12、更新 3、跳过 1、失败 0</code></pre>
 <div class="tw"><table>
-<thead><tr><th>结果</th><th>含义</th></tr></thead>
-<tbody><tr><td>新增</td><td>库里没有这台设备，新建了记录</td></tr><tr><td>更新</td><td>按 SN（或资产编号）匹配到已有设备，更新了它的信息</td></tr><tr><td>跳过</td><td>勾了「仅预览」，或该行被标记为示例</td></tr><tr><td>失败</td><td>该行有问题，会列出「第几行：什么原因」</td></tr></tbody>
+<thead><tr><th>数字</th><th>含义</th></tr></thead>
+<tbody><tr><td><strong>台新增</strong></td><td>库里没有的设备，会新建这么多条</td></tr><tr><td><strong>台更新</strong></td><td>按 SN（或资产编号）匹配到已有设备，会更新它们的资料</td></tr><tr><td><strong>行跳过</strong></td><td>没被处理的（备注里标了「示例」的行、或关了「同 SN 更新」时的重复行）</td></tr><tr><td><strong>行失败</strong></td><td>有问题的行，窗口里会直接列出「第几行：什么原因」</td></tr></tbody>
 </table></div>
-<p><strong>两个选项</strong></p>
+<ol>
+<li>看清楚了点 <strong>✅ 确认导入 N 台</strong> → 完成后提示：</li>
+</ol>
+<pre><code>导完了：新增 12、更新 3、跳过 1</code></pre>
+<blockquote><p>✅ <strong>这一步是安全的</strong>：在你点「确认导入」之前，系统<strong>什么都没写进数据库</strong>。</p><p>想放弃就直接关掉窗口。</p></blockquote>
+<p><strong>两个选项</strong>（在导入卡片里展开「导入选项」）</p>
 <ul>
-<li>☑ <strong>自动创建缺失的组织/分类</strong>：建议勾选，省得先建组织</li>
-<li>☑ <strong>遇到同 SN 时更新已有设备</strong>：建议勾选；取消则同 SN 的行会被跳过</li>
+<li>☑ <strong>表格里的组织 / 分类不存在时，自动新建</strong>：建议勾选，省得先去建组织</li>
+<li>☑ <strong>同一个 SN 已存在时，更新那台设备</strong>：建议勾选；取消则同 SN 的行会被跳过</li>
 </ul>
 <h3 id="66-导入失败常见原因">6.6 导入失败常见原因<a class="anchor" href="#66-导入失败常见原因">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>报错</th><th>原因与解决</th></tr></thead>
-<tbody><tr><td>表头无法识别</td><td>用了自己的表格但表头完全不认识。请用系统模板，或确保至少有「设备分类」「SN 序列号」这类标准列名</td></tr><tr><td>状态「X」无法识别</td><td>状态列的值不在下拉选项里，改为标准的七个状态之一</td></tr><tr><td>资产编号「X」已存在</td><td>同编号设备已存在，把这一行的编号留空（自动生成）或改成别的</td></tr><tr><td>分类「X」不存在</td><td>没勾「自动创建缺失的组织/分类」时会出现，勾上即可</td></tr><tr><td>表格里没有数据行</td><td>数据没填在「设备台账」页，或填到了「填写示例」页</td></tr><tr><td>第 N 行：SN「X」已存在</td><td>该 SN 在库中已有记录；勾了「更新」会更新，没勾会跳过</td></tr></tbody>
+<tbody><tr><td>表头无法识别</td><td>用了自己的表格但表头完全不认识。请用系统模板，或确保至少有「设备分类」「SN 序列号」这类标准列名</td></tr><tr><td>状态「X」无法识别</td><td>状态列的值不在下拉选项里，改为标准的七个状态之一</td></tr><tr><td>资产编号「X」已存在</td><td>同编号设备已存在，把这一行的编号留空（自动生成）或改成别的</td></tr><tr><td>分类「X」不存在</td><td>没勾「自动创建缺失的组织/分类」时会出现，勾上即可</td></tr><tr><td>表格里没有数据行</td><td>数据没填在「设备台账」页，或填到了「填写示例」页</td></tr><tr><td>表格里没有数据行</td><td>数据没填在「设备台账」页，或填到了「填写示例」页</td></tr><tr><td>第 N 行：SN「X」已存在</td><td>该 SN 在库中已有记录；勾了「更新」会更新，没勾会跳过</td></tr></tbody>
 </table></div>
 <hr>
 <h2 id="七自动盘点glpi-agent-自动上报">七、自动盘点：GLPI Agent 自动上报<a class="anchor" href="#七自动盘点glpi-agent-自动上报">#</a></h2>
@@ -705,6 +788,19 @@ tbody tr:hover { background: #f8fafc; }
 <thead><tr><th>类型</th><th>说明</th></tr></thead>
 <tbody><tr><td>文本</td><td>自由输入</td></tr><tr><td>数字</td><td>只能填数字</td></tr><tr><td>日期</td><td>日期选择器</td></tr><tr><td><strong>下拉选项</strong></td><td>只能从预设选项里选，避免各人写法不一致</td></tr></tbody>
 </table></div>
+<p><strong>「使用人 / 存放位置」也是专属字段（2026-09 起）</strong></p>
+<p>它们以前是手机端写死的两个输入框，现在归分类管了 —— 出厂默认每个分类都带这两项， 你可以按分类自由处理：</p>
+<div class="tw"><table>
+<thead><tr><th>想做什么</th><th>怎么做</th></tr></thead>
+<tbody><tr><td>换个叫法（如「使用人」→「领用人」）</td><td>改那一行的<strong>显示名</strong>。只影响界面文字，<strong>已经存的数据不受影响</strong></td></tr><tr><td>改成下拉（如只允许几个固定房间）</td><td>类型选「下拉选项」，填选项</td></tr><tr><td>某个分类不要这一项</td><td>把那一行<strong>删掉</strong>，保存。之后该分类的录入界面就不再出现它</td></tr><tr><td>换个位置（想排在 CPU 后面）</td><td>上下调整行的顺序即可（界面按这个顺序渲染）</td></tr></tbody>
+</table></div>
+<blockquote><p>⚠️ 改 key（英文标识）等于换了一个字段：<code>owner_name</code> / <code>location</code> 这两个 key 是写进设备正式字段的，</p><p>改成别的 key 会存到「扩展字段」里，不要随手改。下面这张表列了<strong>会写进正式字段</strong>的 key。</p></blockquote>
+<p><strong>哪些 key 会写进设备的正式字段</strong></p>
+<div class="tw"><table>
+<thead><tr><th>key</th><th>对应字段</th></tr></thead>
+<tbody><tr><td><code>owner_name</code></td><td>使用人</td></tr><tr><td><code>location</code></td><td>存放位置</td></tr><tr><td><code>cpu</code> / <code>memory</code> / <code>disk</code> / <code>os_name</code></td><td>CPU / 内存 / 硬盘 / 操作系统</td></tr><tr><td><code>ip_address</code> / <code>mac_address</code></td><td>IP 地址 / MAC 地址</td></tr><tr><td><code>screen_size</code></td><td>屏幕尺寸</td></tr><tr><td><code>owner_employee_no</code> / <code>owner_phone</code></td><td>使用人工号 / 电话</td></tr><tr><td><code>supplier</code> / <code>remark</code></td><td>供应商 / 备注</td></tr><tr><td>其它任意 key</td><td>存进扩展字段（导出 Excel 时同样成列）</td></tr></tbody>
+</table></div>
+<blockquote><p>编辑框里点一下 key 输入框，会下拉提示上面这些常用 key，不用背。</p></blockquote>
 <p><strong>怎么加一个下拉选项</strong>（以「显示器 → 屏幕尺寸」为例）</p>
 <ol>
 <li>进入 <strong>🗂️ 设备分类</strong>，找到「显示器」，点「编辑」</li>
@@ -728,7 +824,15 @@ tbody tr:hover { background: #f8fafc; }
 <thead><tr><th>项目</th><th>说明</th></tr></thead>
 <tbody><tr><td>企业名称</td><td>显示在右上角</td></tr><tr><td>资产编号格式</td><td>支持变量 <code>{PREFIX}</code> 分类前缀、<code>{YYYY}</code> 年份、<code>{SEQ:4}</code> 四位流水号</td></tr><tr><td>货币符号</td><td>默认 CNY</td></tr><tr><td><strong>设备供应商选项</strong></td><td>逗号分隔。会同步到设备表单、筛选、手机端和 Excel 模板的下拉</td></tr><tr><td><strong>外部访问地址</strong></td><td>导出 Excel 里照片链接用的地址。留空 = 自动（本机地址自动换成局域网 IP）；想固定成公网域名就填 <code>https://itam.example.com:12345</code></td></tr><tr><td><strong>自助注册</strong></td><td>开关 + 是否需审核 + 注册默认角色</td></tr></tbody>
 </table></div>
-<h3 id="911-照片归档">9.1.1 照片归档<a class="anchor" href="#911-照片归档">#</a></h3>
+<h3 id="911-手机录入默认值">9.1.1 手机录入默认值<a class="anchor" href="#911-手机录入默认值">#</a></h3>
+<p>系统设置里的 <strong>📸 手机录入默认值</strong> 卡片 —— 配手机端「拍照识别入库」表单里那几个下拉的默认选中项：</p>
+<div class="tw"><table>
+<thead><tr><th>项目</th><th>说明</th></tr></thead>
+<tbody><tr><td>默认设备分类</td><td>识别能猜出来时以识别为准，猜不出来才用这里的默认值</td></tr><tr><td>默认所属组织</td><td>常见情况固定成一个部门</td></tr><tr><td>默认供应商</td><td>从「企业信息 → 供应商选项」里选</td></tr><tr><td>默认状态</td><td>默认「在用」</td></tr></tbody>
+</table></div>
+<p>配好之后手机端一打开就是这个选项（仍然可以随时改）。详见<a href="#五手机端拍照识别入库">第五章的「预设默认值」</a>。</p>
+<blockquote><p>⚠️ 如果后来把那个分类/组织删掉了，系统会自动忽略这个默认值（不会让手机端选到不存在的项）。</p><p>换过供应商名字的话，回这里重新选一次即可。</p></blockquote>
+<h3 id="912-照片归档">9.1.2 照片归档<a class="anchor" href="#912-照片归档">#</a></h3>
 <p>系统设置里的 <strong>📸 照片归档</strong> 卡片（默认全开，一般不用动）：</p>
 <div class="tw"><table>
 <thead><tr><th>项目</th><th>默认</th><th>说明</th></tr></thead>
@@ -745,7 +849,7 @@ tbody tr:hover { background: #f8fafc; }
 <p>系统默认就带这些防线，<strong>不用开开关</strong>。列在这里是为了：出问题时你知道是它在起作用，而不是当故障排查。</p>
 <div class="tw"><table>
 <thead><tr><th>机制</th><th>作用</th><th>你会看到什么</th></tr></thead>
-<tbody><tr><td>登录失败限流</td><td>防口令爆破（账号级 / 来源 IP 级 / <strong>全站级</strong>三道，见第十章）</td><td>提示「登录失败次数过多」</td></tr><tr><td>接口限流</td><td>防自动化狂刷；扫码、识别、Excel 导入导出另有更严的额度（每分钟 240 次）</td><td>提示「请求过于频繁」，等 1 分钟</td></tr><tr><td>重活并发限制</td><td>服务端扫码解码/图像识别很吃 CPU，同时只跑 4 / 6 个，多的<strong>直接丢弃</strong>而不是排队 —— 排队会让整个系统（含所有页面）一起变慢</td><td>偶发「服务繁忙，请稍后重试」，再按一次快门即可</td></tr><tr><td>浏览器安全策略（CSP 等）</td><td>防页面被注入后加载外部脚本、把数据外发到别的网址</td><td>正常使用无感；若你把某个外部图片/脚本贴进备注里，它不会被加载（这是故意的）</td></tr><tr><td>照片访问控制</td><td>照片必须登录才能看，且只允许浏览器自己缓存</td><td>换台没登录的电脑打不开照片链接</td></tr><tr><td>上传缓存</td><td>导出表格里的照片链接带临时令牌，令牌重置后旧链接失效</td><td>「Excel 对接」页可一键重置令牌</td></tr></tbody>
+<tbody><tr><td>登录失败限流</td><td>防口令爆破（账号级 / 来源 IP 级 / <strong>全站级</strong>三道，见第十章）</td><td>提示「登录失败次数过多」</td></tr><tr><td>接口限流</td><td>防自动化狂刷；扫码、识别、Excel 导入导出另有更严的额度（每分钟 240 次）</td><td>提示「请求过于频繁」，等 1 分钟</td></tr><tr><td>重活并发限制</td><td>服务端扫码解码/图像识别很吃 CPU，同时只跑 4 / 6 个，多的<strong>直接丢弃</strong>而不是排队 —— 排队会让整个系统（含所有页面）一起变慢</td><td>偶发「服务繁忙，请稍后重试」，再按一次快门即可</td></tr><tr><td>浏览器安全策略（CSP 等）</td><td>防页面被注入后加载外部脚本、把数据外发到别的网址</td><td>正常使用无感；若你把某个外部图片/脚本贴进备注里，它不会被加载（这是故意的）</td></tr><tr><td>照片访问控制</td><td>照片必须登录才能看，且只允许浏览器自己缓存</td><td>换台没登录的电脑打不开照片链接</td></tr><tr><td>上传缓存</td><td>导出表格里的照片链接带临时令牌，令牌重置后旧链接失效</td><td>「Excel 表格」页可一键重置令牌</td></tr></tbody>
 </table></div>
 <p>管理员可调的部分（改环境变量后重启服务）见 <code>README.md</code> 的「安全加固」一节。</p>
 <hr>
@@ -775,6 +879,12 @@ tbody tr:hover { background: #f8fafc; }
 </table></div>
 <hr>
 <h2 id="十一附录状态与字段说明">十一、附录：状态与字段说明<a class="anchor" href="#十一附录状态与字段说明">#</a></h2>
+<h3 id="服务器网络配置">服务器网络配置<a class="anchor" href="#服务器网络配置">#</a></h3>
+<div class="tw"><table>
+<thead><tr><th>项目</th><th>值</th></tr></thead>
+<tbody><tr><td>管理端（局域网）</td><td><code>http://192.168.1.100:8080/</code></td></tr><tr><td>移动端（局域网）</td><td><code>https://192.168.1.100:8443/m</code>（必须 https，自签证书点&quot;继续访问&quot;）</td></tr><tr><td>公网（穿透服务）</td><td><code>https://&lt;你的域名&gt;:&lt;端口&gt;/</code> 与 <code>/m</code></td></tr><tr><td>内网地址</td><td>建议固定，避免 DHCP 变更后各处配置失效</td></tr></tbody>
+</table></div>
+<blockquote><p>📄 地址填在 <strong>系统设置 → 企业信息 → 外部访问地址</strong>，导出的照片链接与 Agent 安装指引都会用它。</p></blockquote>
 <h3 id="设备状态">设备状态<a class="anchor" href="#设备状态">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>状态</th><th>含义</th><th>建议用法</th></tr></thead>
@@ -796,7 +906,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/9/23 13:43:00</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/4 14:04:51</div>
 </div>
 </body>
 </html>

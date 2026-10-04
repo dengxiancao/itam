@@ -601,6 +601,44 @@ await check('导入模板：主表无示例数据 + 示例页带忽略标记', a
   if (!marked) throw new Error('示例行备注应带「示例行」标记（导入时会被自动忽略）');
 });
 
+await check('手机录入默认值：/options 下发 + 设置接口保存 + 死 id 被忽略', async () => {
+  /*
+   * 功能背景：手机端「拍照识别入库」那几个下拉（分类/组织/供应商/状态）可以预设默认项，
+   * 现场一台接一台录入时不用每次手点。默认值存在 app_setting.mobile 里，
+   * 手机端从 /api/options 的 mobile_defaults 读取。
+   */
+  const opts = await req('/api/options');
+  const md = opts.body.mobile_defaults;
+  if (!md) throw new Error('/options 没有下发 mobile_defaults，手机端拿不到默认值');
+  if (md.status !== 'in_use') throw new Error('没配置时状态默认应为「在用」，实得 ' + md.status);
+
+  const cat = opts.body.categories[0];
+  await req('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      mobile: { category_id: cat.id, org_id: 'no-such-org-id', supplier: '', status: 'idle' },
+    }),
+  });
+  const after = (await req('/api/options')).body.mobile_defaults;
+  if (after.category_id !== cat.id) throw new Error('保存的默认分类没生效');
+  if (after.status !== 'idle') throw new Error('保存的默认状态没生效');
+  if (after.org_id !== null) throw new Error('不存在的组织必须被忽略（否则手机端会选中一个不存在的选项）');
+
+  // 设置页也要能读回来（管理员刷新页面时显示的就是当前配置）
+  const settings = (await req('/api/settings')).body.settings;
+  if (!settings.mobile || settings.mobile.status !== 'idle') throw new Error('设置接口没返回 mobile 配置');
+
+  // 复原，别影响后面的用例
+  await req('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mobile: { category_id: '', org_id: '', status: 'in_use' } }),
+  });
+  const reset = (await req('/api/options')).body.mobile_defaults;
+  if (reset.category_id !== null || reset.status !== 'in_use') throw new Error('复原失败：' + JSON.stringify(reset));
+});
+
 await check('multipart Excel 导入（预览 + 试运行）', async () => {
   const { buildXlsx } = await import('../server/lib/xlsx.js');
   const { body: opts } = await req('/api/options');
@@ -636,6 +674,50 @@ await check('multipart Excel 导入（预览 + 试运行）', async () => {
   const imp = await req('/api/excel/import', { method: 'POST', body: fd2 });
   if (imp.body.created !== 1) throw new Error(`试运行应新增 1 行（示例行被忽略），实际 ${imp.body.created}`);
   if (imp.body.skipped !== 1) throw new Error(`示例行应被跳过 1 行，实际 ${imp.body.skipped}`);
+});
+
+await check('试运行不会把「会自动新建的分类」误报成失败（老坑）', async () => {
+  /*
+   * 背景：试算（dry_run）不会真的建分类，但正式导入时勾了「自动创建」是能建出来的。
+   * 早期代码在试算里无条件抛「分类不存在」，于是**试算结果把"会自动新建"说成了失败** ——
+   * 用户看到一片红叉就不敢导入了，可真正的导入其实全都能成。
+   * 现在导入页的数据流是「先试算 → 给用户看会新增/更新几台 → 确认才写」，
+   * 所以这条试算结果必须可信，不能有假失败。
+   */
+  const { buildXlsx } = await import('../server/lib/xlsx.js');
+  const newCat = '冒烟新分类' + Date.now().toString().slice(-5);
+  const buf = await buildXlsx({
+    sheets: [{
+      name: '设备台账',
+      columns: [
+        { header: '设备分类', key: 'a' }, { header: '品牌', key: 'b' }, { header: 'SN 序列号', key: 'c' },
+      ],
+      rows: [{ a: newCat, b: 'NewCatTest', c: 'NEWCAT' + Date.now() }],
+    }],
+  });
+  const blob = () => new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+  // ① 试算：勾了自动创建 → 不许报失败，而且应该算作「将新增 1 台」
+  const fd = new FormData();
+  fd.append('file', blob(), '新分类.xlsx');
+  fd.append('create_missing', '1');
+  fd.append('dry_run', '1');
+  const dry = await req('/api/excel/import', { method: 'POST', body: fd });
+  if (dry.body.failed !== 0) {
+    throw new Error('试算不该报失败，实得 failed=' + dry.body.failed + ' errors=' + JSON.stringify(dry.body.errors));
+  }
+  if (dry.body.created !== 1) throw new Error('试算应预计新增 1 台，实得 ' + dry.body.created);
+  // 试算不能真的把分类建出来
+  const after = await req('/api/options');
+  if (after.body.categories.some((c) => c.name === newCat)) throw new Error('试算不该真的创建分类');
+
+  // ② 关掉「自动创建」时，试算**应该**报失败（先提示，别等真导入才发现）
+  const fd2 = new FormData();
+  fd2.append('file', blob(), '新分类.xlsx');
+  fd2.append('create_missing', '0');
+  fd2.append('dry_run', '1');
+  const dry2 = await req('/api/excel/import', { method: 'POST', body: fd2 });
+  if (dry2.body.failed !== 1) throw new Error('关掉自动创建后，试算应报 1 行失败，实得 ' + dry2.body.failed);
 });
 
 await check('回收站：列表 / 恢复 / 彻底删除', async () => {

@@ -134,18 +134,23 @@ rem NOTE the trailing backslash: %~dp0.. does not end with a separator, and
 rem without it the path below would concatenate into ".../scripts/..scripts/..."
 set "ROOT=%~dp0..\"
 set "BASH=$bash"
-"%BASH%" -l "%ROOT:\=/%scripts/repo-sync.sh"
+rem %* must stay: without it every argument is silently dropped and even
+rem "--status"/"--dry" would run a full sync. (Found 2026-10-04 the hard way.)
+"%BASH%" -l "%ROOT:\=/%scripts/repo-sync.sh" %*
 exit /b %ERRORLEVEL%
 "@
 Set-Content -Path $Runner -Value $runnerText -Encoding ASCII
 Write-Step "runner written: $Runner"
 
-# quick smoke test: --status must exit 0
-try {
-  & cmd.exe /c $Runner '--status' | Out-Null
+# quick smoke test: the runner must reach the script and resolve git + node.
+$smoke = & cmd.exe /c "`"$Runner`" --doctor" 2>&1 | Out-String
+$smoke.Trim() -split "`r?`n" | Where-Object { $_ } | ForEach-Object { Write-Host ("    " + $_) }
+if ($smoke -match '找不到 git') {
+  Write-Warn2 "runner smoke test FAILED: git not resolvable from the task environment"
+} elseif ($smoke -match '缺失') {
+  Write-Warn2 "runner smoke test: git OK, but node is missing - the security gate needs it"
+} else {
   Write-Step "runner smoke test: OK"
-} catch {
-  Write-Warn2 "runner smoke test failed: $($_.Exception.Message)"
 }
 
 # ---------------------------------------------------------------- 3. hooks

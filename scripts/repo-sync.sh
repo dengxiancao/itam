@@ -26,10 +26,12 @@ set -u
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT=""
 DRY=0
+DOCTOR=0
 for a in "$@"; do
   case "$a" in
     --dry) DRY=1 ;;
     --status) ;;
+    --doctor) DOCTOR=1 ;;
     --*) ;;
     *) ROOT="$a" ;;
   esac
@@ -41,6 +43,7 @@ LOG="$ROOT/logs/repo-sync.log"
 STATUS="$ROOT/logs/repo-sync-status.txt"
 LOCK="$ROOT/logs/repo-sync.lock"
 TMPLIST="$ROOT/logs/.repo-sync-staged.txt"
+PUBLIST="$ROOT/logs/.repo-sync-publish.txt"    # 「即将公开」的完整文件清单，闸门扫的就是它
 LASTFAIL="$ROOT/logs/.repo-sync-lastfail"
 REMOTE_BRANCH="main"
 LOCK_STALE=600          # 锁超过 10 分钟视为陈旧（上次跑挂了），允许接管
@@ -49,12 +52,84 @@ PUSH_TIMEOUT=150
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
 setstatus() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" > "$STATUS"; }
 
+# 安全闸门。清单文件里是要公开的文件名。返回 0=通过，其它=拦下（明细已写进日志）。
+# node 缺失时**拒绝放行**（fail-closed）：宁可推不上去，也不能无闸门发布。
+gate() {
+  if ! command -v node >/dev/null 2>&1; then
+    log "✘ 安全闸门需要 node，但 PATH 与常见位置都找不到 node → 拒绝推送（不做无闸门放行）"
+    return 2
+  fi
+  node scripts/repo-sync-gate.mjs --list="$1" >> "$LOG" 2>&1
+}
+
 if [ "${1:-}" = "--status" ]; then
   [ -f "$STATUS" ] && cat "$STATUS" || echo "(还没有运行记录)"
   exit 0
 fi
 
 mkdir -p "$ROOT/logs"
+
+# ---------- 工具自定位 ----------
+# 计划任务 / cmd.exe 拉起的 bash，PATH 里只有 PortableGit 的 usr/bin（date/grep/sed 在这），
+# **没有 mingw64/bin —— 而 git.exe 恰好只在那里**。2026-10-04 实测踩过：日志里出现
+# `timeout: failed to run command 'git'`，脚本「看起来在跑」但一次都没推成。
+# 所以这里不假设调用方给了完整 PATH：找不到就按已知位置补回来。
+resolve_tool() {                    # $1=工具名，其余=候选目录
+  local tool="$1"; shift
+  command -v "$tool" >/dev/null 2>&1 && return 0
+  local d
+  for d in "$@"; do
+    [ -d "$d" ] || continue
+    if [ -x "$d/$tool.exe" ] || [ -x "$d/$tool" ]; then
+      PATH="$d:$PATH"; export PATH; return 0
+    fi
+  done
+  return 1
+}
+
+GITDIRS=""
+NODEDIRS=""
+for d in \
+  /mingw64/bin /usr/bin /bin \
+  "$HOME"/.workbuddy/binaries/PortableGit/versions/*/mingw64/bin \
+  "$HOME"/.workbuddy/binaries/PortableGit/versions/*/usr/bin \
+  "$HOME"/.workbuddy/binaries/PortableGit/versions/*/bin \
+  "/c/Program Files/Git/mingw64/bin" "/c/Program Files/Git/cmd" \
+  "/c/Program Files (x86)/Git/mingw64/bin" \
+  "/c/Program Files/nodejs"; do
+  [ -d "$d" ] || continue
+  case "$d" in *nodejs) NODEDIRS="$NODEDIRS $d" ;; *) GITDIRS="$GITDIRS $d" ;; esac
+done
+for d in "$HOME"/.workbuddy/binaries/node/versions/*; do
+  [ -d "$d" ] && NODEDIRS="$NODEDIRS $d"
+done
+
+if ! resolve_tool git $GITDIRS; then
+  log "✘ 找不到 git（PATH 与常见安装位置都没有），同步中止 —— 装 Git for Windows 后重试"
+  setstatus "结果：找不到 git，同步中止"
+  exit 1
+fi
+if ! resolve_tool node $NODEDIRS; then
+  log "⚠️ 找不到 node：安全闸门跑不了。已有改动会被保险丝 2 拦下不推送（绝不无闸门放行）"
+fi
+
+if [ "$DOCTOR" = "1" ]; then
+  printf 'repo-sync 自检\n'
+  printf '  仓库根      : %s\n' "$ROOT"
+  printf '  bash        : %s\n' "$BASH_VERSION"
+  printf '  git         : %s  (%s)\n' "$(git --version 2>&1)" "$(command -v git)"
+  if command -v node >/dev/null 2>&1; then
+    printf '  node        : %s  (%s)\n' "$(node --version 2>&1)" "$(command -v node)"
+  else
+    printf '  node        : 缺失！闸门跑不了，推送会被保险丝拦下\n'
+  fi
+  printf '  remote      : %s\n' "$(git remote get-url origin 2>&1)"
+  printf '  分支        : %s\n' "$(git rev-parse --abbrev-ref HEAD 2>&1)"
+  printf '  领先远程    : %s 个提交\n' "$(git rev-list --count "origin/$REMOTE_BRANCH..HEAD" 2>/dev/null || echo '?')"
+  printf '  未提交改动  : %s 个文件\n' "$(git status --porcelain | grep -c .)"
+  printf '  计划任务    : 见 powershell -File scripts\\install-repo-sync.ps1 -Status\n'
+  exit 0
+fi
 
 # ---------- 单实例 ----------
 if [ -f "$LOCK" ]; then
@@ -106,7 +181,13 @@ if [ "$COUNT" -gt 0 ]; then
   fi
 
   # ---------- 保险丝 2：安全闸门 ----------
-  if ! node scripts/repo-sync-gate.mjs --list="$TMPLIST" >> "$LOG" 2>&1; then
+  # 扫的是「即将公开的全部内容」= 本次暂存的文件 **加上** 已提交但还没推的提交里改过的文件。
+  # 只扫暂存区是不够的：手动 commit 过、或钩子当时没跑成留下的提交，就绕过了闸门。
+  {
+    git diff --name-only "origin/$REMOTE_BRANCH..HEAD" 2>/dev/null || true
+    cat "$TMPLIST"
+  } | sort -u > "$PUBLIST"
+  if ! gate "$PUBLIST"; then
     log "✘ 保险丝 2 触发：安全闸门拦下敏感信息，已撤销暂存（明细见上方闸门输出）"
     git reset -q
     setstatus "结果：被安全闸门拦下（发现敏感信息），详见 logs/repo-sync.log"
@@ -133,6 +214,19 @@ if [ "$COUNT" -gt 0 ]; then
   SHA=$(git rev-parse --short HEAD)
   log "已提交 $SHA：$MSG"
 else
+  # 没有新改动、但有本地提交待推 —— 这些是「手动 commit 过 / 钩子当时没跑成」留下的，
+  # 内容从没经过闸门。推之前补一次，否则闸门对整条链路等于形同虚设。
+  if git rev-parse --verify --quiet "origin/$REMOTE_BRANCH" >/dev/null 2>&1; then
+    git diff --name-only "origin/$REMOTE_BRANCH..HEAD" > "$TMPLIST"
+    if [ -s "$TMPLIST" ]; then
+      if ! gate "$TMPLIST"; then
+        log "✘ 保险丝 2 触发：待推送的 $AHEAD 个提交里有敏感信息，已拒绝推送（明细见上方闸门输出）"
+        setstatus "结果：本地已有 $AHEAD 个提交未通过安全闸门，拒绝推送"
+        exit 1
+      fi
+      log "（待推送的 $AHEAD 个提交已补跑安全闸门，通过）"
+    fi
+  fi
   [ "$DRY" = "1" ] && { setstatus "结果：[dry-run] 无新改动，但有 $AHEAD 个提交待推送"; exit 0; }
   SHA=$(git rev-parse --short HEAD)
   log "无新改动，但有 $AHEAD 个本地提交待推送（HEAD=$SHA）"

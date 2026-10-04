@@ -216,16 +216,15 @@ if [ "$COUNT" -gt 0 ]; then
 else
   # 没有新改动、但有本地提交待推 —— 这些是「手动 commit 过 / 钩子当时没跑成」留下的，
   # 内容从没经过闸门。推之前补一次，否则闸门对整条链路等于形同虚设。
-  if git rev-parse --verify --quiet "origin/$REMOTE_BRANCH" >/dev/null 2>&1; then
-    git diff --name-only "origin/$REMOTE_BRANCH..HEAD" > "$TMPLIST"
-    if [ -s "$TMPLIST" ]; then
-      if ! gate "$TMPLIST"; then
-        log "✘ 保险丝 2 触发：待推送的 $AHEAD 个提交里有敏感信息，已拒绝推送（明细见上方闸门输出）"
-        setstatus "结果：本地已有 $AHEAD 个提交未通过安全闸门，拒绝推送"
-        exit 1
-      fi
-      log "（待推送的 $AHEAD 个提交已补跑安全闸门，通过）"
+  : > "$TMPLIST"                     # 上一轮可能留下过期清单，先清掉
+  git diff --name-only "origin/$REMOTE_BRANCH..HEAD" > "$PUBLIST" 2>/dev/null || : > "$PUBLIST"
+  if [ -s "$PUBLIST" ]; then
+    if ! gate "$PUBLIST"; then
+      log "✘ 保险丝 2 触发：待推送的 $AHEAD 个提交里有敏感信息，已拒绝推送（明细见上方闸门输出）"
+      setstatus "结果：本地已有 $AHEAD 个提交未通过安全闸门，拒绝推送"
+      exit 1
     fi
+    log "（待推送的 $AHEAD 个提交已补跑安全闸门，通过）"
   fi
   [ "$DRY" = "1" ] && { setstatus "结果：[dry-run] 无新改动，但有 $AHEAD 个提交待推送"; exit 0; }
   SHA=$(git rev-parse --short HEAD)

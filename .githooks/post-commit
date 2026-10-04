@@ -1,0 +1,16 @@
+#!/bin/sh
+# 提交即推送 —— 让「改完就想同步」不用等那 5 分钟。
+#
+# 为什么同步执行而不是丢到后台：
+#   Windows 上父进程退出时后台子进程容易被连带收掉，推送会悄无声息地丢；
+#   同步执行最多多等几秒，但成没成你立刻就能看见。
+#
+# 递归保护：repo-sync.sh 自己提交时会带 ITAM_REPO_SYNC=1，这里直接放行，
+# 免得「钩子 → 同步脚本 → 提交 → 又触发钩子」转圈。
+
+[ -n "${ITAM_REPO_SYNC:-}" ] && exit 0
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -f "$root/scripts/repo-sync.sh" ] || exit 0
+
+exec "$root/scripts/repo-sync.sh"

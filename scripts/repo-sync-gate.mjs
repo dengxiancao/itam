@@ -86,25 +86,29 @@ const ALLOW_SECRET_VALUE = [
 function isEnvNameOrFixture(matched) {
   const v = (matched.match(/["']([^"']*)["']/) || [])[1] ?? '';
   if (ALLOW_SECRET_VALUE.includes(v)) return true;
-  return /^[A-Z][A-Z0-9_]*$/.test(v);
+  if (/^[A-Z][A-Z0-9_]*$/.test(v)) return true;                 // 全大写常量名 = 环境变量名
+  return /^(test|dummy|fake|sample|example)[-_!]/i.test(v);      // test-key-123 这类明显的假值
 }
 
 // ---------- 通用：私网地址，凡不在白名单里就必须人工过审 ----------
-// 反查过 origin/main：下列每一条都是**已经公开、且确属测试夹具/示例**的值，
-// 新增一条白名单前请先确认它确实不是真实环境。
+// 白名单只放「公开仓库里本来就该有的占位值 / 已公开的测试夹具」，
+// 每一条都写清来源；新增一条前先确认它确实不是真实环境。
 const ALLOW_PRIVATE = [
-  '127.0.0.1',      // 回环
-  '0.0.0.0',
-  '192.168.1.100',  // 铁律 #10 规定的占位符
-  '192.168.1.5',    // tests/selftest.js 二维码夹具
-  '10.9.9.9',       // tests/security.js 假可信代理
-  '172.20.0.1',     // tests/selftest.js Hyper-V 假网卡
-  '172.28.96.1',    // tests/selftest.js WSL 假网卡
-  '172.28.220.1',   // tests/fixtures/glpi/computer_2.json 假网关
-  '10.59.29.175',   // tests/fixtures/glpi/printer_1.json 假打印机
-  '192.168.137.1',  // Windows「移动热点 / ICS」的固定默认网段（微软公开默认值，非本机私密信息），
-                    // tests/selftest.js 需要它来验证「该网段应被降权」，故保留
+  // 整段放行
+  { prefix: '127.', why: '回环（含 GLPI 假数据里的 127.0.0.0 / 127.0.1.1）' },
+  // ⚠️ 本项目约定的占位网段：手册与所有示例统一写 192.168.1.x（铁律 #10）。
+  //    若哪天办公网真的搬到 192.168.1.0/24，这条必须删掉，否则闸门会对真实地址失明。
+  { prefix: '192.168.1.', why: '本项目约定的占位网段（铁律 #10）' },
+  // 已公开的具体夹具值
+  { exact: '10.9.9.9', why: 'tests/security.js 假可信代理' },
+  { exact: '10.59.29.175', why: 'tests/fixtures/glpi/printer_1.json 假打印机' },
+  { exact: '172.20.0.1', why: 'tests/selftest.js Hyper-V 假网卡' },
+  { exact: '172.28.96.1', why: 'tests/selftest.js WSL 假网卡' },
+  { exact: '172.28.220.1', why: 'tests/fixtures/glpi/computer_2.json 假网关' },
+  { exact: '192.168.137.1', why: 'Windows 移动热点/ICS 的固定默认网段（微软公开默认值，非本机私密信息）；selftest 用它验证该网段应被降权' },
+  { prefix: '192.168.122.', why: 'libvirt / KVM 的默认 NAT 网段（公开默认值）；tests/fixtures/glpi/computer_1.json 假数据用' },
 ];
+const isAllowedPrivate = (ip) => ALLOW_PRIVATE.some((r) => (r.exact ? r.exact === ip : ip.startsWith(r.prefix)));
 const PRIVATE_IP = /\b(?:(?:10|127)\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b/g;
 
 // ---------- 行级白名单：真实存在的固定误报 ----------
@@ -158,7 +162,7 @@ for (const rel of files) {
     const hitHere = new Set(findings.filter((f) => f.file === rel && f.line === lineno).map((f) => f.hit));
     PRIVATE_IP.lastIndex = 0;
     for (const m of line.matchAll(PRIVATE_IP)) {
-      if (ALLOW_PRIVATE.includes(m[0]) || hitHere.has(m[0])) continue;
+      if (isAllowedPrivate(m[0]) || hitHere.has(m[0])) continue;
       add({ id: 'PRIVATE_IP', label: '未登记的私网地址' }, m[0], '不在白名单里 —— 若确属测试夹具，请显式加进 ALLOW_PRIVATE 并注明来源');
     }
   });

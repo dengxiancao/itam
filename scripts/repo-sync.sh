@@ -41,6 +41,7 @@ LOG="$ROOT/logs/repo-sync.log"
 STATUS="$ROOT/logs/repo-sync-status.txt"
 LOCK="$ROOT/logs/repo-sync.lock"
 TMPLIST="$ROOT/logs/.repo-sync-staged.txt"
+LASTFAIL="$ROOT/logs/.repo-sync-lastfail"
 REMOTE_BRANCH="main"
 LOCK_STALE=600          # 锁超过 10 分钟视为陈旧（上次跑挂了），允许接管
 PUSH_TIMEOUT=150
@@ -143,7 +144,15 @@ timeout 60 git fetch --quiet origin "$REMOTE_BRANCH" >> "$LOG" 2>&1 || log "（f
 
 PUSHOUT=""
 if ! PUSHOUT=$(timeout "$PUSH_TIMEOUT" git push origin "HEAD:$REMOTE_BRANCH" 2>&1); then
-  log "✘ 推送失败：$PUSHOUT"
+  # 同一原因反复失败时别每 5 分钟往日志里灌一遍（计划任务会刷屏）；
+  # 只在原因变化时记明细。状态文件每次都更新，当前情况一眼可见。
+  FAILKEY=$(printf '%s' "$PUSHOUT" | head -c 160)
+  if [ -f "$LASTFAIL" ] && [ "$(cat "$LASTFAIL" 2>/dev/null)" = "$FAILKEY" ]; then
+    log "推送仍失败（原因与上次相同，不重复记录）"
+  else
+    log "✘ 推送失败：$PUSHOUT"
+    printf '%s' "$FAILKEY" > "$LASTFAIL"
+  fi
   case "$PUSHOUT" in
     *non-fast-forward*|*rejected*|*fetch\ first*|*behind*)
       log "    原因：远程有新提交，历史分叉。**不要强推**，先人工对齐："
@@ -159,6 +168,7 @@ if ! PUSHOUT=$(timeout "$PUSH_TIMEOUT" git push origin "HEAD:$REMOTE_BRANCH" 2>&
 fi
 
 log "✔ 已推送 → origin/$REMOTE_BRANCH（HEAD=$SHA）"
+rm -f "$LASTFAIL"
 if [ "$COUNT" -gt 0 ]; then
   setstatus "结果：已推送 ${COUNT} 个文件（$SHA）"
 else

@@ -35,6 +35,9 @@ docs/网络与静态IP.md
 scripts/net-static.ps1
 scripts/net-dhcp.ps1
 
+# ---- 本机生成的同步入口（内含 bash.exe 绝对路径，由 install-repo-sync.ps1 生成）----
+scripts/repo-sync-run.cmd
+
 # ---- 手工备份副本（版本管理交给 git，这些不入库）----
 *.bak
 *.bak[0-9]*

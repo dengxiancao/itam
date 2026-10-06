@@ -7,6 +7,15 @@ certs/
 logs/
 *.log
 
+# ---- 数据库兜底：即使哪天库被挪出 data/（手工复制、导出到根目录等）也不入库 ----
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlitedb
+*.regressbak
+
 # ---- 密钥 / 凭据（切勿入库）----
 key.txt
 *.key

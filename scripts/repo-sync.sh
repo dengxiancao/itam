@@ -169,8 +169,10 @@ if [ "$COUNT" -gt 0 ]; then
   # ---------- 保险丝 1：不该入库的路径绝不能被 stage ----------
   # .gitignore 已经挡一层，这是第二层 —— 万一以后有人 git add -f 或改了 ignore 规则，
   # 也不能让真实数据库 / 现场照片 / 密钥 / 内部运维资料进公开仓库。
+  # 注意：目录规则只覆盖 data/ 这一个位置；扩展名规则是「数据库挪窝」的兜底
+  #（例如根目录出现 itam.db、或 backup/itam.db），两层缺一不可。
   FORBIDDEN_RE='^(data/|certs/|logs/|__patch/|_patch/|\.workbuddy/|_backup-|_redesign-preview|key\.txt|docs/网络与静态IP\.md|scripts/net-static\.ps1|scripts/net-dhcp\.ps1)'
-  FORBIDDEN_EXT_RE='\.(pem|log|bak|bak[0-9]+|bak-[^/]*|orig|old)$'
+  FORBIDDEN_EXT_RE='\.(pem|log|bak|bak[0-9]+|bak-[^/]*|orig|old|db|db-wal|db-shm|sqlite|sqlite3|sqlitedb)$'
   BAD=$(grep -E "$FORBIDDEN_RE|$FORBIDDEN_EXT_RE" "$TMPLIST" || true)
   if [ -n "$BAD" ]; then
     log "✘ 保险丝 1 触发：暂存区出现不该入库的路径，已撤销暂存"

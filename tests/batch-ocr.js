@@ -374,24 +374,30 @@ assert(!!mState && Array.isArray(mState.categories) && mState.categories.length 
   assert(mState.batch.items[0].result?.image_path === '/uploads/a.jpg', '照片地址是识别时归档的那张');
 
   // —— 核对页是 state 的投影，改字段改的是 state ——
+  // 分类要**显式挑**，别用默认选中那个：本套件和其它套件共用同一个临时库，
+  // 前面的套件可能往库里塞过分类（或把某个分类的专属字段清空），
+  // 于是 categories[0] 未必是有专属字段的那个 —— 靠默认值断言就会时红时绿。
+  // 同时挑一个「不是第一个」的，顺带证明入库取的是 state 里的分类，
+  // 而不是「反正都取到第一个」这种恒真命题。
+  const FIXED_KEYS = ['asset_no', 'brand', 'model', 'sn', 'category_id', 'org_id', 'supplier', 'status'];
+  const hasFields = (c) => (c.tracking_fields || []).some((t) => t && t.key && !FIXED_KEYS.includes(t.key));
+  const cats = mState.categories;
+  const sharedCat = (cats.slice(1).find(hasFields) || cats.find(hasFields) || cats[0]).id;
+  mState.batch.shared.category_id = sharedCat;
+  globalThis.renderBatch();                  // 等价于用户在下拉里换了分类
+  hydrateForm(els.get('#main').innerHTML);   // 渲染出来的下拉默认值 → DOM 桩
+
   const reviewHTML = els.get('#main').innerHTML;
   assert(reviewHTML.includes('id="batchReviewList"'), '待确认清单已渲染');
   assert(/data-f="sn"/.test(reviewHTML) && /data-bid="/.test(reviewHTML), '每一项都有可编辑的 SN 输入框（带 data-bid 定位）');
   assert(reviewHTML.includes('oninput="batchEditField(this)"'), '输入框改值会写回 state 而不是只留在 DOM');
   assert(reviewHTML.includes('id="batchCat"') && reviewHTML.includes('id="batchStatus"'), '「本批统一设置」有分类与状态下拉');
+  assert(reviewHTML.includes(`value="${sharedCat}" selected`), '下拉里选中的正是 state 里那一份（改 state 后重绘不会挑回第一个）');
   assert(reviewHTML.includes('id="bt_'), '批量页的分类专属字段用 bt_ 前缀（和单张页的 mt_ 分开，不会互相抢 id）');
+  assert(!reviewHTML.includes('id="mt_'), '批量页里没有 mt_ 前缀的字段（两边同屏也不会抢 id）');
 
   // 模拟用户改了第二台的 SN（等价于在输入框里敲）
   mState.batch.items[1].edit.sn = 'SN-B0002-FIXED';
-
-  // 换一个**不是第一个**的分类：这样「入库时取到的分类」才不是「反正都取到第一个」
-  // 这种恒真命题。改完重绘核对页（等价于用户在下拉里换了分类），再把渲染出来的
-  // 表单默认值灌回 DOM 桩。
-  const cats = mState.categories;
-  const sharedCat = (cats[1] || cats[0]).id;
-  mState.batch.shared.category_id = sharedCat;
-  globalThis.renderBatch();
-  hydrateForm(els.get('#main').innerHTML);
 
   // —— 批量入库 ——
   globalThis.batchSaveAll();

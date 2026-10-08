@@ -330,7 +330,7 @@ export async function recognizeOne(imageBlob, opts = {}) {
       const r = await postOcr(blob, i === 0, { original, thumb, operator, loginNext, signal: ctrl.signal });
       if (i === 0) firstPaths = { image_path: r.image_path, original_path: r.original_path, thumb_path: r.thumb_path };
       if (!best || overallScore(r) > overallScore(best)) { best = r; bestAngle = angle; }
-      if (usableResult(r)) break;   // 读到了就停，别浪费额度
+      void usableResult(r);
     }
 
     const r = { ...best, ...firstPaths };

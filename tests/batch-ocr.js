@@ -371,6 +371,24 @@ await wait(900);
 const mState = globalThis.mobileState;
 assert(!!mState && Array.isArray(mState.categories) && mState.categories.length > 0, `移动端已加载分类（${mState?.categories?.length || 0} 个）`);
 
+/**
+ * 退出批量页，并把它可能弹出的确认答掉。
+ *
+ * ⚠️ **必须用它，不能裸调 `exitBatch()`**：确认框没答就会一直开着，
+ * 下一个用例再问「有没有弹确认框」时读到的还是**上一个**留下的那个框
+ * （连着 `#mConfirmMsg` 里的旧文案也一起留下）—— 于是断言要么假绿、要么读到别的批次的数字。
+ * 这个坑是本套件真实踩到过的：前一个块裸调 `exitBatch()` 留下了「还有 2 张」的框，
+ * 后面那条「确认框里写清丢多少张」就读到了 2，而当时那一批其实有 30 张。
+ */
+async function exitBatchClean(ok = true) {
+  globalThis.mConfirmAnswer(false);        // 先把可能残留的框收干净，「弹没弹」才判得准
+  globalThis.exitBatch();
+  const asked = await waitFor(() => qs('#mConfirmBox').hidden === false, 1500);
+  if (asked) globalThis.mConfirmAnswer(ok);
+  await waitFor(() => mState.batch === null, 2000);
+  return asked;
+}
+
 {
   globalThis.route('home');
   const home = els.get('#main').innerHTML;
@@ -503,12 +521,12 @@ assert(!!mState && Array.isArray(mState.categories) && mState.categories.length 
   // 登录过期：整批立停
   ocrScript = [{ __status: 401, error: '登录已过期' }];
   ocrCalls = [];
-  globalThis.exitBatch();
+  await exitBatchClean();          // 上一批还有 2 张识别好没入库 → 这里会弹确认，必须答掉
   const files2 = ['x1.jpg', 'x2.jpg', 'x3.jpg'].map((n) => new File([new Uint8Array(256)], n, { type: 'image/jpeg' }));
   globalThis.startBatch(files2);
   await waitFor(() => !mState.batch || mState.batch.phase === 'review', 4000);
   assert(ocrCalls.length === 1, `登录过期时只发了 1 趟就整批停下（实测 ${ocrCalls.length} 趟）—— 不在同一个坑里连摔三次`);
-  globalThis.exitBatch();
+  await exitBatchClean();          // 这批只剩 error + pending，没东西可丢 → 不该弹确认
 }
 
 /* ---- 上限：只收前 30 张，而且必须说清「有几张没进来」 ---- */
@@ -531,11 +549,18 @@ section('手机端 m.js —— 上限与「退出会不会丢」');
   assert(ocrCalls.length === 30, `只对进来的 30 张发识别（实测 ${ocrCalls.length} 趟）—— 丢掉的不能还去烧额度`);
 
   // —— 有「识别好、没入库」的项时退出：必须先问 ——
+  // 先钉住前置条件：否则「确认框弹出来了」可能读到的是**上一个用例留下的框**，
+  // 「写清丢多少张」也会读到别的批次的数字（本套件真实踩过这个坑）。
+  assert(batchUnsavedOf(mState.batch) === 30, `前置：这一批确实有 ${batchUnsavedOf(mState.batch)} 张识别好没入库`);
+  assert(qs('#mConfirmBox').hidden === true, '前置：此刻确认框是收着的（不然下面「弹出来了吗」判不准）');
+
+  globalThis.exitBatch();
+  const asked = await waitFor(() => qs('#mConfirmBox').hidden === false, 3000);
+  assert(asked, '有 30 张识别好没入库 → 退出前先弹确认（手机端退出按钮就在拇指下面，误触成本最高）');
   // ⚠️ 这里一律用 `qs()` 而不是 `els.get()`：`qs` 是**按需创建**，`els.get` 拿不到就返回 undefined。
   //    变异成「不弹确认框」时，mConfirm 从没跑过 → 这几个 id 从没进过 Map →
   //    `els.get('#mConfirmMsg').textContent` 会直接 TypeError 把整套打崩，
   //    那样变异测试看到的是「崩溃」而不是「这条断言红了」。
-  assert(qs('#mConfirmBox').hidden === false, '有 30 张识别好没入库 → 退出前先弹确认（手机端退出按钮就在拇指下面，误触成本最高）');
   assert(String(qs('#mConfirmMsg').textContent).includes('30 张'), `确认框里写清丢多少张（实测「${qs('#mConfirmMsg').textContent}」）`);
   assert(qs('#mConfirmYes').textContent === '放弃' && qs('#mConfirmNo').textContent === '继续核对', `两个按钮说人话（实测「${qs('#mConfirmYes').textContent}」/「${qs('#mConfirmNo').textContent}」）`);
 

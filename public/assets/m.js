@@ -1899,7 +1899,7 @@ function renderBatch() {
       <div class="batch-list" id="batchList">${batchListHTML(b)}</div>
     </div>
     <div class="m-actionbar">
-      <button class="btn ghost block" onclick="exitBatch()">${svgIcon('x', 16)} 退出批量识别</button>
+      <button class="btn ghost wide" onclick="exitBatch()">${svgIcon('x', 16)} 退出批量识别</button>
     </div>`;
   paintBatchList();
 }

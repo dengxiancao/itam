@@ -1,4 +1,8 @@
 /* ================= ITAM 管理端应用 ================= */
+/* 识别链路（压缩 / 方向容错 / 灰度拉伸 / 串行队列）与手机端共用同一份实现，
+   见 public/assets/ocr-core.js —— 那边修好的坑这边自动就有了，别在这里再抄一份。 */
+import { recognizeFile, runSerial, overallScore, usableResult } from './ocr-core.js';
+
 const API = '/api';
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -96,6 +100,8 @@ let state = {
   // 「选中当前筛选下的全部 N 台」模式：勾了它就不逐个存 id，而是交给后端按筛选条件跑。
   // 值 = 该筛选下的总台数（0 表示没开这个模式）。
   selectAllMatching: 0,
+  // 批量识别录入（设备台账页的弹窗）的整批状态；弹窗关掉时置 null
+  batchOcr: null,
 };
 
 /* ================= API ================= */
@@ -771,6 +777,7 @@ async function devicesViewHTML() {
       <button class="btn" id="fSearch">${svgIcon('search')} 查询</button>
       <button class="btn ghost" id="fReset">重置</button>
       <span class="grow"></span>
+      ${hasPerm('device.write') ? `<button class="btn" id="btnBatchOcr" title="从电脑里一次选多张铭牌照片，识别后核对、一起入库">${svgIcon('camera')} 批量识别录入</button>` : ''}
       ${hasPerm('device.write') ? '<button class="btn primary" id="btnAdd">＋ 新增设备</button>' : ''}
       ${hasPerm('excel.export') ? `<button class="btn" id="btnExport" title="导出全部设备，不受上方筛选影响">${svgIcon('download')} 全部导出</button>` : ''}
       ${(hasPerm('device.write') || hasPerm('device.delete') || hasPerm('excel.export')) ? `
@@ -816,6 +823,7 @@ function bindDeviceEvents() {
     renderDevices();
   });
   on('#btnAdd', 'onclick', () => openDeviceForm());
+  on('#btnBatchOcr', 'onclick', () => openBatchOcr());
   // 右上角这个按钮 = 全部导出（不受上方筛选影响），只导出勾选的走「批量操作 → 导出所选」
   on('#btnExport', 'onclick', () => doExport({ all: true }));
   on('#btnBulk', 'onclick', (e) => { e.stopPropagation(); const m = $('#bulkMenu'); if (m) m.classList.toggle('open'); });
@@ -1307,6 +1315,418 @@ function bindDeviceForm(dev) {
       loadDevices();
     } catch (e) { toast(e.message, 'error'); }
   };
+}
+
+/* ==================================================================== *
+ * 批量识别录入（设备台账右上角）
+ *
+ * 手机端「批量识别入库」的电脑版：从资源管理器一次多选铭牌照片，
+ * 走**同一条**识别链路（ocr-core.js 的 recognizeFile），结果先进核对表格，
+ * 修改、勾选之后再逐条 POST /devices。
+ *
+ * 与 Excel 导入的分工：
+ *   · 手上是**照片** → 用这里（Excel 导入要求先把字段填进表格）；
+ *   · 手上是别人填好的**表格** → 走 Excel 导入，别绕照片一圈。
+ *
+ * ⚠️ 必须**串行**（runSerial）：GLM-4.6V-Flash 这类免费视觉模型限的是并发
+ *    （国际站 1、国内站 3），并发上传会被上游直接拒，界面只显示「没读出内容」。
+ *
+ * ⚠️ 一行里的输入框只是 state 的投影（值写进 item.edit），提交时读 state 不读 DOM。
+ *    这样中途重绘表格不会把用户已经改好的内容冲掉。
+ * ==================================================================== */
+
+/** 电脑端一次最多几张（比手机端放宽：电脑不会锁屏，页面可以一直开着） */
+const ADMIN_BATCH_MAX = 50;
+
+const BATCH_TEXT = {
+  pending: '等待识别', processing: '识别中…', ok: '已读出', weak: '没读全，请核对', error: '识别失败', saved: '已入库',
+};
+
+function openBatchOcr() {
+  if (!hasPerm('device.write')) { toast('没有「新增设备」权限', 'warn'); return; }
+  const firstCat = state.options?.categories?.[0]?.id || '';
+  state.batchOcr = {
+    items: [], total: 0, running: false, phase: 'pick',
+    supplier: '', ctrl: null, firstCat,
+  };
+  renderBatchOcrModal();
+}
+
+/** 关弹窗：把还在飞的识别请求掐掉，别留一个后台队列在跑 */
+function closeBatchOcr() {
+  const b = state.batchOcr;
+  if (b) { b.ctrl?.abort(); state.batchOcr = null; }
+  closeModal();
+  if (state.view === 'devices') loadDevices();   // 入过库就顺手刷新台账
+}
+
+function renderBatchOcrModal() {
+  openModal(batchOcrModalHTML(), { wide: true });
+  bindBatchOcrModal();
+}
+
+/**
+ * 弹窗内容（三个阶段共用一个函数）。
+ * ⚠️ 三种阶段的元素 id 都写在这一个渲染单元里，check-ids 才只把它们当成一组 ——
+ *    拆成三个函数的话，同名的 id 会被判成「同屏会互相抢」。
+ */
+function batchOcrModalHTML() {
+  const b = state.batchOcr;
+  const head = `<div class="modal-head"><h2>批量识别录入</h2><button class="modal-close" onclick="closeBatchOcr()">×</button></div>`;
+
+  if (!b || b.phase === 'pick') {
+    return `${head}
+      <div class="modal-body">
+        <p class="hint" style="margin-top:0">
+          从电脑里一次多选铭牌照片（按住 <b>Ctrl</b> / <b>Shift</b> 点选，或在文件夹里直接框选）。
+          系统会<b>一张一张地</b>识别 —— 上游视觉模型限的是并发，一起传只会被拒。
+          识别完在下面核对、修改，再勾选一起入库。
+        </p>
+        <div class="batch-drop">
+          <input type="file" id="batchOcrFiles" accept="image/*" multiple>
+          <div class="batch-drop-hint">支持 JPG / PNG / WebP。倒置、横放、拍歪的照片会自动转正后再识别。</div>
+        </div>
+        <p class="hint">
+          这里只识别「品牌 / 型号 / SN」，其余字段在下一屏统一设置。
+          使用人、存放位置这类分类专属字段，入库后可以用台账的
+          <b>批量操作 → 交接使用人 / 转移到组织</b> 整批补上。
+        </p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" onclick="closeBatchOcr()">关闭</button>
+      </div>`;
+  }
+
+  if (b.phase === 'run') {
+    return `${head}
+      <div class="modal-body">
+        <div class="batch-bar"><i id="batchOcrBarFill"></i></div>
+        <div class="batch-sum" id="batchOcrStat"></div>
+        <div class="batch-list" id="batchOcrList">${adminBatchListHTML(b)}</div>
+      </div>
+      <div class="modal-foot">
+        <span class="muted">识别期间可以关掉这个窗口，已读到的不受影响</span>
+        <button class="btn" id="batchOcrCancel">中止识别</button>
+      </div>`;
+  }
+
+  const n = adminPickCount(b);
+  const weak = b.items.filter((it) => it.status === 'weak').length;
+  const bad = b.items.filter((it) => it.status === 'error').length;
+  const saved = b.items.filter((it) => it.status === 'saved').length;
+  const read = b.items.filter((it) => ['ok', 'weak', 'saved'].includes(it.status)).length;
+  const allOn = adminSelectable(b).length > 0 && adminSelectable(b).every((it) => it.include);
+  return `${head}
+    <div class="modal-body">
+      <div class="batch-sum">
+        共 ${b.total} 张：读到 <b>${read}</b> 张${weak ? `（其中 ${weak} 张没读全）` : ''}${bad ? `，<b style="color:var(--red)">${bad} 张失败</b>` : ''}${saved ? `，已入库 ${saved} 台` : ''}。
+        照着每张的照片核对一遍再勾选 —— 识别只是初稿，SN 最容易看错（L/1、O/Q）。
+      </div>
+      <div class="batch-tools">
+        <label class="sw-inline"><input type="checkbox" id="batchOcrAll" ${allOn ? 'checked' : ''}> 全选可入库的</label>
+        <label class="sw-inline">供应商
+          <select id="batchOcrSupplier"><option value="">— 未指定 —</option>
+            ${(state.options.suppliers || []).map((s) => `<option value="${esc(s)}" ${s === b.supplier ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+          </select>
+        </label>
+        ${bad ? `<button class="btn sm" id="batchOcrRetry">${svgIcon('refresh', 14)} 重试 ${bad} 张</button>` : ''}
+        <span class="grow"></span>
+        <span class="muted" id="batchOcrPicked">已勾选 ${n} 台</span>
+      </div>
+      <div class="table-wrap batch-tablewrap">
+        <table class="grid batch-grid">
+          <thead><tr>
+            <th style="width:34px"></th>
+            <th style="width:70px">照片</th>
+            <th>品牌</th>
+            <th>型号</th>
+            <th>SN 序列号</th>
+            <th style="width:140px">分类</th>
+            <th style="width:180px">所属组织</th>
+            <th style="width:110px">状态</th>
+            <th style="width:150px">识别结果</th>
+          </tr></thead>
+          <tbody id="batchOcrBody">${adminBatchRowsHTML(b)}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeBatchOcr()">取消</button>
+      <button class="btn primary" id="batchOcrCommit" ${n ? '' : 'disabled'}>${svgIcon('save', 15)} 批量入库（${n} 台）</button>
+    </div>`;
+}
+
+function batchOcrCatOptions(it) {
+  return (state.options.categories || []).map((c) => `<option value="${c.id}" ${c.id === it.edit.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+}
+
+/** 核对表格的每一行。失败的没有输入框（填了也提交不出照片），只说明原因。 */
+function adminBatchRowsHTML(b) {
+  return b.items.map((it) => {
+    const r = it.result;
+    const bad = it.status === 'error';
+    const saved = it.status === 'saved';
+    const src = r?.image_path || r?.thumb_path || '';
+    if (bad) {
+      return `<tr data-bid="${esc(it.id)}" class="batch-bad">
+        <td data-label="" class="keep"></td>
+        <td data-label="照片" class="keep"></td>
+        <td colspan="6" data-label="识别失败"><span style="color:var(--red)">${esc(it.error || '识别失败')}（${esc(it.name)}）</span></td>
+        <td data-label="" class="keep"></td>
+      </tr>`;
+    }
+    return `<tr data-bid="${esc(it.id)}" class="${saved ? 'batch-saved' : ''}">
+      <td data-label="" class="keep"><input type="checkbox" class="batch-ck" data-bid="${esc(it.id)}" ${it.include && !saved ? 'checked' : ''} ${saved ? 'disabled' : ''}></td>
+      <td data-label="照片" class="keep">${src ? `<img class="batch-thumb" src="${esc(src)}" alt="${esc(it.name)}" loading="lazy">` : '<span class="muted">—</span>'}</td>
+      <td data-label="品牌"><input class="batch-in" data-f="brand" data-bid="${esc(it.id)}" value="${esc(it.edit.brand)}" placeholder="品牌"></td>
+      <td data-label="型号"><input class="batch-in" data-f="model" data-bid="${esc(it.id)}" value="${esc(it.edit.model)}" placeholder="型号"></td>
+      <td data-label="SN 序列号"><input class="batch-in mono" data-f="sn" data-bid="${esc(it.id)}" value="${esc(it.edit.sn)}" placeholder="序列号"></td>
+      <td data-label="分类"><select class="batch-in" data-f="category_id" data-bid="${esc(it.id)}">${batchOcrCatOptions(it)}</select></td>
+      <td data-label="所属组织"><select class="batch-in" data-f="org_id" data-bid="${esc(it.id)}">
+        <option value="">未分配</option>
+        ${(state.options.orgs || []).map((o) => `<option value="${o.id}" ${o.id === it.edit.org_id ? 'selected' : ''}>${esc(o.path || o.name)}</option>`).join('')}
+      </select></td>
+      <td data-label="状态"><select class="batch-in" data-f="status" data-bid="${esc(it.id)}">
+        ${(state.options.statuses || []).map((s) => `<option value="${s.id}" ${s.id === it.edit.status ? 'selected' : ''}>${s.label}</option>`).join('')}
+      </select></td>
+      <td data-label="识别结果" class="batch-flags">
+        ${saved ? `<span class="tag" style="color:var(--green)">${esc(it.note || '已入库')}</span>` : ''}
+        ${it.note && !saved ? `<span class="tag" style="color:var(--red)">${esc(it.note)}</span>` : ''}
+        <span class="muted" style="font-variant-numeric:tabular-nums">置信度 ${Math.round(overallScore(r) * 100)}%</span>
+        ${it.status === 'weak' ? '<span class="tag" style="color:var(--amber)">没读全</span>' : ''}
+        ${r?.duplicate?.exists ? '<span class="tag" style="color:var(--amber)">SN 已存在</span>' : ''}
+        ${r?.rotate_angle ? `<span class="tag">已转正 ${r.rotate_angle}°</span>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function adminBatchListHTML(b) {
+  return b.items.map((it, i) => `
+    <div class="batch-line ${esc(it.status)}">
+      <span class="batch-no">${i + 1}</span>
+      <span class="batch-line-txt">
+        <span class="bn">${esc(it.name)}</span>
+        <span class="bs">${esc(it.stage || it.error || BATCH_TEXT[it.status] || '')}</span>
+      </span>
+    </div>`).join('');
+}
+
+function adminFinished(b) {
+  return (b?.items || []).filter((it) => it.status !== 'pending' && it.status !== 'processing').length;
+}
+
+/** 可勾选的项：识别失败的没照片可挂，已入库的不该再提交一次 */
+function adminSelectable(b) {
+  return (b?.items || []).filter((it) => it.status !== 'error' && it.status !== 'saved');
+}
+
+function adminPickCount(b) {
+  return adminSelectable(b).filter((it) => it.include).length;
+}
+
+/** 弹窗里所有交互都在这儿挂：整块 innerHTML 换过之后要重新挂一次 */
+function bindBatchOcrModal() {
+  const b = state.batchOcr;
+  if (!b) return;
+
+  const files = $('#batchOcrFiles');
+  if (files) {
+    files.onchange = () => {
+      const all = [...(files.files || [])];
+      const imgs = all.filter((f) => !f.type || f.type.startsWith('image/'));
+      if (!imgs.length) { toast(all.length ? '这些不是图片文件' : '没有选到图片', 'warn'); return; }
+      startBatchOcr(imgs);
+    };
+  }
+  const cancel = $('#batchOcrCancel');
+  if (cancel) cancel.onclick = () => closeBatchOcr();
+  const retry = $('#batchOcrRetry');
+  if (retry) retry.onclick = () => batchOcrRetryFailed();
+  const all = $('#batchOcrAll');
+  if (all) all.onchange = () => batchOcrToggleAll(all.checked);
+  const sup = $('#batchOcrSupplier');
+  if (sup) sup.onchange = () => { if (state.batchOcr) state.batchOcr.supplier = sup.value; };
+  const commit = $('#batchOcrCommit');
+  if (commit) commit.onclick = () => batchOcrSaveAll();
+
+  // 行内输入：值是 state 的投影，边敲边写回 item.edit
+  $$('#batchOcrBody .batch-in').forEach((el) => {
+    const write = () => {
+      const cur = state.batchOcr;
+      if (!cur) return;
+      const it = cur.items.find((x) => x.id === el.dataset.bid);
+      if (it) it.edit[el.dataset.f] = String(el.value ?? '');
+    };
+    el.oninput = write;
+    el.onchange = write;
+  });
+  $$('#batchOcrBody .batch-ck').forEach((el) => {
+    el.onchange = () => {
+      const cur = state.batchOcr;
+      if (!cur) return;
+      const it = cur.items.find((x) => x.id === el.dataset.bid);
+      if (it) it.include = !!el.checked;
+      paintBatchOcrFoot();
+    };
+  });
+}
+
+function paintBatchOcrFoot() {
+  const b = state.batchOcr;
+  if (!b) return;
+  const n = adminPickCount(b);
+  const picked = $('#batchOcrPicked');
+  if (picked) picked.textContent = `已勾选 ${n} 台`;
+  const btn = $('#batchOcrCommit');
+  if (btn) { btn.disabled = !n; btn.innerHTML = `${svgIcon('save', 15)} 批量入库（${n} 台）`; }
+}
+
+function batchOcrToggleAll(on) {
+  const b = state.batchOcr;
+  if (!b) return;
+  for (const it of adminSelectable(b)) it.include = on;
+  $$('#batchOcrBody .batch-ck').forEach((el) => { el.checked = on; });
+  paintBatchOcrFoot();
+}
+
+/* ---------- 跑识别 ---------- */
+
+function startBatchOcr(files) {
+  const b = state.batchOcr;
+  if (!b || b.running) return;
+  if (files.length > ADMIN_BATCH_MAX) toast(`一次最多 ${ADMIN_BATCH_MAX} 张，先处理前 ${ADMIN_BATCH_MAX} 张`, 'warn');
+  const list = files.slice(0, ADMIN_BATCH_MAX);
+  const stamp = Date.now();
+  b.items = list.map((f, i) => ({
+    id: `b${stamp}_${i}`,
+    file: f,
+    name: (f.name || '').trim() || `照片 ${i + 1}`,
+    status: 'pending',
+    stage: '',
+    error: '',
+    result: null,
+    include: true,
+    note: '',
+    edit: { brand: '', model: '', sn: '', category_id: b.firstCat, org_id: '', status: 'in_use' },
+  }));
+  b.total = list.length;
+  b.phase = 'run';
+  b.ctrl = new AbortController();
+  renderBatchOcrModal();
+  runBatchOcrQueue(b.items);
+}
+
+async function runBatchOcrQueue(subset) {
+  const b = state.batchOcr;
+  if (!b || b.running) return;
+  const mine = b;
+  mine.running = true;
+  mine.phase = 'run';
+  renderBatchOcrModal();
+
+  const paint = () => {
+    const fill = $('#batchOcrBarFill');
+    if (fill) fill.style.width = `${Math.round((adminFinished(mine) / Math.max(1, mine.total)) * 100)}%`;
+    const stat = $('#batchOcrStat');
+    if (stat) stat.textContent = `已识别 ${adminFinished(mine)} / ${mine.total}`;
+    const list = $('#batchOcrList');
+    if (list) list.innerHTML = adminBatchListHTML(mine);
+  };
+  paint();
+
+  const operator = state.auth?.display_name || state.auth?.username || 'desktop';
+  await runSerial(subset || mine.items, async (it) => {
+    it.status = 'processing';
+    it.stage = '正在读取图片…';
+    it.error = '';
+    paint();
+    const r = await recognizeFile(it.file, {
+      operator,
+      loginNext: '/',
+      signal: mine.ctrl?.signal,
+      onStage: (m) => { it.stage = m; paint(); },
+    });
+    it.result = r;
+    it.status = usableResult(r) ? 'ok' : 'weak';
+    it.stage = '';
+    // 识别出来的值灌进 edit，之后用户改的是 edit
+    it.edit = { ...it.edit, brand: r.brand || '', model: r.model || '', sn: r.sn || '' };
+  }, {
+    // 用户把弹窗关了就别再往服务器打请求
+    shouldContinue: () => state.batchOcr === mine,
+    onDone: () => paint(),
+  });
+
+  if (state.batchOcr !== mine) return;
+  mine.running = false;
+  mine.phase = 'review';
+  renderBatchOcrModal();
+}
+
+/** 只重试识别失败的（网络/服务端问题重试有意义；「没读全」的得人工补） */
+function batchOcrRetryFailed() {
+  const b = state.batchOcr;
+  if (!b || b.running) return;
+  const failed = b.items.filter((it) => it.status === 'error');
+  if (!failed.length) { toast('没有识别失败的项目', 'warn'); return; }
+  for (const it of failed) { it.status = 'pending'; it.error = ''; it.stage = ''; }
+  runBatchOcrQueue(failed);
+}
+
+/* ---------- 提交入库 ---------- */
+
+async function batchOcrSaveAll() {
+  const b = state.batchOcr;
+  if (!b || b.running) return;
+  const picks = adminSelectable(b).filter((it) => it.include);
+  if (!picks.length) { toast('还没有勾选任何一台', 'warn'); return; }
+  const missing = picks.filter((it) => !String(it.edit.sn || '').trim());
+  if (missing.length) { toast(`有 ${missing.length} 台还没填 SN，请先补上`, 'warn'); return; }
+
+  const btn = $('#batchOcrCommit');
+  if (btn) btn.disabled = true;
+  let ok = 0; let fail = 0; let toasted = false;
+  for (let i = 0; i < picks.length; i++) {
+    const it = picks[i];
+    if (btn) btn.textContent = `入库中 ${i + 1}/${picks.length}…`;
+    try {
+      const payload = {
+        brand: it.edit.brand || '',
+        model: it.edit.model || '',
+        sn: String(it.edit.sn).trim(),
+        category_id: it.edit.category_id || '',
+        org_id: it.edit.org_id || null,
+        supplier: b.supplier || null,
+        status: it.edit.status || 'in_use',
+        sn_source: it.result?.mocked ? 'ocr-mock' : 'ocr',
+        ocr_confidence: Math.max(it.result?.sn_confidence, it.result?.brand_confidence),
+        photo_path: it.result?.image_path || null,
+        sn_photo_path: it.result?.image_path || null,
+        photo_original_path: it.result?.original_path || it.result?.image_path || null,
+        photo_thumb_path: it.result?.thumb_path || null,
+        ocr_raw: JSON.stringify({
+          provider: it.result?.provider, brand: it.result?.brand, model: it.result?.model,
+          sn: it.result?.sn, lines: (it.result?.lines || []).slice(0, 30),
+        }),
+        operator: state.auth?.display_name || state.auth?.username || 'desktop',
+      };
+      const dev = await api('/devices', { method: 'POST', body: JSON.stringify(payload) });
+      it.status = 'saved';
+      it.include = false;
+      it.note = `已入库 ${dev.asset_no}`;
+      ok++;
+    } catch (e) {
+      fail++;
+      it.note = e.message.includes('已存在') || e.message.includes('409')
+        ? 'SN 已存在，没入库'
+        : `入库失败：${e.message}`;
+      if (!toasted) { toast(it.note, 'error'); toasted = true; }
+    }
+  }
+  if (fail) toast(`已入库 ${ok} 台，${fail} 台没成功`, ok ? 'warn' : 'error');
+  else toast(`已全部入库：${ok} 台`);
+  renderBatchOcrModal();
 }
 
 /* ---------- 设备详情 ---------- */
@@ -4578,6 +4998,11 @@ window.help = help;
 window.showHelpTip = showHelpTip;
 window.hideHelpTip = hideHelpTip;
 window.openDeviceForm = openDeviceForm;
+/* 批量识别录入：弹窗标题栏的 × 和底部「取消」都是内联 onclick，
+   不挂 window 就是「点了没反应、控制台还干净」的那种静默失效。
+   其余的控件在 bindBatchOcrModal() 里按 id 挂，不需要导出。 */
+window.openBatchOcr = openBatchOcr;
+window.closeBatchOcr = closeBatchOcr;
 window.openOrgForm = openOrgForm;
 window.openCatForm = openCatForm;
 window.openQRModal = openQRModal;

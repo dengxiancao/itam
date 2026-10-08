@@ -754,3 +754,97 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .card-head h3 { margin: 0; }
 .btn.xs { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: var(--radius-sm); gap: 4px; }
 .btn.xs.danger, .btn.sm.danger { background: var(--red-soft); border-color: var(--red-border); color: var(--red-text); }
+
+/* ============================================================
+ * 批量识别入库
+ *
+ * 两个阶段两套布局：
+ *   · 识别中 —— 一行一张的进度清单（.batch-line）。这时候不能用「卡片 + 输入框」，
+ *     因为每张的字段都还没读出来，摆一堆空输入框只会让人以为要手填。
+ *   · 待确认 —— 一张一卡（.batch-item）：左边勾选框、中间照片、右边可改的字段。
+ *     照片必须和字段并排：这个页面的全部价值就是「照着照片核对字段」，
+ *     上下分开会让用户来回滚动，滚两下就懒得核了。
+ * ============================================================ */
+
+/* ---- 阶段一：进度条 + 清单 ---- */
+.batch-bar {
+  height: 6px; border-radius: var(--pill); background: var(--surface-3);
+  overflow: hidden; margin: 4px 0 8px;
+}
+.batch-bar > i {
+  display: block; height: 100%; width: 0; border-radius: var(--pill);
+  background: var(--primary); transition: width .3s ease;
+}
+.batch-stat { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; margin-bottom: 10px; }
+
+.batch-list { display: flex; flex-direction: column; }
+
+.batch-line {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 2px; border-top: 1px solid var(--border-soft);
+}
+.batch-line:first-child { border-top: none; }
+.batch-no {
+  flex: none; width: 22px; height: 22px; border-radius: var(--pill);
+  display: grid; place-items: center; font-size: 11.5px; font-weight: 600;
+  background: var(--surface-3); color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+.batch-line-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.batch-line-txt .bn {
+  font-size: 13.5px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.batch-line-txt .bs {
+  font-size: 11.5px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.batch-line-ico { flex: none; display: grid; place-items: center; width: 18px; color: var(--text-3); }
+.batch-line.processing .batch-no { background: var(--primary-soft); color: var(--primary); }
+.batch-line.processing .batch-line-ico { color: var(--primary); }
+.batch-line.ok .batch-line-ico, .batch-line.saved .batch-line-ico { color: var(--green); }
+.batch-line.weak .batch-line-ico { color: var(--amber); }
+.batch-line.error .batch-line-ico { color: var(--red); }
+.batch-line.error .batch-line-txt .bs { color: var(--red-text); }
+
+/* ---- 阶段二：待确认清单 ---- */
+.batch-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 2px; border-top: 1px solid var(--border-soft);
+}
+.batch-item:first-child { border-top: none; }
+.batch-pick { flex: none; padding-top: 3px; }
+.batch-pick input { width: 18px; height: 18px; accent-color: var(--primary); }
+.batch-thumb {
+  flex: none; width: 62px; height: 62px; border-radius: var(--radius-md);
+  background: var(--photo-bg); overflow: hidden; display: grid; place-items: center;
+}
+.batch-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.batch-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.batch-name {
+  font-size: 11.5px; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.batch-f { display: flex; align-items: center; gap: 8px; }
+.batch-f .bl { flex: none; width: 26px; font-size: 12px; color: var(--text-3); }
+.batch-f input {
+  flex: 1; min-width: 0; height: 34px; padding: 0 9px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: #fff; color: var(--text); font-size: 13.5px; font-family: inherit;
+}
+.batch-f input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); }
+.batch-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.batch-tag {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 7px;
+  border-radius: var(--pill); font-size: 11px; font-weight: 600;
+  background: var(--surface-3); color: var(--text-3);
+}
+.batch-tag.warn { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); }
+.batch-tag.ok { background: var(--green-soft); color: var(--green); border: 1px solid var(--green-border); }
+.batch-note { font-size: 11.5px; line-height: 1.5; display: flex; align-items: center; gap: 4px; }
+.batch-note.error { color: var(--red-text); }
+.batch-note.ok { color: var(--green); }
+.batch-item.bad .batch-thumb { background: var(--surface-3); }
+.batch-item.saved { opacity: .72; }
+
+/* 动作栏里唯一那颗按钮要占满整行（.m-actionbar .btn 默认被压成 96px） */
+.m-actionbar .btn.wide { flex: 1; }

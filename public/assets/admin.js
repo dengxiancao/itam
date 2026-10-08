@@ -1382,9 +1382,9 @@ function batchOcrModalHTML() {
           系统会<b>一张一张地</b>识别 —— 上游视觉模型限的是并发，一起传只会被拒。
           识别完在下面核对、修改，再勾选一起入库。
         </p>
-        <div class="batch-drop">
+        <div class="batch-drop" id="batchOcrDrop">
           <input type="file" id="batchOcrFiles" accept="image/*" multiple>
-          <div class="batch-drop-hint">支持 JPG / PNG / WebP。倒置、横放、拍歪的照片会自动转正后再识别。</div>
+          <div class="batch-drop-hint">支持 JPG / PNG / WebP。<b>也可以直接把照片从资源管理器拖进来</b>。倒置、横放、拍歪的照片会自动转正后再识别。</div>
         </div>
         <p class="hint">
           这里只识别「品牌 / 型号 / SN」，其余字段在下一屏统一设置。
@@ -1550,6 +1550,8 @@ function bindBatchOcrModal() {
   const commit = $('#batchOcrCommit');
   if (commit) commit.onclick = () => batchOcrSaveAll();
 
+  bindBatchOcrDrop();
+
   // 行内输入：值是 state 的投影，边敲边写回 item.edit
   $$('#batchOcrBody .batch-in').forEach((el) => {
     const write = () => {
@@ -1569,6 +1571,50 @@ function bindBatchOcrModal() {
       if (it) it.include = !!el.checked;
       paintBatchOcrFoot();
     };
+  });
+}
+
+/**
+ * 让它配得上那圈虚线框：资源管理器里把照片**直接拖进来**。
+ *
+ * 为什么非做不可：虚线框在电脑上就是「拖到这儿」的通用语。用户（尤其这个功能的目标用户
+ * ——刚拆箱、手上是相机导出来的一堆图）看到虚线框第一反应就是拖，拖不进就会认为功能坏了。
+ * 宁可不画虚线框，也别画了不认。
+ *
+ * ⚠️ `dragover` 必须 `preventDefault()`：不调的话浏览器**根本不允许放下**（连光标都不会变）。
+ * ⚠️ `drop` 也必须 `preventDefault()`：不然浏览器会拿那张图把当前页面顶掉（直接跳转去打开图片）。
+ *    这两条一旦漏了，功能是「拖了没反应」或者「页面被图顶掉」，而且都不报错。
+ *
+ * 拖文件夹不做展开（File System Access / webkitGetAsEntry 各家行为不一致，收益不值这个复杂度）：
+ * 文件夹会被当成一个没有类型的条目送进队列，识别时明确报「无法读取该图片」，不会被静默吞掉。
+ */
+function bindBatchOcrDrop() {
+  const box = $('#batchOcrDrop');
+  const files = $('#batchOcrFiles');
+  if (!box) return;
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  const hint = (on) => box.classList.toggle('over', on);
+  const imgsOf = (dt) => [...(dt?.files || [])].filter((f) => !f.type || f.type.startsWith('image/'));
+
+  box.addEventListener('dragenter', (e) => { stop(e); hint(true); });
+  box.addEventListener('dragover', (e) => {
+    stop(e);
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';   // 光标显示「复制」而不是「禁止」
+    hint(true);
+  });
+  // relatedTarget 挪到框外才撤高亮：不然在框内两个子元素之间移动会闪
+  box.addEventListener('dragleave', (e) => { stop(e); if (!box.contains(e.relatedTarget)) hint(false); });
+  box.addEventListener('drop', (e) => {
+    stop(e);
+    hint(false);
+    const b = state.batchOcr;
+    if (!b || b.running) return;          // 已经在跑了就别再塞一批
+    const dropped = [...(e.dataTransfer?.files || [])];
+    const imgs = imgsOf(e.dataTransfer);
+    if (!imgs.length) { toast(dropped.length ? '拖进来的不是图片文件' : '没有拖进来文件', 'warn'); return; }
+    // 顺手同步到文件框：用户能直观看到「这次选了哪几个」
+    try { if (files) files.files = e.dataTransfer.files; } catch { /* 个别浏览器不给赋值，不影响识别 */ }
+    startBatchOcr(imgs);
   });
 }
 

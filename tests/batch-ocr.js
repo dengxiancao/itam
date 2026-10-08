@@ -33,6 +33,7 @@ class FakeEl {
     this.className = '';
     this.onclick = this.onkeydown = this.onchange = this.oninput = null;
     this._classes = new Set();
+    this._on = {};          // 记下 addEventListener 注册的处理，桩里才能主动 fire
     this.classList = {
       add: (...c) => c.forEach((x) => this._classes.add(x)),
       remove: (...c) => c.forEach((x) => this._classes.delete(x)),
@@ -40,6 +41,18 @@ class FakeEl {
       contains: (c) => this._classes.has(c),
     };
   }
+  /** 触发已注册的事件（模拟浏览器派发）。返回有多少个处理被调用。 */
+  fire(type, ev = {}) {
+    const list = this._on[type] || [];
+    for (const fn of list) fn(ev);
+    return list.length;
+  }
+  addEventListener(type, fn) { (this._on[type] ||= []).push(fn); }
+  removeEventListener(type, fn) {
+    this._on[type] = (this._on[type] || []).filter((x) => x !== fn);
+  }
+  /** 桩里元素没有嵌套关系，所以「谁都不在自己里面」就是正确语义 */
+  contains() { return false; }
   set innerHTML(v) { this._innerHTML = String(v); }
   get innerHTML() { return this._innerHTML; }
   get lastElementChild() { if (!this._last) this._last = new FakeEl(); return this._last; }
@@ -51,7 +64,6 @@ class FakeEl {
   querySelectorAll() { return []; }
   appendChild() {} insertBefore() {} insertAdjacentHTML() {} removeChild() {}
   setAttribute() {} getAttribute() { return null; } removeAttribute() {}
-  addEventListener() {} removeEventListener() {}
   click() {} focus() {} remove() {}
 }
 
@@ -505,6 +517,7 @@ assert(!!aState && !!aState.options, '管理端已加载选项（分类 / 组织
   assert(/type="file"[^>]*multiple/.test(pick) || /multiple[^>]*type="file"/.test(pick), '文件框支持多选（资源管理器里可以框选一批）');
   const input = els.get('#batchOcrFiles');
   assert(typeof input.onchange === 'function', '文件选择框已绑定 onchange（没绑就是点了没反应）');
+  assert(pick.includes('id="batchOcrDrop"'), '选文件区有 id，拖放事件才有地方挂');
 
   // —— 走真实的绑定路径：塞文件 → 触发 onchange ——
   ocrScript = [
@@ -538,6 +551,41 @@ assert(!!aState && !!aState.options, '管理端已加载选项（分类 / 组织
   globalThis.closeBatchOcr();
   assert(aState.batchOcr === null, '关掉弹窗会把批次状态清空并中止还在跑的识别');
   assert(els.get('#modalMask').hidden === true, '弹窗已关闭');
+}
+
+{
+  // —— 从资源管理器**直接拖进来**：虚线框承诺了「拖到这儿」，就得真认 ——
+  globalThis.openBatchOcr();
+  const drop = els.get('#batchOcrDrop');
+  // ⚠️ 用 >=1 而不是 ===1：桩里 innerHTML 换字符串，元素对象不重建，
+  //    于是重开弹窗会重复挂载。真实浏览器里 innerHTML 换掉旧节点，监听随之销毁。
+  assert((drop._on.drop || []).length >= 1, '虚线框上挂了 drop 处理（画了虚线框不认拖放，用户会以为功能坏了）');
+  assert((drop._on.dragover || []).length >= 1, 'dragover 也挂了 —— 不 preventDefault 浏览器根本不允许放下');
+
+  ocrScript = [ocrPayload({ sn: 'D-9', image_path: '/uploads/d9.jpg' })];
+  ocrCalls = []; devicePosts = [];
+  let prevented = 0;
+  const ev = (files) => ({
+    preventDefault: () => { prevented++; },
+    stopPropagation: () => {},
+    dataTransfer: files ? { files } : {},
+  });
+  drop.fire('dragover', ev(null));
+  assert(drop.classList.contains('over'), '拖到框上时给出落点高亮（不然用户不知道能不能放）');
+  drop.fire('drop', ev([new File([new Uint8Array(256)], 'd9.jpg', { type: 'image/jpeg' })]));
+
+  const queued = await waitFor(() => aState.batchOcr && aState.batchOcr.items.length === 1, 4000);
+  assert(queued && aState.batchOcr.items[0].name === 'd9.jpg', '拖进来的照片真的进了识别队列（不是只有样式变一下）');
+  assert(prevented >= 2, `dragover / drop 都调了 preventDefault（实测 ${prevented} 次）—— 漏了的话浏览器会把那张图直接打开、把页面顶掉`);
+  assert(drop.classList.contains('over') === false, '放下之后把高亮撤掉');
+
+  // 非图片被拖进来时不能静默什么都不做
+  globalThis.closeBatchOcr();
+  globalThis.openBatchOcr();
+  const drop2 = els.get('#batchOcrDrop');
+  drop2.fire('drop', ev([new File([new Uint8Array(8)], 'bom.xlsx', { type: 'application/vnd.ms-excel' })]));
+  assert(!aState.batchOcr || aState.batchOcr.items.length === 0, '拖进来的不是图片 → 不入队（Excel 该走「Excel 表格」那一页，别在这里当照片认）');
+  globalThis.closeBatchOcr();
 }
 
 /* ================= 汇总 ================= */

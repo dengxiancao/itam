@@ -41,6 +41,7 @@ const SUITES = [
   { file: 'qr-decode.js', label: '二维码解码器', server: false },
   { file: 'ledger-density.js', label: '台账密度', server: false },
   { file: 'export-scope.js', label: 'Excel 导出范围', server: false },
+  { file: 'timezone.js', label: '时区 / 日期口径', server: false },
   { file: 'vision-adapter.js', label: 'OCR 通道', server: false },
   { file: 'charts.js', label: '统计图表', server: true },
   { file: 'm-dashboard-slim.js', label: '手机首页瘦身', server: true },

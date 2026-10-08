@@ -327,14 +327,18 @@ await check('照片列：导出 Excel 自动嵌图 + 实时链接带可用的照
 
   const sheetNames = parseXlsx(buf).sheets;
   let checkedCols = 0;
-  let sawOriginalCol = false;
   for (const n of sheetNames) {
     if (['字段说明', '设备分类', '组织架构', '汇总'].includes(n)) continue;
     const p = parseXlsx(buf, { sheet: n });
     if (!p.headers.includes('照片')) throw new Error(`工作表「${n}」缺少「照片」列`);
-    if (!p.headers.includes('照片链接')) throw new Error(`工作表「${n}」缺少「照片链接」列`);
-    // 「原图链接」只在真的有独立原图时才出列，避免和「照片链接」一模一样
-    if (p.headers.includes('原图链接')) sawOriginalCol = true;
+    // 链接列**只剩一列**，叫「原图链接」。
+    // （2026-10-08 起：「照片链接」+「原图链接」两列合并 —— 两列只是同一张照片的
+    //   两个尺寸版本，全库每台设备都有独立原图，于是两列除文件名外完全一样，
+    //   看上去就像坏了两列。用户的原话：「图片链接只保留原图链接就好了」。）
+    if (p.headers.includes('照片链接')) {
+      throw new Error(`工作表「${n}」还有多余的「照片链接」列 —— 链接列应只剩「原图链接」`);
+    }
+    if (!p.headers.includes('原图链接')) throw new Error(`工作表「${n}」缺少「原图链接」列`);
     checkedCols++;
   }
   if (!checkedCols) throw new Error('没有可校验的明细工作表');
@@ -344,22 +348,38 @@ await check('照片列：导出 Excel 自动嵌图 + 实时链接带可用的照
   const withPhotos = live.sheets.find((s) => s.name) || null;
   const r = await fetch(live.all.html);
   const html = await r.text();
-  if (!html.includes('照片链接')) throw new Error('实时网页表格缺少「照片链接」列');
+  if (!html.includes('原图链接')) throw new Error('实时网页表格缺少「原图链接」列');
+  if (html.includes('照片链接')) throw new Error('实时网页表格里还残留多余的「照片链接」列');
   if (!String(r.headers.get('x-photo-count'))) throw new Error('缺少 X-Photo-Count 响应头');
 
   // 照片列必须是可点击的超链接（短文字），不能是一屏长网址
   if (/<td>https?:\/\/[^<]*\/uploads\//.test(html)) {
     throw new Error('照片链接应渲染成可点击的 <a> 短链接，而不是裸网址文本');
   }
-  if (!html.includes('<a href="http://') || !html.includes('打开照片')) {
-    throw new Error('照片链接没有渲染成「打开照片」超链接');
+  if (!html.includes('<a href="http://') || !html.includes('打开原图')) {
+    throw new Error('原图链接没有渲染成「打开原图」超链接');
   }
 
-  // 同一行里「照片链接」和「原图链接」不能指向同一个文件（以前两列一模一样）
+  // 链接列只剩一列 —— 同一行不该出现两条照片超链接
   for (const tr of html.split('<tr>')) {
-    const links = [...tr.matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
-    if (links.length === 2 && links[0] === links[1]) {
-      throw new Error('同一行的「照片链接」与「原图链接」重复，看起来像坏了两列');
+    const links = [...tr.matchAll(/<a href="([^"]+)"[^>]*>打开原图</g)].map((m) => m[1]);
+    if (links.length > 1) throw new Error('同一行出现了多条照片链接，链接列没有合并干净');
+  }
+
+  // ★ 合并后留下的那一列必须指向**原图**（`photo_original_path`），不是压缩图 ——
+  //   这才是「只保留原图链接」这句话的实质：不是单纯删一列，而是留下的那列要是原图。
+  const withDistinctOrig = (await req('/api/devices?page_size=200')).body.items
+    .find((d) => d.photo_original_path && d.photo_original_path !== d.photo_path);
+  if (withDistinctOrig) {
+    const origFile = withDistinctOrig.photo_original_path.split('/').pop();
+    const compFile = withDistinctOrig.photo_path.split('/').pop();
+    if (!html.includes(origFile)) {
+      throw new Error(`「原图链接」没有指向原图：实时表格里找不到 ${origFile}`);
+    }
+    // 该设备那一行里不该出现压缩图的文件名（出现就说明链接还指着压缩图）
+    const row = html.split('<tr>').find((tr) => tr.includes(origFile));
+    if (row && row.includes(compFile)) {
+      throw new Error(`「原图链接」指向的是压缩图 ${compFile}，不是原图 ${origFile}`);
     }
   }
 

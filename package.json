@@ -19,6 +19,7 @@
     "charts": "node tests/charts.js",
     "m-slim": "node tests/m-dashboard-slim.js",
     "scan": "node tests/scan-verify.js",
+    "batch": "node tests/batch-ocr.js",
     "render": "node tests/render-smoke.js",
     "ledger": "node tests/ledger-density.js",
     "bulk-e2e": "node __patch/run-bulk-e2e.mjs",
@@ -26,7 +27,8 @@
     "security-mutate": "node __patch/mutate-security.mjs",
     "security-csp": "node __patch/csp-check.mjs",
     "security-gate": "node __patch/gate-probe.mjs",
-    "orientation-mutate": "node __patch/mutate-orient.mjs"
+    "orientation-mutate": "node __patch/mutate-orient.mjs",
+    "batch-mutate": "node __patch/mutate-batch.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

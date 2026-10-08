@@ -1,4 +1,13 @@
 /* ================= ITAM 移动端应用 ================= */
+/* 识别链路（压缩 / 方向容错 / 灰度拉伸 / 串行队列）与电脑端共用同一份实现，
+   见 public/assets/ocr-core.js —— 那边修好的坑这边自动就有了，别在这里再抄一份。 */
+import {
+  OCR_MAX_SIDE, ORIGINAL_MAX_SIDE, THUMB_MAX_SIDE,
+  downscaleToBlob, loadImageBlob, shootFromImage, enhanceForOcr,
+  inkProfileCV, textAxisOf, retryAngles, usableResult, rotateBlob, grayOfBlob,
+  overallScore, recognizeOne, runSerial,
+} from './ocr-core.js';
+
 const API = '/api';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -622,101 +631,10 @@ function frameCropRect(vw, vh, { pad = 0.15 } = {}) {
   return { x, y, w, h };
 }
 
-/**
- * 等比缩放成 JPEG Blob，可只取其中的一块（crop 用视频像素坐标）。
- * 手机原图动辄 4000×3000、好几 MB，直接 toDataURL 会卡死主线程且上传极慢。
- * maxSide 只做「不超过」限制：传 4096 时若源图只有 1920 宽，就保持 1920 原样输出。
- */
-function downscaleToBlob(src, maxSide = 1600, quality = 0.85, crop = null) {
-  return new Promise((resolve) => {
-    try {
-      const sw = src.videoWidth || src.naturalWidth || src.width || 0;
-      const sh = src.videoHeight || src.naturalHeight || src.height || 0;
-      if (!sw || !sh) { resolve(null); return; }
-      const sx = crop ? Math.max(0, Math.min(crop.x, sw - 1)) : 0;
-      const sy = crop ? Math.max(0, Math.min(crop.y, sh - 1)) : 0;
-      const cw = crop ? Math.max(1, Math.min(crop.w, sw - sx)) : sw;
-      const ch = crop ? Math.max(1, Math.min(crop.h, sh - sy)) : sh;
-
-      const scale = Math.min(1, maxSide / Math.max(cw, ch));
-      const w = Math.max(1, Math.round(cw * scale));
-      const h = Math.max(1, Math.round(ch * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(src, sx, sy, cw, ch, 0, 0, w, h);
-      if (typeof canvas.toBlob !== 'function') { resolve(null); return; }
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', quality);
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-/* 一次拍照产出三份图，全部自动上传，用户不用点任何按钮：
- *   image    最长边 2200px —— 给 OCR 识别用（铭牌小字要够清楚）
- *   original 原始分辨率   —— 原图，归档进设备详情
- *   thumb    最长边 320px  —— 缩略图，导出 Excel 时嵌进单元格
- *
- * 为什么提到 2200：以前是 1600，铭牌上的序列号只占几十个像素，
- * 视觉模型经常把 L 看成 1、O 看成 Q。多给点像素明显更准，
- * 传上去也就两三百 KB，值得。
- */
-const OCR_MAX_SIDE = 2200;
-const ORIGINAL_MAX_SIDE = 4096;
-const THUMB_MAX_SIDE = 320;
-
-/**
- * 拍照结果先做一次「灰度 + 对比度拉伸」，再交给识别。
- *
- * 铭牌大多是白底黑字，但手机拍摄常偏灰、反光、曝光不均；
- * 拉伸一下直方图能让字和底分得更开，对小型文字的识别率提升很明显。
- * 只影响送去 OCR 的那张，归档的原图不动。
- */
-function enhanceForOcr(blob) {
-  return new Promise((resolve) => {
-    if (typeof createImageBitmap !== 'function') { resolve(blob); return; }
-    createImageBitmap(blob).then((bmp) => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = bmp.width;
-        canvas.height = bmp.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(bmp, 0, 0);
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = img.data;
-
-        // 先算灰度直方图，取 2% / 98% 分位当黑白点
-        const hist = new Uint32Array(256);
-        for (let i = 0; i < d.length; i += 4) {
-          const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0;
-          hist[g]++;
-        }
-        const total = d.length / 4;
-        let lo = 0; let hi = 255; let acc = 0;
-        for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= total * 0.02) { lo = v; break; } }
-        acc = 0;
-        for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= total * 0.02) { hi = v; break; } }
-        if (hi - lo < 24) { lo = 0; hi = 255; }   // 本来就没什么对比度，别硬拉
-        const span = Math.max(1, hi - lo);
-
-        for (let i = 0; i < d.length; i += 4) {
-          let g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
-          g = ((g - lo) / span) * 255;
-          g = g < 0 ? 0 : g > 255 ? 255 : g;
-          d[i] = d[i + 1] = d[i + 2] = g;
-        }
-        ctx.putImageData(img, 0, 0);
-        bmp.close?.();
-        if (typeof canvas.toBlob !== 'function') { resolve(blob); return; }
-        canvas.toBlob((b) => resolve(b && b.size ? b : blob), 'image/jpeg', 0.92);
-      } catch {
-        resolve(blob);
-      }
-    }).catch(() => resolve(blob));
-  });
-}
+/* 缩放的三个尺寸上限（OCR_MAX_SIDE / ORIGINAL_MAX_SIDE / THUMB_MAX_SIDE）、
+   downscaleToBlob、enhanceForOcr 都在 ocr-core.js：
+   一次拍照产出三份图 —— image 最长边 2200px（给识别，铭牌小字要够清楚）、
+   original 原始分辨率（归档进设备详情）、thumb 最长边 320px（导出 Excel 嵌单元格）。 */
 
 /**
  * 从相机视频帧取三份图 —— **都只保留取景框内的画面**。

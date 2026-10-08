@@ -25,7 +25,36 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const JS = fs.readFileSync(path.join(ROOT, 'public/assets/admin.js'), 'utf8');
+
+/**
+ * 把 admin.js 顶部那行 ES 模块 import 换成等价的桩声明。
+ *
+ * 为什么必须换：本套件用 `vm.runInContext` 把 admin.js 当**经典脚本**跑在沙箱里
+ * （只有这样才读得到模块作用域的 `state`），而经典脚本解析到 `import` 会直接
+ * SyntaxError —— 文件根本加载不进去，后面所有断言一起废掉，报出来的却是
+ * 「加载失败」这种和业务无关的错。
+ *
+ * 本套件只关心**布局与密度**，识别链路一次都不会被调用，所以：
+ *   · 函数名 → 调用即抛的桩（真被调用会立刻炸，不会静默算错）
+ *   · 全大写常量 → 给个占位数值（m.js 会 import OCR_MAX_SIDE 这类数，桩成函数会让算术变 NaN）
+ * 桩按**实际的 import 列表**生成，以后那边加导出不用回来改这里。
+ *
+ * 生产代码保持 ES 模块不动 —— 适配只发生在夹具里。
+ * （`await import()` 那几套 harness 不需要这个，Node 原生认 ES 模块。）
+ */
+function esmImportToStub(src) {
+  return src.replace(
+    /^import\s*\{([\s\S]*?)\}\s*from\s*['"][^'"]*ocr-core\.js['"];?[ \t]*$/m,
+    (_all, names) => names.split(',').map((s) => s.trim()).filter(Boolean)
+      .map((s) => s.split(/\s+as\s+/).pop().trim())
+      .map((n) => (/^[A-Z0-9_]+$/.test(n)
+        ? `const ${n} = 1000;`
+        : `const ${n} = function ${n}() { throw new Error('${n} 属于识别链路，本套件（布局 / 密度）不调用它'); };`))
+      .join('\n'),
+  );
+}
+
+const JS = esmImportToStub(fs.readFileSync(path.join(ROOT, 'public/assets/admin.js'), 'utf8'));
 const CSS = fs.readFileSync(path.join(ROOT, 'public/assets/admin.css'), 'utf8');
 
 let pass = 0;

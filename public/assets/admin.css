@@ -1377,3 +1377,81 @@ label > .help, .sw-txt > .help { vertical-align: -2px; }
   .ex-search { flex: 1; }
   .ex-details { min-width: 0; }
 }
+
+/* ============================================================
+ * 批量识别录入（设备台账 → 右上角）
+ *
+ * 三个阶段两套外观：
+ *   · 识别中：进度条 + 一行一张的清单（此时还没有字段可核，摆空输入框会误导）
+ *   · 待确认：一张一行的核对表格，照片缩略图与被核对的字段**同行**——
+ *     这个页面的全部价值就是「照着照片核对字段」，隔行或换页就没意义了
+ *
+ * 表格沿用 table.grid，但列数多、每格都要塞输入框，
+ * 所以把左右内边距收窄、行高交给输入框撑。
+ * ============================================================ */
+.batch-drop {
+  margin: 14px 0 4px; padding: 18px; text-align: center;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.batch-drop input[type="file"] { font-size: 13.5px; color: var(--text-2); }
+.batch-drop-hint { margin-top: 8px; font-size: 12px; color: var(--ink-4); }
+
+.batch-bar {
+  height: 6px; border-radius: var(--pill); background: var(--surface-3);
+  overflow: hidden; margin: 4px 0 10px;
+}
+.batch-bar > i {
+  display: block; height: 100%; width: 0; border-radius: var(--pill);
+  background: var(--primary); transition: width .3s var(--ease);
+}
+.batch-sum { font-size: 13px; line-height: 1.6; color: var(--text-2); margin-bottom: 12px; }
+
+.batch-list { display: flex; flex-direction: column; max-height: 46vh; overflow-y: auto; }
+.batch-line {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 2px; border-top: 1px solid var(--line-2);
+}
+.batch-line:first-child { border-top: none; }
+.batch-no {
+  flex: none; width: 22px; height: 22px; border-radius: var(--pill);
+  display: grid; place-items: center; font-size: 11.5px; font-weight: 600;
+  background: var(--surface-3); color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+.batch-line-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.batch-line-txt .bn {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.batch-line-txt .bs {
+  font-size: 11.5px; color: var(--ink-4);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.batch-line.processing .batch-no { background: var(--primary-soft); color: var(--primary); }
+.batch-line.error .batch-line-txt .bs { color: var(--red-text); }
+
+.batch-tools {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.batch-tools .grow { flex: 1; }
+
+.batch-tablewrap { border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; max-height: 52vh; }
+table.grid.batch-grid { font-size: 13px; }
+/* 每格都要塞输入框，16px 的左右内边距在这种列数下太浪费 */
+table.grid.batch-grid th, table.grid.batch-grid td { padding: 0 8px; height: 56px; }
+table.grid.batch-grid thead th { position: sticky; top: 0; z-index: 1; }
+.batch-in {
+  width: 100%; min-width: 76px; height: 34px; padding: 0 8px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: #fff; color: var(--text); font-size: 13px; font-family: inherit;
+}
+.batch-in:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); }
+select.batch-in { padding-right: 4px; }
+.batch-thumb {
+  width: 54px; height: 54px; border-radius: var(--radius-sm); object-fit: cover;
+  background: var(--photo-bg); display: block;
+}
+.batch-flags { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; white-space: normal; }
+.batch-grid tr.batch-saved { opacity: .72; }
+.batch-grid tr.batch-bad { background: var(--red-soft); }

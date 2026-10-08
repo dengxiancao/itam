@@ -1946,7 +1946,7 @@ function renderBatchReview(b) {
         共 ${b.total} 张：读到 ${b.items.filter((it) => it.status === 'ok' || it.status === 'weak' || it.status === 'saved').length} 张${weak ? `（其中 ${weak} 张没读全）` : ''}${bad ? ` · ${bad} 张失败` : ''}。
         照着每张上面的照片核对一遍再勾选 —— 识别只是初稿，SN 最容易看错（L/1、O/Q）。
       </p>
-      <div class="batch-list" id="batchList">${batchReviewListHTML(b)}</div>
+      <div class="batch-list" id="batchReviewList">${batchReviewListHTML(b)}</div>
     </div>
 
     <div class="card">

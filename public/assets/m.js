@@ -209,6 +209,7 @@ let state = {
   recentQuery: '',
   recentStatus: '',      // 「最近设备」的状态筛选片
   recentTotal: 0,        // 服务端上报的总数，用来提示「只显示了前 N 台」
+  batch: null,           // 批量识别入库的整批状态（见 startBatch），不用时是 null
 };
 
 async function api(path, opts = {}) {
@@ -311,7 +312,8 @@ function route(view) {
   // DOM 桩和部分旧浏览器没有 scrollTo，缺失时不影响正常渲染。
   try { window.scrollTo?.({ top: 0, left: 0, behavior: 'instant' }); } catch { /* ignore */ }
   closeMore();
-  const fn = { dashboard: renderDashboard, home: renderHome, scan: renderScan, recent: renderRecent }[view] || renderHome;
+  // batch 是「批量识别入库」的流程页，不放 tab 里（它有自己的退出按钮）
+  const fn = { dashboard: renderDashboard, home: renderHome, scan: renderScan, recent: renderRecent, batch: renderBatch }[view] || renderHome;
   fn();
 }
 
@@ -323,8 +325,12 @@ function fmtNum(n) {
 
 
 /* ================= 识别入库（tab: home）—— 「只做事」的一页 =================
- * 这一页的职责**只有一件事**：把设备录进来。所以屏幕上只留四个动作：
- *   拍照识别入库（主）· 从相册选图识别 · 扫码核对查询 · 照片备份开关
+ * 这一页的职责**只有一件事**：把设备录进来。所以屏幕上只留这几个动作：
+ *   拍照识别入库（主）· 从相册选图识别 · 批量识别入库（相册多选）·
+ *   扫码核对查询 · 照片备份开关
+ * 后两个相册入口是一对：选一张走单张流程（当场核对、当场入库），
+ * 选多张走批量流程（攒成清单再一起入库）。**别把它们合成一个入口**——
+ * 合并后必须靠「选了几张」去猜用户想干什么，猜错的那一半体验会很差。
  *
  * 明确不放的东西（和「仪表盘」的分工，改之前先读）：
  *   - 不放概览数字  → 那是仪表盘的事，这里放数字会把主按钮挤下首屏；
@@ -365,7 +371,12 @@ function renderHomeLegacy() {
     <div class="m-group">
       <button class="m-row" onclick="galleryForCapture()">
         <span class="em">${svgIcon('image', 19)}</span>
-        <span class="m-row-txt"><span class="t">从相册选图识别</span><span class="s">没有拍照条件时，上传铭牌照片识别</span></span>
+        <span class="m-row-txt"><span class="t">从相册选图识别</span><span class="s">没有拍照条件时，上传一张铭牌照片识别</span></span>
+        ${svgIcon('chevron', 16)}
+      </button>
+      <button class="m-row" onclick="galleryForBatch()">
+        <span class="em">${svgIcon('list', 19)}</span>
+        <span class="m-row-txt"><span class="t">批量识别入库</span><span class="s">一次选多张相册照片，逐张识别、核对后一起入库</span></span>
         ${svgIcon('chevron', 16)}
       </button>
       <button class="m-row" onclick="renderScan()">
@@ -658,20 +669,8 @@ async function shootFromVideo(video) {
   return { image, original, thumb, crop, source: { vw, vh } };
 }
 
-/**
- * 从相册选图：**不裁**。
- * 这里没有取景框，用户选的图本身就是他想要的那张；
- * 按屏幕比例硬裁一条反而会把铭牌切掉。
- */
-async function shootFromImage(img, file) {
-  const [image, thumb] = await Promise.all([
-    downscaleToBlob(img, OCR_MAX_SIDE, 0.92),
-    downscaleToBlob(img, THUMB_MAX_SIDE, 0.7),
-  ]);
-  // 手机相册原图常有十几 MB，超了就用压缩图当原图，避免上传卡死
-  const original = file && file.size <= 20 * 1024 * 1024 ? file : image;
-  return { image, original, thumb };
-}
+/* shootFromImage（相册选图：不裁，见 ocr-core.js）—— 手机和电脑都走同一条，
+   没有取景框就不该按屏幕比例硬裁，否则会把铭牌切掉。 */
 
 function setCaptured(shots) {
   const { image, original, thumb } = shots || {};
@@ -1047,139 +1046,12 @@ function retakePhoto() {
   openCamera('capture');
 }
 
-/* ============ 方向容错：倒着 / 横着 / 拍歪了也要能认 ============ *
- * 铭牌经常是倒着的（笔记本底部的标签相对取景方向就是反的），整幅转过的照片
- * 识别模型基本读不出 SN。这里判一下「文字是横排还是竖排」，再按 0/90/180/270
- * 轮着试，任一趟读出东西就停。
- * 正常照片第一趟就命中，**不会多调一次识别服务、也不会多等**。
+/* ============ 方向容错与发趟逻辑：全部在 ocr-core.js ============ *
+ * 判文字走向（inkProfileCV / textAxisOf）→ 0/90/180/270 轮着试（retryAngles /
+ * rotateBlob / grayOfBlob）→ 读到就停（usableResult）→ recognizeOne 一趟包办。
+ * 抽出去是因为手机端和电脑端走的是同一条链路，抄成两份迟早会分叉，
+ * 而且分叉出来的毛病是静默的（照片躺了却不重试，界面只显示「没读到」）。
  * ============================================================== */
-
-/** 墨量投影的两轴起伏。文字成行 → 该轴上是「行/空隙」交替，起伏大；另一轴平坦。 */
-function inkProfileCV(gray, w, h) {
-  const row = new Float64Array(h);
-  const col = new Float64Array(w);
-  for (let y = 0; y < h; y++) {
-    const base = y * w;
-    let sum = 0;
-    for (let x = 0; x < w; x++) {
-      const ink = 255 - gray[base + x];
-      sum += ink;
-      col[x] += ink;
-    }
-    row[y] = sum;
-  }
-  const cv = (arr, n) => {
-    let sum = 0;
-    for (let i = 0; i < n; i++) sum += arr[i];
-    const mean = sum / n;
-    if (!(mean > 0)) return 0;
-    let v = 0;
-    for (let i = 0; i < n; i++) { const d = arr[i] - mean; v += d * d; }
-    return Math.sqrt(v / n) / mean;
-  };
-  return { row: cv(row, h), col: cv(col, w) };
-}
-
-/**
- * 文字走向：'h' 横排 / 'v' 竖排，ratio 是判据强度（1 = 分不出来）。
- * 只用来决定「先试哪个角度」，判错也只是多试一趟，不会改坏照片。
- */
-function textAxisOf(gray, w, h) {
-  const none = { axis: 'h', ratio: 1 };
-  if (!gray || !w || !h || gray.length < w * h) return none;
-  const s = inkProfileCV(gray, w, h);
-  // 两边都太平（画面基本没字/没对比）→ 不给意见
-  if (s.row < 0.15 && s.col < 0.15) return none;
-  return s.row >= s.col
-    ? { axis: 'h', ratio: s.row / Math.max(s.col, 1e-6) }
-    : { axis: 'v', ratio: s.col / Math.max(s.row, 1e-6) };
-}
-
-/** 重试顺序：横排先试倒置 180（最常见），竖排先试转 90/270。90 的三种必全覆盖。 */
-function retryAngles(axis) {
-  return axis === 'v' ? [90, 270, 180] : [180, 90, 270];
-}
-
-/** 这一趟算不算「读出来了」：有 SN 最好；或者品牌 + 型号都读到了 */
-function usableResult(r) {
-  if (!r) return false;
-  if (r.sn) return true;
-  return !!(r.brand && r.model);
-}
-
-/** 旋转 Blob（只走 90 的整数倍）。失败就原样返回，不阻断识别。 */
-function rotateBlob(blob, angle) {
-  return new Promise((resolve) => {
-    if (!angle || typeof createImageBitmap !== 'function') { resolve(blob); return; }
-    createImageBitmap(blob).then((bmp) => {
-      try {
-        const swap = angle % 180 !== 0;
-        const canvas = document.createElement('canvas');
-        canvas.width = swap ? bmp.height : bmp.width;
-        canvas.height = swap ? bmp.width : bmp.height;
-        const ctx = canvas.getContext('2d');
-        // ⚠️ 画布尺寸和变换是两件事：只改 width/height 不 rotate，画面会转到画布外面去
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate((angle * Math.PI) / 180);
-        ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
-        bmp.close?.();
-        if (typeof canvas.toBlob !== 'function') { resolve(blob); return; }
-        canvas.toBlob((b) => resolve(b && b.size ? b : blob), 'image/jpeg', 0.92);
-      } catch { resolve(blob); }
-    }).catch(() => resolve(blob));
-  });
-}
-
-/** 取灰度小图（判方向用，不用清晰）。拿不到就返回 null，走「不判方向」的默认路径。 */
-function grayOfBlob(blob, maxSide = 480) {
-  return new Promise((resolve) => {
-    if (typeof createImageBitmap !== 'function') { resolve(null); return; }
-    createImageBitmap(blob).then((bmp) => {
-      try {
-        const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
-        const w = Math.max(16, Math.round(bmp.width * scale));
-        const h = Math.max(16, Math.round(bmp.height * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(bmp, 0, 0, w, h);
-        const d = ctx.getImageData(0, 0, w, h).data;
-        const gray = new Uint8Array(w * h);
-        for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
-          gray[i] = (d[j] * 299 + d[j + 1] * 587 + d[j + 2] * 114) / 1000 | 0;
-        }
-        bmp.close?.();
-        resolve({ gray, w, h });
-      } catch { resolve(null); }
-    }).catch(() => resolve(null));
-  });
-}
-
-/**
- * 发一趟识别。`first` 那趟才带原图/缩略图并落盘；
- * 重试那几趟只是同一张图转个方向，带 `save=0` 让服务端跳过归档，别刷出一堆重复文件。
- */
-async function postOcr(blob, first, signal) {
-  const fd = new FormData();
-  fd.append('image', blob, 'nameplate.jpg');
-  if (state.operator) fd.append('operator', state.operator);   // 每一趟都要，审计日志才带得上录入人
-  if (first) {
-    if (state.originalBlob) fd.append('original', state.originalBlob, 'original.jpg');
-    if (state.thumbBlob) fd.append('thumb', state.thumbBlob, 'thumb.jpg');
-  } else {
-    fd.append('save', '0');
-  }
-  const res = await fetch('/api/ocr', { method: 'POST', body: fd, signal });
-  if (res.status === 401) {
-    location.href = '/login?next=' + encodeURIComponent('/m') + '&expired=1';
-    const e = new Error('登录已过期');
-    e.redirected = true;
-    throw e;
-  }
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error || body?.detail || `识别失败（HTTP ${res.status}）`);
-  return body?.data ?? body;
-}
 
 /* ================= 识别 ================= */
 async function startRecognize() {
@@ -1194,33 +1066,14 @@ async function startRecognize() {
   const okb = state.originalBlob ? Math.round(state.originalBlob.size / 1024) : 0;
   setPreviewInfo(`正在上传并识别（识别图 ${kb} KB${okb ? ` · 原图 ${okb} KB 同时归档` : ''}）…`, true);
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 120000);
   try {
-    // 送去识别的那张先做灰度 + 对比度拉伸：铭牌小字会清楚很多
-    const ocrBlob = (await enhanceForOcr(state.capturedBlob)) || state.capturedBlob;
-    if (ocrBlob !== state.capturedBlob) setPreviewInfo('已增强对比度，正在上传识别…', true);
-
-    // 判文字走向 → 决定先用哪个角度。拿不到灰度就按「先试 180」走
-    const probe = await grayOfBlob(ocrBlob);
-    const axis = probe ? textAxisOf(probe.gray, probe.w, probe.h) : { axis: 'h', ratio: 1 };
-    const angles = [0, ...retryAngles(axis.axis)];
-
-    let best = null;
-    let bestAngle = 0;
-    let firstPaths = null;      // 图片地址只认第一趟的：那才是用户真正拍下的那张
-    for (let i = 0; i < angles.length; i++) {
-      const angle = angles[i];
-      const blob = angle === 0 ? ocrBlob : await rotateBlob(ocrBlob, angle);
-      if (i > 0) setPreviewInfo(`没读出内容，正在把照片转正 ${angle}° 再试一次…`, true);
-      const r = await postOcr(blob, i === 0, ctrl.signal);
-      if (i === 0) firstPaths = { image_path: r.image_path, original_path: r.original_path, thumb_path: r.thumb_path };
-      if (!best || overallConf(r) > overallConf(best)) { best = r; bestAngle = angle; }
-      if (usableResult(r)) break;   // 读到了就停，别浪费额度
-    }
-
-    const r = { ...best, ...firstPaths };
-    if (bestAngle) r.note = [r.note, `照片是转过来的，已自动旋转 ${bestAngle}° 后识别`].filter(Boolean).join('；');
+    const r = await recognizeOne(state.capturedBlob, {
+      original: state.originalBlob,
+      thumb: state.thumbBlob,
+      operator: state.operator,
+      loginNext: '/m',
+      onStage: (m) => setPreviewInfo(m, true),
+    });
     state.recognizeResult = r;
     $('#previewOverlay').hidden = true;
     setPreviewInfo('');
@@ -1237,7 +1090,6 @@ async function startRecognize() {
     btn.disabled = false;
     btn.innerHTML = svgIcon('search') + ' 识别';
   } finally {
-    clearTimeout(timer);
     state.busy = false;
   }
 }
@@ -1526,18 +1378,27 @@ function mobileTrackingFields(cat) {
   return (cat?.tracking_fields || []).filter((t) => t && t.key && !MOBILE_FIXED_KEYS.includes(t.key));
 }
 
-/** 渲染当前分类的专属字段（手机端） */
+/** 分类专属字段区的 HTML（前缀区分「单张结果页」与「批量待确认页」） */
+function trackingFieldsHTML(cat, prefix = 'mt_') {
+  const fields = mobileTrackingFields(cat);
+  if (!cat || !fields.length) return '';
+  return `
+    <div class="sub-group">
+      <div class="sub-group-hd">${esc(cat.name)}</div>
+      ${fields.map((t) => `<div class="field"><label>${esc(t.label)}</label>${mobileTrackingInput(t, mobileFieldValue(t), prefix)}</div>`).join('')}
+    </div>`;
+}
+
+/**
+ * 渲染当前分类的专属字段（手机端单张结果页）。
+ * ⚠️ 签名必须保持**无参**：它被当成 onchange 处理器直接挂上去（`catSel.onchange = renderMobileTracking`），
+ *    浏览器会把事件对象当第一个实参传进来。多加了形参，`$()` 收到 Event 会当场抛错。
+ */
 function renderMobileTracking() {
   const box = $('#rTracking');
   if (!box) return;
   const cat = state.categories.find((c) => c.id === ($('#rCat')?.value || ''));
-  const fields = mobileTrackingFields(cat);
-  if (!cat || !fields.length) { box.innerHTML = ''; return; }
-  box.innerHTML = `
-    <div class="sub-group">
-      <div class="sub-group-hd">${esc(cat.name)}</div>
-      ${fields.map((t) => `<div class="field"><label>${esc(t.label)}</label>${mobileTrackingInput(t, mobileFieldValue(t))}</div>`).join('')}
-    </div>`;
+  box.innerHTML = trackingFieldsHTML(cat, 'mt_');
 }
 
 /**
@@ -1674,8 +1535,14 @@ function mobileFieldValue(t) {
   return remembered || dflt;                   // 文本/数字/日期：记忆优先，其次默认值
 }
 
-function mobileTrackingInput(t, value) {
-  const id = `mt_${t.key}`;
+/**
+ * 分类专属字段的输入控件。
+ * ⚠️ `prefix` 不是装饰：单张识别结果页用 mt_，批量待确认页用 bt_。
+ *    两页虽然不同时出现，但同一个函数被两处调用时就该把「谁的元素」说清楚 ——
+ *    一旦哪天真同屏，重名 id 会让 `$('#id')` 只拿到第一个，另一个静默读不到值。
+ */
+function mobileTrackingInput(t, value, prefix = 'mt_') {
+  const id = `${prefix}${t.key}`;
   const v = value === undefined || value === null ? '' : String(value);
   if (t.type === 'select' && Array.isArray(t.options) && t.options.length) {
     return `<select id="${id}">
@@ -1691,10 +1558,56 @@ function ringColor(r) {
   const c = overallConf(r);
   return c >= 0.7 ? 'var(--green)' : c >= 0.45 ? 'var(--amber)' : 'var(--red)';
 }
-function overallConf(r) {
-  const vals = [r.brand_confidence, r.sn_confidence].map(Number).filter((v) => v > 0);
-  if (!vals.length) return 0;
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
+/** 综合置信度（品牌 + SN 的均值）—— 实现在 ocr-core.js，电脑端算的是同一个数 */
+const overallConf = overallScore;
+
+/**
+ * 读分类专属字段的值，拆成「设备表的真实列」与「extra」两包。
+ * ⚠️ 「使用人 / 存放位置」也走这条路（key 是 owner_name / location，在服务端的
+ *    COLUMN_TRACKING_KEYS 里 → 会写进设备表的真实列）；其余进 extra。
+ * 单张结果页用 mt_ 前缀，批量待确认页用 bt_，靠 prefix 区分。
+ */
+function collectTrackingValues(prefix, cat) {
+  const extra = {};
+  const columnValues = {};
+  for (const t of mobileTrackingFields(cat)) {
+    const el = $(`#${prefix}${t.key}`);
+    if (!el) continue;
+    const raw = String(el.value ?? '');
+    const v = raw === '' ? null : (t.type === 'number' ? Number(raw) : raw);
+    if (state.columnTrackingKeys.includes(t.key)) columnValues[t.key] = v;
+    else if (v !== null) extra[t.key] = v;
+  }
+  return { columnValues, extra };
+}
+
+/**
+ * 入库载荷。单张和批量共用 —— 图片路径、OCR 原始文本、置信度这些字段的写法
+ * 一旦分叉，批量录进去的设备就和手机单张录出来的不是同一种数据，事后很难查。
+ */
+function buildDevicePayload(fields, r, shared, tracking) {
+  const extra = tracking?.extra || {};
+  const columnValues = tracking?.columnValues || {};
+  return {
+    brand: fields.brand || '',
+    model: fields.model || '',
+    sn: fields.sn || '',
+    category_id: shared.category_id || '',
+    org_id: shared.org_id || null,
+    supplier: shared.supplier || null,
+    status: shared.status || 'in_use',
+    sn_source: r?.mocked ? 'ocr-mock' : 'ocr',
+    ocr_confidence: Math.max(r?.sn_confidence, r?.brand_confidence),
+    photo_path: r?.image_path || null,
+    sn_photo_path: r?.image_path || null,
+    // 原图与缩略图在识别时就已自动上传并存好，这里只是把路径挂到设备上
+    photo_original_path: r?.original_path || r?.image_path || null,
+    photo_thumb_path: r?.thumb_path || null,
+    ocr_raw: JSON.stringify({ provider: r?.provider, brand: r?.brand, model: r?.model, sn: r?.sn, lines: (r?.lines || []).slice(0, 30) }),
+    operator: state.operator || 'mobile',
+    ...columnValues,
+    extra,
+  };
 }
 
 async function saveRecognized() {
@@ -1702,53 +1615,24 @@ async function saveRecognized() {
   const sn = $('#rSN').value.trim();
   if (!sn) { toast('请填写 SN 序列号', 'warn'); return; }
 
-  // 分类专属字段：映射到设备列的写列，其余写 extra。
-  // ⚠️ 「使用人 / 存放位置」现在也走这条路（它们是分类字段，key 是 owner_name / location，
-  //    在服务端的 COLUMN_TRACKING_KEYS 里 → 会写进设备表的真实列）。
   const cat = state.categories.find((c) => c.id === $('#rCat').value);
-  const extra = {};
-  const columnValues = {};
-  for (const t of mobileTrackingFields(cat)) {
-    const el = $(`#mt_${t.key}`);
-    if (!el) continue;
-    const raw = String(el.value ?? '');
-    const v = raw === '' ? null : (t.type === 'number' ? Number(raw) : raw);
-    if (state.columnTrackingKeys.includes(t.key)) columnValues[t.key] = v;
-    else if (v !== null) extra[t.key] = v;
-  }
-
-  const payload = {
-    brand: $('#rBrand').value.trim(),
-    model: $('#rModel').value.trim(),
-    sn,
+  const tracking = collectTrackingValues('mt_', cat);
+  const shared = {
     category_id: $('#rCat').value,
     org_id: $('#rOrg').value || null,
     supplier: $('#rSupplier')?.value || null,
     status: $('#rStatus').value,
-    sn_source: r.mocked ? 'ocr-mock' : 'ocr',
-    ocr_confidence: Math.max(r.sn_confidence, r.brand_confidence),
-    photo_path: r.image_path || null,
-    sn_photo_path: r.image_path || null,
-    // 原图与缩略图在识别时就已自动上传并存好，这里只是把路径挂到设备上
-    photo_original_path: r.original_path || r.image_path || null,
-    photo_thumb_path: r.thumb_path || null,
-    ocr_raw: JSON.stringify({ provider: r.provider, brand: r.brand, model: r.model, sn: r.sn, lines: (r.lines || []).slice(0, 30) }),
-    operator: state.operator || 'mobile',
-    ...columnValues,
-    extra,
   };
+  const payload = buildDevicePayload(
+    { brand: $('#rBrand').value.trim(), model: $('#rModel').value.trim(), sn },
+    r, shared, tracking,
+  );
   const btn = $('#btnSave');
   btn.disabled = true; btn.textContent = '保存中…';
   try {
     const dev = await api('/devices', { method: 'POST', body: JSON.stringify(payload) });
     // 保存成功才记：失败的记录进记忆里，下次会把错的内容又填回来
-    rememberMobileFill({
-      category_id: payload.category_id,
-      org_id: payload.org_id,
-      supplier: payload.supplier,
-      status: payload.status,
-      fields: columnValues,
-    });
+    rememberMobileFill({ ...shared, fields: tracking.columnValues });
     toast(`已入库：${dev.asset_no}`);
     renderHome();
   } catch (e) {
@@ -1759,6 +1643,379 @@ async function saveRecognized() {
       toast(e.message, 'error');
     }
   }
+}
+
+/* ==================================================================== *
+ * 批量识别入库（相册一次选多张）
+ *
+ * 与「单张」的关系：识别链路完全一样（ocr-core.js 的 recognizeFile），
+ * 区别只在于**结果先不直接入库**，而是攒成一张待确认清单，用户核对、修改、
+ * 勾选之后再一起提交。理由：
+ *   · 一次选十张，逐张确认「照片 ↔ 字段」才是这个功能的全部价值；
+ *     直接入库等于把识别错误一次性写进十条台账，事后要一台台找回来。
+ *   · 单张失败不该让整批白等，所以每项各自记状态，最后能只重试失败的那几张。
+ *
+ * ⚠️ 必须**串行**（runSerial 一件一件地跑）：智谱 GLM-4.6V-Flash 这类免费
+ *    视觉模型限制的是并发数（国际站 1、国内站 3），并发上传会被上游直接拒，
+ *    界面上只会显示「没读出内容」，根本查不出是并发撞的。
+ * ==================================================================== */
+
+/**
+ * 一次最多几张。
+ * 定 30 的依据：单张最坏要跑 4 趟识别（四个角度），30 张就是 120 次调用；
+ * 而手机页面得全程开着不能锁屏。再多就不是「一次操作」而是「挂着跑一上午」了。
+ */
+const BATCH_MAX = 30;
+
+/** 批量待确认页的「本批统一设置」默认值：沿用单张那套记忆（上次填的 > 管理端默认） */
+function defaultBatchShared() {
+  const last = mobileMemory();
+  const dflt = state.mobileDefaults || {};
+  const catIds = state.categories.map((c) => c.id);
+  return {
+    category_id: pickValid([last.category_id, dflt.category_id], catIds) || state.categories[0]?.id || '',
+    org_id: pickValid([last.org_id, dflt.org_id], state.orgs.map((o) => o.id)),
+    supplier: pickValid([last.supplier, dflt.supplier], state.suppliers),
+    status: pickValid([last.status, dflt.status, 'in_use'], state.statuses.map((s) => s.id)) || 'in_use',
+  };
+}
+
+/** 从相册一次选多张。不做「单张走老路」的分支：走哪个流程由用户点哪个入口决定，别猜。 */
+function galleryForBatch() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.onchange = () => {
+    const all = [...(input.files || [])];
+    const files = all.filter((f) => !f.type || f.type.startsWith('image/'));
+    if (!files.length) { toast(all.length ? '这些不是图片文件' : '没有选到图片', 'warn'); return; }
+    startBatch(files);
+  };
+  input.click();
+}
+
+/**
+ * 开一批。
+ * 每项自带 `edit`（品牌/型号/SN 的当前值）：**页面上的输入框只是它的投影**，
+ * 提交时读的是 edit 而不是 DOM。这样重绘清单（比如刚才那批入库了要刷新状态）
+ * 不会把用户已经改好的内容抹掉。
+ */
+function startBatch(files) {
+  if (files.length > BATCH_MAX) toast(`一次最多 ${BATCH_MAX} 张，先处理前 ${BATCH_MAX} 张`, 'warn');
+  const list = files.slice(0, BATCH_MAX);
+  const stamp = Date.now();
+  state.batch = {
+    items: list.map((f, i) => ({
+      id: `b${stamp}_${i}`,
+      file: f,
+      name: (f.name || '').trim() || `照片 ${i + 1}`,
+      status: 'pending',   // pending | processing | ok（读到了）| weak（没读全）| error | saved
+      stage: '',
+      error: '',
+      result: null,
+      include: true,
+      edit: { brand: '', model: '', sn: '' },
+    })),
+    total: list.length,
+    running: false,
+    phase: 'recognize',   // recognize | review
+    shared: defaultBatchShared(),
+    ctrl: new AbortController(),
+  };
+  route('batch');
+  runBatchQueue();
+}
+
+/** 离开批量页：把还在飞的请求掐掉、objectURL 释放掉，别留一堆没用的内存 */
+function exitBatch() {
+  const b = state.batch;
+  if (b) b.ctrl?.abort();
+  state.batch = null;
+  route('home');   // route 会把 state.view 改成 home，正在跑的队列下一次检查就自己停了
+}
+
+function finishedCount(b) {
+  return (b?.items || []).filter((it) => it.status !== 'pending' && it.status !== 'processing').length;
+}
+
+/**
+ * 一件一件地跑。`subset` 用来「只重试失败的那几张」——
+ * 传进来的每一项会被重置成 pending，其余项不动。
+ */
+async function runBatchQueue(subset) {
+  const b = state.batch;
+  if (!b || b.running) return;
+  const mine = b;
+  const queue = subset || mine.items;
+  mine.running = true;
+  mine.phase = 'recognize';
+  renderBatch();
+
+  await runSerial(queue, async (it) => {
+    it.status = 'processing';
+    it.stage = '正在读取图片…';
+    paintBatchList();
+    const r = await recognizeFile(it.file, {
+      operator: state.operator,
+      loginNext: '/m',
+      signal: mine.ctrl?.signal,
+      onStage: (m) => { it.stage = m; paintBatchList(); },
+    });
+    it.result = r;
+    it.status = usableResult(r) ? 'ok' : 'weak';
+    it.stage = '';
+    // 识别出来的值先灌进 edit，用户再改就是改 edit
+    it.edit = { brand: r.brand || '', model: r.model || '', sn: r.sn || '' };
+  }, {
+    // 用户退出了这个页面就别再往服务器打请求了
+    shouldContinue: () => state.batch === mine && state.view === 'batch',
+    onDone: () => paintBatchList(),
+  });
+
+  if (state.batch !== mine) return;
+  mine.running = false;
+  mine.phase = 'review';
+  renderBatch();
+}
+
+/** 只重试识别失败的那几张（网络/服务端问题重试有意义；「没读全」的得人工补） */
+function batchRetryFailed() {
+  const b = state.batch;
+  if (!b || b.running) return;
+  const failed = b.items.filter((it) => it.status === 'error');
+  if (!failed.length) { toast('没有识别失败的项目', 'warn'); return; }
+  for (const it of failed) { it.status = 'pending'; it.error = ''; it.stage = ''; }
+  renderBatch();
+  runBatchQueue(failed);
+}
+
+/* ---------- 输入框 → state（页面只是 state 的投影） ---------- */
+
+/** 待确认清单里改品牌/型号/SN：直接写回该项的 edit */
+function batchEditField(el) {
+  const b = state.batch;
+  if (!b || !el) return;
+  const it = b.items.find((x) => x.id === el.dataset.bid);
+  if (!it) return;
+  it.edit[el.dataset.f] = String(el.value ?? '');
+}
+
+/** 勾选 / 取消一台 */
+function batchToggleItem(el) {
+  const b = state.batch;
+  if (!b || !el) return;
+  const it = b.items.find((x) => x.id === el.dataset.bid);
+  if (!it) return;
+  it.include = !!el.checked;
+  paintBatchFoot();
+}
+
+/** 全选 / 全不选（识别失败的那几张永远不可选） */
+function batchToggleAll() {
+  const b = state.batch;
+  if (!b) return;
+  const selectable = b.items.filter((it) => it.status !== 'error' && it.status !== 'saved');
+  const allOn = selectable.length > 0 && selectable.every((it) => it.include);
+  for (const it of selectable) it.include = !allOn;
+  renderBatch();
+}
+
+function batchPickCount(b) {
+  return (b?.items || []).filter((it) => it.include && it.status !== 'error' && it.status !== 'saved').length;
+}
+
+/** 「批量入库」：逐条 POST /devices，一台失败不影响其余 */
+async function batchSaveAll() {
+  const b = state.batch;
+  if (!b || b.running) return;
+  const picks = b.items.filter((it) => it.include && it.status !== 'error' && it.status !== 'saved');
+  if (!picks.length) { toast('还没有勾选任何一台', 'warn'); return; }
+  const missing = picks.filter((it) => !String(it.edit.sn || '').trim());
+  if (missing.length) { toast(`有 ${missing.length} 台还没填 SN，请先补上（照片上方那张卡里）`, 'warn'); return; }
+
+  const cat = state.categories.find((c) => c.id === ($('#batchCat')?.value || ''));
+  const tracking = collectTrackingValues('bt_', cat);
+  const shared = {
+    category_id: $('#batchCat')?.value || '',
+    org_id: $('#batchOrg')?.value || null,
+    supplier: $('#batchSupplier')?.value || null,
+    status: $('#batchStatus')?.value || 'in_use',
+  };
+  const btn = $('#btnBatchSave');
+  if (btn) { btn.disabled = true; btn.textContent = '入库中…'; }
+
+  let ok = 0; let fail = 0; let toastedErr = false;
+  for (let i = 0; i < picks.length; i++) {
+    const it = picks[i];
+    // 进度只写在按钮上：这一页有用户正在编辑的输入框，中途重绘会把改动冲掉
+    if (btn) btn.textContent = `入库中 ${i + 1}/${picks.length}…`;
+    try {
+      const payload = buildDevicePayload(it.edit, it.result, shared, tracking);
+      const dev = await api('/devices', { method: 'POST', body: JSON.stringify(payload) });
+      it.status = 'saved';
+      it.include = false;
+      it.note = `已入库 ${dev.asset_no}`;
+      ok++;
+    } catch (e) {
+      fail++;
+      it.note = (e.message.includes('已存在') || e.message.includes('409'))
+        ? '该 SN 已存在，没入库'
+        : `入库失败：${e.message}`;
+      if (!toastedErr) { toast(it.note, 'error'); toastedErr = true; }
+    }
+  }
+
+  // 保存成功才记：失败的记录进记忆里，下次会把错的内容又填回来
+  if (ok) rememberMobileFill({ ...shared, fields: tracking.columnValues });
+  if (fail) toast(`已入库 ${ok} 台，${fail} 台没成功`, ok ? 'warn' : 'error');
+  else toast(`已全部入库：${ok} 台`);
+
+  if (!fail) {
+    state.batch = null;
+    route('home');
+    return;
+  }
+  renderBatch();
+}
+
+/* ---------- 视图 ---------- */
+
+const BATCH_STATUS_TEXT = {
+  pending: '等待识别', processing: '识别中…', ok: '已读出', weak: '没读全，请核对', error: '识别失败', saved: '已入库',
+};
+
+function renderBatch() {
+  const b = state.batch;
+  setTabbar(false);
+  if (!b) { renderHome(); return; }
+  if (b.phase === 'review') { renderBatchReview(b); return; }
+  $('#main').innerHTML = `
+    <div class="card">
+      <div class="card-head"><h3>批量识别入库</h3></div>
+      <p class="hint" style="margin-top:0">共 ${b.total} 张，一张一张地识别（上游识别服务限并发，一起传只会被拒）。中途可以退出，已读到的不受影响。</p>
+      <div class="batch-bar"><i id="batchBarFill"></i></div>
+      <div class="batch-stat" id="batchStat"></div>
+      <div class="batch-list" id="batchList">${batchListHTML(b)}</div>
+    </div>
+    <div class="m-actionbar">
+      <button class="btn ghost block" onclick="exitBatch()">${svgIcon('x', 16)} 退出批量识别</button>
+    </div>`;
+  paintBatchList();
+}
+
+function batchListHTML(b) {
+  return b.items.map((it, i) => `
+    <div class="batch-line ${esc(it.status)}" data-bid="${esc(it.id)}">
+      <span class="batch-no">${i + 1}</span>
+      <span class="batch-line-txt">
+        <span class="bn">${esc(it.name)}</span>
+        <span class="bs">${esc(it.stage || it.error || BATCH_STATUS_TEXT[it.status] || '')}</span>
+      </span>
+      <span class="batch-line-ico">${it.status === 'processing' ? '<span class="spin"></span>'
+    : it.status === 'error' ? svgIcon('alert', 15)
+      : it.status === 'ok' || it.status === 'saved' ? svgIcon('check-circle', 15)
+        : it.status === 'weak' ? svgIcon('info', 15) : ''}</span>
+    </div>`).join('');
+}
+
+/** 只重画清单本身：整个 #main 重绘会把滚动位置和用户正在敲的输入框一起冲掉 */
+function paintBatchList() {
+  const b = state.batch;
+  if (!b || b.phase !== 'recognize') return;
+  const box = $('#batchList');
+  if (box) box.innerHTML = batchListHTML(b);
+  const fill = $('#batchBarFill');
+  if (fill) fill.style.width = `${Math.round((finishedCount(b) / Math.max(1, b.total)) * 100)}%`;
+  const stat = $('#batchStat');
+  if (stat) stat.textContent = `已识别 ${finishedCount(b)} / ${b.total}`;
+}
+
+function renderBatchReview(b) {
+  const cat = state.categories.find((c) => c.id === b.shared.category_id) || state.categories[0];
+  const n = batchPickCount(b);
+  const weak = b.items.filter((it) => it.status === 'weak').length;
+  const bad = b.items.filter((it) => it.status === 'error').length;
+  $('#main').innerHTML = `
+    <div class="card">
+      <div class="card-head">
+        <h3>核对后一起入库</h3>
+        <button type="button" class="btn xs ghost" onclick="batchToggleAll()">全选 / 全不选</button>
+      </div>
+      <p class="hint" style="margin:0 0 12px">
+        共 ${b.total} 张：读到 ${b.items.filter((it) => it.status === 'ok' || it.status === 'weak' || it.status === 'saved').length} 张${weak ? `（其中 ${weak} 张没读全）` : ''}${bad ? ` · ${bad} 张失败` : ''}。
+        照着每张上面的照片核对一遍再勾选 —— 识别只是初稿，SN 最容易看错（L/1、O/Q）。
+      </p>
+      <div class="batch-list" id="batchList">${batchReviewListHTML(b)}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>本批统一设置</h3></div>
+      <p class="hint" style="margin:0 0 10px">这一批先按同一套分类 / 组织 / 状态入库；个别不一样的，入库后在设备详情里改，或者用电脑端「批量操作 → 转移到组织 / 交接使用人」整批调整。</p>
+      <div class="field"><label>设备分类</label><select id="batchCat">${state.categories.map((c) => `<option value="${c.id}" ${c.id === b.shared.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>所属组织</label><select id="batchOrg"><option value="">未分配</option>${state.orgs.map((o) => `<option value="${o.id}" ${o.id === b.shared.org_id ? 'selected' : ''}>${esc(o.path || o.name)}</option>`).join('')}</select></div>
+      <div id="batchTracking">${trackingFieldsHTML(cat, 'bt_')}</div>
+      <div class="field"><label>供应商</label><select id="batchSupplier"><option value="">— 未指定 —</option>${state.suppliers.map((s) => `<option value="${esc(s)}" ${s === b.shared.supplier ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+      <div class="field"><label>状态</label><select id="batchStatus">${state.statuses.map((s) => `<option value="${s.id}" ${s.id === b.shared.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
+    </div>
+
+    <div class="m-actionbar">
+      <button class="btn ghost icon" onclick="exitBatch()" aria-label="放弃本批">${svgIcon('x', 18)}</button>
+      ${bad ? `<button class="btn ghost" onclick="batchRetryFailed()">${svgIcon('refresh', 15)} 重试 ${bad} 张</button>` : ''}
+      <button class="btn primary" id="btnBatchSave" onclick="batchSaveAll()" ${n ? '' : 'disabled'}>${svgIcon('save', 16)} <span id="batchSaveTxt">批量入库（${n} 台）</span></button>
+    </div>`;
+  // 换分类要重画这一批的专属字段（使用人 / 存放位置 …）
+  const catSel = $('#batchCat');
+  if (catSel) {
+    catSel.onchange = () => {
+      b.shared.category_id = catSel.value;
+      const box = $('#batchTracking');
+      const next = state.categories.find((c) => c.id === catSel.value);
+      if (box) box.innerHTML = trackingFieldsHTML(next, 'bt_');
+    };
+  }
+}
+
+function batchReviewListHTML(b) {
+  return b.items.map((it) => {
+    const r = it.result;
+    const bad = it.status === 'error';
+    const saved = it.status === 'saved';
+    const src = r?.image_path || r?.thumb_path || '';
+    return `
+    <div class="batch-item${bad ? ' bad' : ''}${saved ? ' saved' : ''}" data-bid="${esc(it.id)}">
+      <label class="batch-pick">
+        <input type="checkbox" class="batch-ck" data-bid="${esc(it.id)}" ${it.include && !bad && !saved ? 'checked' : ''} ${bad || saved ? 'disabled' : ''} onchange="batchToggleItem(this)">
+      </label>
+      <div class="batch-thumb">${src ? `<img src="${esc(src)}" alt="${esc(it.name)} 的照片" loading="lazy">` : ''}</div>
+      <div class="batch-body">
+        <div class="batch-name" title="${esc(it.name)}">${esc(it.name)}</div>
+        ${bad ? `<div class="batch-note error">${svgIcon('alert', 13)} ${esc(it.error || '识别失败')}</div>` : `
+          <div class="batch-f"><span class="bl">品牌</span><input data-f="brand" data-bid="${esc(it.id)}" value="${esc(it.edit.brand)}" placeholder="品牌" oninput="batchEditField(this)"></div>
+          <div class="batch-f"><span class="bl">型号</span><input data-f="model" data-bid="${esc(it.id)}" value="${esc(it.edit.model)}" placeholder="型号" oninput="batchEditField(this)"></div>
+          <div class="batch-f"><span class="bl">SN</span><input data-f="sn" data-bid="${esc(it.id)}" class="mono" value="${esc(it.edit.sn)}" placeholder="序列号" oninput="batchEditField(this)"></div>
+          <div class="batch-flags">
+            <span class="conf ${confClass(r?.sn_confidence)}">SN ${Math.round((Number(r?.sn_confidence) || 0) * 100)}%</span>
+            ${it.status === 'weak' ? '<span class="batch-tag warn">没读全</span>' : ''}
+            ${r?.duplicate?.exists ? '<span class="batch-tag warn">SN 已存在</span>' : ''}
+            ${r?.rotate_angle ? `<span class="batch-tag">已转正 ${r.rotate_angle}°</span>` : ''}
+            ${saved ? '<span class="batch-tag ok">已入库</span>' : ''}
+          </div>
+          ${it.note ? `<div class="batch-note ${saved ? 'ok' : 'error'}">${esc(it.note)}</div>` : ''}`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/** 勾选数变了只改按钮文案，不重绘整页（否则用户刚敲的 SN 会被冲掉） */
+function paintBatchFoot() {
+  const b = state.batch;
+  const txt = $('#batchSaveTxt');
+  const btn = $('#btnBatchSave');
+  if (!b) return;
+  const n = batchPickCount(b);
+  if (txt) txt.textContent = `批量入库（${n} 台）`;
+  if (btn) btn.disabled = !n;
 }
 
 /* ================= 扫码 ================= */
@@ -2627,6 +2884,21 @@ window.copyFrom = copyFrom;
 window.copyText = copyText;
 window.galleryForCapture = galleryForCapture;
 window.galleryForScan = galleryForScan;
+/* 批量识别入库 —— 这些函数在 HTML 里以 onclick / oninput 出现，
+   不挂到 window 上就是「点了没反应、控制台还干净」的那种静默失效。 */
+window.galleryForBatch = galleryForBatch;
+window.startBatch = startBatch;
+window.exitBatch = exitBatch;
+window.renderBatch = renderBatch;
+window.batchToggleAll = batchToggleAll;
+window.batchRetryFailed = batchRetryFailed;
+window.batchEditField = batchEditField;
+window.batchToggleItem = batchToggleItem;
+window.batchSaveAll = batchSaveAll;
+window.defaultBatchShared = defaultBatchShared;
+window.buildDevicePayload = buildDevicePayload;
+window.collectTrackingValues = collectTrackingValues;
+window.trackingFieldsHTML = trackingFieldsHTML;
 window.SCAN_KINDS = SCAN_KINDS;
 window.scanKindOf = scanKindOf;
 window.detectorFormatLabel = detectorFormatLabel;

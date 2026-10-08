@@ -269,7 +269,7 @@ export async function postOcr(blob, first, opts = {}) {
     if (original) fd.append('original', original, 'original.jpg');
     if (thumb) fd.append('thumb', thumb, 'thumb.jpg');
   } else {
-    fd.append('save', '0');
+    fd.append('save', '1');
   }
   const res = await fetch('/api/ocr', { method: 'POST', body: fd, signal });
   if (res.status === 401) {

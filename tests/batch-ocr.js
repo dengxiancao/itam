@@ -728,7 +728,15 @@ section('电脑端 admin.js —— 上限 100 与关窗确认');
   assert(asked, '有 100 张识别好没入库 → 关窗前先弹确认');
   assert(els.get('#modal').innerHTML.includes('100 张'), '确认文案写清丢多少张');
 
-  globalThis.__confirmResolve(false);              // 等价于点「取消」
+  // ⚠️ 用 answer() 而不是直接调 __confirmResolve：万一断言已经红了（比如变异成「不弹框」），
+  //    直接调会变成 TypeError 把整套崩掉，那样变异测试看到的是「崩溃」而不是「这条红了」。
+  const answer = (ok) => {
+    const fn = globalThis.__confirmResolve;
+    globalThis.__confirmResolve = null;
+    if (fn) fn(ok);
+  };
+
+  answer(false);                                   // 等价于点「取消」
   const back = await waitFor(() => aState.batchOcr && aState.batchOcr.phase === 'review'
     && els.get('#modal').innerHTML.includes('id="batchOcrBody"'), 3000);
   assert(aState.batchOcr !== null && aState.batchOcr.items.length === 100, '点「取消」→ 100 张识别结果一张没丢，批次原样还在');
@@ -736,7 +744,7 @@ section('电脑端 admin.js —— 上限 100 与关窗确认');
 
   globalThis.closeBatchOcr();
   await waitFor(() => els.get('#modal').innerHTML.includes('__confirmResolve(true)'), 3000);
-  globalThis.__confirmResolve(true);
+  answer(true);
   await waitFor(() => aState.batchOcr === null, 3000);
   assert(aState.batchOcr === null && els.get('#modalMask').hidden === true, '点「确定」才真的关掉并清空');
 }

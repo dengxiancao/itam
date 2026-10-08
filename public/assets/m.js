@@ -1786,7 +1786,7 @@ async function exitBatch() {
   const b = state.batch;
   if (b) {
     const unsaved = batchUnsaved(b);
-    if (false && unsaved) {
+    if (unsaved) {
       const go = await mConfirm(
         '放弃这批？',
         `还有 ${unsaved} 张已经识别好、但没入库。退出就没了 —— 得重新回相册选一遍照片、再识别一次。`,

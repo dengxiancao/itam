@@ -1769,7 +1769,7 @@ function startBatch(files) {
       edit: { brand: '', model: '', sn: '' },
     })),
     total: list.length,
-    dropped,
+    dropped: 0,
     running: false,
     phase: 'recognize',   // recognize | review
     shared: defaultBatchShared(),
@@ -1849,7 +1849,7 @@ async function runBatchQueue(subset) {
     it.edit = { brand: r.brand || '', model: r.model || '', sn: r.sn || '' };
     // 「没读全」的（没有 SN）默认不勾：勾了也提交不了，还会让用户以为点一下就完事。
     // 补上 SN 后他自己勾，或者直接点「全选」。
-    it.include = true;
+    it.include = !!String(it.edit.sn).trim();
   }, {
     // 用户退出了这个页面就别再往服务器打请求了
     shouldContinue: () => state.batch === mine && state.view === 'batch',

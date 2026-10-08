@@ -161,8 +161,9 @@ globalThis.Image = class {
 
 /* ================= 断言 ================= */
 const failures = [];
+let passed = 0;
 function assert(cond, msg) {
-  if (!cond) failures.push(msg);
+  if (cond) passed++; else failures.push(msg);
   console.log((cond ? '  \x1b[32m✔\x1b[0m ' : '  \x1b[31m✘\x1b[0m ') + msg);
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -220,6 +221,16 @@ function ocrPayload(over = {}) {
     lines: [], text: '',
     ...over,
   };
+}
+
+/**
+ * 「这一趟没读出内容」的应答。
+ * ⚠️ 默认的 ocrPayload() 是**能用的**（品牌 + 型号都在，usableResult 认它），
+ *    拿它当「空读」会让重试阶梯在第一趟就停住，重试相关的断言全部落空。
+ * 另外服务端**归档发生在第一趟**，跟读没读出来无关 —— 所以空读也会带回图片地址。
+ */
+function ocrBlank(over = {}) {
+  return ocrPayload({ brand: '', brand_confidence: 0, model: '', model_confidence: 0, category_hint: null, ...over });
 }
 
 globalThis.fetch = async (url, opts = {}) => {
@@ -357,9 +368,10 @@ assert(!!mState && Array.isArray(mState.categories) && mState.categories.length 
   assert(maxInFlight === 1, `识别全程最大并发 = 1（实测 ${maxInFlight}）`);
   assert(ocrCalls[0]?.original && ocrCalls[0]?.thumb, '第一趟带上了原图与缩略图（要归档）');
   assert(!ocrCalls[0]?.save, '第一趟不带 save=0（那会让服务端跳过归档）');
-  assert(mState.batch.items.every((it) => it.status === 'ok'), '三张的识别状态都是「已读出」');
+  const mStat = mState.batch.items.map((it) => it.status + (it.error ? `(${it.error})` : '')).join(' | ');
+  assert(mState.batch.items.every((it) => it.status === 'ok'), `三张的识别状态都是「已读出」（实测 ${mStat}）`);
   assert(mState.batch.items.map((it) => it.edit.sn).join(',') === 'SN-A0001,SN-B0002,SN-C0003', '识别出的 SN 已自动灌进各自的可编辑字段');
-  assert(mState.batch.items[0].result.image_path === '/uploads/a.jpg', '照片地址是识别时归档的那张');
+  assert(mState.batch.items[0].result?.image_path === '/uploads/a.jpg', '照片地址是识别时归档的那张');
 
   // —— 核对页是 state 的投影，改字段改的是 state ——
   const reviewHTML = els.get('#main').innerHTML;
@@ -371,14 +383,22 @@ assert(!!mState && Array.isArray(mState.categories) && mState.categories.length 
 
   // 模拟用户改了第二台的 SN（等价于在输入框里敲）
   mState.batch.items[1].edit.sn = 'SN-B0002-FIXED';
-  const sharedCat = mState.batch.shared.category_id;
+
+  // 换一个**不是第一个**的分类：这样「入库时取到的分类」才不是「反正都取到第一个」
+  // 这种恒真命题。改完重绘核对页（等价于用户在下拉里换了分类），再把渲染出来的
+  // 表单默认值灌回 DOM 桩。
+  const cats = mState.categories;
+  const sharedCat = (cats[1] || cats[0]).id;
+  mState.batch.shared.category_id = sharedCat;
+  globalThis.renderBatch();
+  hydrateForm(els.get('#main').innerHTML);
 
   // —— 批量入库 ——
   globalThis.batchSaveAll();
   const posted = await waitFor(() => devicePosts.length === 3);
   assert(posted, '三台都提交了入库请求');
   assert(devicePosts.map((p) => p.sn).join(',') === 'SN-A0001,SN-B0002-FIXED,SN-C0003', '入库用的是**用户改过之后**的 SN（DOM 覆盖不丢）');
-  assert(!!sharedCat && devicePosts[0].category_id === sharedCat, '分类来自「本批统一设置」（三台同一个）');
+  assert(!!sharedCat && devicePosts.every((p) => p.category_id === sharedCat), `分类来自「本批统一设置」且跟着 state 走（三台都是 ${sharedCat}）`);
   assert(devicePosts[0].photo_path === '/uploads/a.jpg' && devicePosts[0].photo_original_path === '/uploads/ao.jpg' && devicePosts[0].photo_thumb_path === '/uploads/at.jpg', '三份图路径都挂到了设备上');
   assert(devicePosts[0].sn_source === 'ocr' && devicePosts[0].operator === '张三', '录入了 sn_source 与录入人（审计要用）');
   assert(devicePosts[0].ocr_raw && JSON.parse(devicePosts[0].ocr_raw).sn === 'SN-A0001', 'ocr_raw 留下识别原文，事后可追溯');
@@ -389,18 +409,23 @@ assert(!!mState && Array.isArray(mState.categories) && mState.categories.length 
 {
   // —— 有的要重试：第 2 张第一趟读不出，第 3 张根本没读到 ——
   ocrScript = [
-    ocrPayload({ sn: 'SN-R1', image_path: '/uploads/r1.jpg' }),   // 第 1 张：一趟命中
-    ocrPayload(),                                                  // 第 2 张：第 1 趟（0°）空
-    ocrPayload({ sn: 'SN-R2', image_path: '/uploads/r2.jpg' }),    // 第 2 张：第 2 趟（180°）命中
-    ocrPayload(), ocrPayload(), ocrPayload(), ocrPayload(),        // 第 3 张：四个角度全空
+    // 第 1 张：0° 就读到
+    ocrPayload({ sn: 'SN-R1', image_path: '/uploads/r1.jpg', original_path: '/uploads/r1o.jpg', thumb_path: '/uploads/r1t.jpg' }),
+    // 第 2 张：0° 没读出内容（图已归档），180° 才读到；第二趟带 save=0，所以没有图片地址
+    ocrBlank({ image_path: '/uploads/r2.jpg', original_path: '/uploads/r2o.jpg', thumb_path: '/uploads/r2t.jpg' }),
+    ocrPayload({ sn: 'SN-R2' }),
+    // 第 3 张：四个角度全都读不出
+    ocrBlank({ image_path: '/uploads/r3.jpg' }), ocrBlank(), ocrBlank(), ocrBlank(),
   ];
   ocrCalls = []; devicePosts = [];
   const files = ['r1.jpg', 'r2.jpg', 'r3.jpg'].map((n) => new File([new Uint8Array(256)], n, { type: 'image/jpeg' }));
   globalThis.startBatch(files);
   await waitFor(() => mState.batch && mState.batch.phase === 'review');
+  hydrateForm(els.get('#main').innerHTML);   // 「本批统一设置」的下拉默认值 → DOM 桩
 
   const [i0, i1, i2] = mState.batch.items;
-  assert(ocrCalls.length === 1 + 2 + 4, `重试趟数正确：1 趟 + 2 趟 + 4 趟 = 6（实测 ${ocrCalls.length}）`);
+  assert(i0.status === 'ok' && i0.result.image_path === '/uploads/r1.jpg', '第一趟就读到的那张直接进「已读出」，图地址是归档那张');
+  assert(ocrCalls.length === 1 + 2 + 4, `重试趟数正确：1 趟 + 2 趟 + 4 趟 = 7（实测 ${ocrCalls.length}）`);
   assert(ocrCalls[2]?.save === '0', '重试那几趟带 save=0 —— 否则每换个角度就多归档三份重复图');
   assert(!ocrCalls[2]?.original, '重试那几趟不再重复上传原图 / 缩略图');
   assert(i1.result.image_path === '/uploads/r2.jpg', '转正后识别成功，但照片地址用的仍是**第一趟**那张（那才是用户真正拍下的）');
@@ -427,8 +452,13 @@ assert(!!mState && Array.isArray(mState.categories) && mState.categories.length 
   const files = ['e1.jpg', 'e2.jpg', 'e3.jpg'].map((n) => new File([new Uint8Array(256)], n, { type: 'image/jpeg' }));
   globalThis.startBatch(files);
   await waitFor(() => mState.batch && mState.batch.phase === 'review');
+  hydrateForm(els.get('#main').innerHTML);
   const st = mState.batch.items.map((it) => it.status).join(',');
-  assert(st === 'ok,error,ok', `一张 500 不影响其余两张（实测 ${st}）`);
+  assert(st === 'ok,error,ok', `一张 500 不影响其余两张（实测 ${st}，phase=${mState.batch.phase}）`);
+  assert(/批量入库（2 台）/.test(els.get('#main').innerHTML), '失败那张不算进「可入库」的计数（否则用户勾上也会被 SN 校验挡回来，还不知道为什么）');
+  const errId = mState.batch.items[1].id;
+  const review3 = els.get('#main').innerHTML;
+  assert(review3.includes(`data-bid="${errId}"`) && !review3.includes(`data-f="sn" data-bid="${errId}"`), '失败那一条只渲染原因、不渲染输入框（免得填了半天才发现提交不了）');
   assert(String(mState.batch.items[1].error).includes('服务端炸了'), '失败原因原样显示给用户，不是笼统的「识别失败」');
   assert(mState.batch.items[1].edit.sn === '', '失败项没有可编辑字段（填了也没有照片可挂）');
 
@@ -507,9 +537,9 @@ assert(!!aState && !!aState.options, '管理端已加载选项（分类 / 组织
 /* ================= 汇总 ================= */
 console.log('');
 if (failures.length) {
-  console.log(`=== 批量识别入库：失败 ${failures.length} 项 ===\n`);
+  console.log(`=== 批量识别入库：失败 ${failures.length} 项（通过 ${passed}）===\n`);
   for (const f of failures) console.log('  · ' + f);
   console.log();
   process.exit(1);
 }
-console.log('=== 批量识别入库：全部通过 ===\n');
+console.log(`=== 批量识别入库：全部通过（${passed} 项断言）===\n`);

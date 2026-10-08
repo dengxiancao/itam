@@ -1657,7 +1657,12 @@ async function runBatchOcrQueue(subset) {
   }, {
     // 用户把弹窗关了就别再往服务器打请求
     shouldContinue: () => state.batchOcr === mine,
-    onDone: () => paint(),
+    onDone: (it, i, err) => {
+      // 失败要当场落到 error 上：runSerial 只管记 item.error 不管 status，
+      // 漏了这一步这一行会永远停在 processing（转圈 + 被算进可勾选）
+      if (err) { it.status = 'error'; it.stage = ''; }
+      paint();
+    },
   });
 
   if (state.batchOcr !== mine) return;

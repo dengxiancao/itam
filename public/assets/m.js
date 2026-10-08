@@ -5,7 +5,7 @@ import {
   OCR_MAX_SIDE, ORIGINAL_MAX_SIDE, THUMB_MAX_SIDE,
   downscaleToBlob, loadImageBlob, shootFromImage, enhanceForOcr,
   inkProfileCV, textAxisOf, retryAngles, usableResult, rotateBlob, grayOfBlob,
-  overallScore, recognizeOne, runSerial,
+  overallScore, recognizeOne, recognizeFile, runSerial,
 } from './ocr-core.js';
 
 const API = '/api';
@@ -1773,7 +1773,14 @@ async function runBatchQueue(subset) {
   }, {
     // 用户退出了这个页面就别再往服务器打请求了
     shouldContinue: () => state.batch === mine && state.view === 'batch',
-    onDone: () => paintBatchList(),
+    onDone: (it, i, err) => {
+      // ⚠️ 失败必须当场落到 error 上：runSerial 只负责记 item.error，
+      //    不管 status。漏了这一步，这一项会永远停在 processing ——
+      //    界面显示「正在读取图片…」一直转圈，而且 status!=='error' 还会
+      //    把它算进「可勾选」，用户勾上再被「还没填 SN」挡回来，莫名其妙。
+      if (err) { it.status = 'error'; it.stage = ''; }
+      paintBatchList();
+    },
   });
 
   if (state.batch !== mine) return;
@@ -1874,7 +1881,12 @@ async function batchSaveAll() {
   if (fail) toast(`已入库 ${ok} 台，${fail} 台没成功`, ok ? 'warn' : 'error');
   else toast(`已全部入库：${ok} 台`);
 
-  if (!fail) {
+  // 收工条件：已经没有「待入库、也不是识别失败」的项了。
+  // ⚠️ 不能只看「这一轮提交全都成功」—— 用户**故意没勾**的「没读全」那几张会被
+  //    连同照片一起丢掉，他还得重新回相册里从头挑一遍。留在这一页他就能接着补。
+  //    识别失败的也留着（页面底部有「重试 N 张」）。想走就点左上角的 ×。
+  const left = b.items.filter((it) => it.status !== 'saved' && it.status !== 'error');
+  if (!left.length) {
     state.batch = null;
     route('home');
     return;

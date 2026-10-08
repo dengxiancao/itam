@@ -1097,6 +1097,33 @@ label > .help, .sw-txt > .help { vertical-align: -2px; }
 .xl-lead { margin: 2px 0 14px; font-size: 13px; color: var(--text-2); line-height: 1.75; }
 .xl-note { font-size: 12px; line-height: 1.7; margin: 10px 0 0; }
 
+/* 导出的「范围」选择。
+   必须显式摆出来：以前这里什么都没有，导出会**静默沿用设备台账页残留的筛选**，
+   用户拿到只有台式主机的文件、却看不到任何线索。放按钮上方，先选范围再点导出。 */
+.xl-scope {
+  margin: 0 0 12px; padding: 10px 12px;
+  background: var(--surface-pearl); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+.xl-scope-t { font-size: 12.5px; font-weight: 650; color: var(--text-2); margin-bottom: 3px; }
+.xl-scope-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--text-2);
+  transition: background .15s;
+}
+.xl-scope-row:hover { background: var(--line-2); }
+.xl-scope-row > input[type="radio"] { flex: 0 0 auto; margin: 0; }
+.xl-scope-row > span { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.xl-scope-row .muted { font-weight: 400; font-size: 12px; color: var(--text-3); }
+.xl-scope-hint { margin: 5px 8px 0; font-size: 12px; line-height: 1.7; color: var(--text-3); }
+.xl-scope-hint b { color: var(--text-2); }
+@media (max-width: 760px) {
+  /* 窄屏让台数换行到下一行，别把单选钮挤瘪 */
+  .xl-scope-row > span { display: block; }
+  .xl-scope-row .muted { display: block; margin-top: 1px; }
+}
+
 /* 主按钮做大一点：一张卡只有一个"该点哪儿"，不该让人找 */
 .xl-big { height: 40px; padding: 0 18px; font-size: 14px; justify-content: center; }
 .xl-two-btns { display: flex; gap: 10px; flex-wrap: wrap; }

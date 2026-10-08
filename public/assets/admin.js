@@ -1034,6 +1034,27 @@ function devicesFilterQuery() {
   return out;
 }
 
+/**
+ * 把设备台账当前的筛选条件翻成人话，例如「分类＝台式主机 · 品牌＝Dell」。
+ * 没有筛选时返回 '' —— 调用方（Excel 导出卡片）靠它决定要不要给出「只导筛选结果」那个选项。
+ *
+ * ⚠️ 刻意**从 devicesFilterQuery() 的结果**迭代，而不是直接读 state.devicesQuery：
+ *    这样「显示哪些筛选」和「实际发给服务端的筛选」永远是同一份，
+ *    不会出现「界面上没写、导出却带上了」的隐身条件（这正是 2026-10-08 那个故障的形态）。
+ */
+function devicesFilterSummary() {
+  const fq = devicesFilterQuery();
+  const o = state.options || {};
+  const parts = [];
+  if (fq.keyword) parts.push(`搜索「${fq.keyword}」`);
+  if (fq.category_id) parts.push(`分类＝${(o.categories || []).find((c) => c.id === fq.category_id)?.name || '（分类已删除）'}`);
+  if (fq.org_id) parts.push(`组织＝${(o.orgs || []).find((x) => x.id === fq.org_id)?.name || '（组织已删除）'}`);
+  if (fq.status) parts.push(`状态＝${(o.statuses || []).find((s) => s.id === fq.status)?.label || fq.status}`);
+  if (fq.brand) parts.push(`品牌＝${fq.brand}`);
+  if (fq.supplier) parts.push(`供应商＝${fq.supplier}`);
+  return parts.join(' · ');
+}
+
 async function bulkAction(action) {
   // 数量口径统一走 state：全选匹配模式下是「筛选结果总数」，否则是勾选集合大小。
   // ⚠️ 以前这里写的是 `const ids = [...state.selection]`，而 state.selection 当年由当前页 DOM 重建，
@@ -2597,12 +2618,39 @@ const XL_PHOTO_HTML = `
 /**
  * 导出卡片（第 ① 件）。
  * 三个开关保留原样 —— 它们表达的是两个维度的口径，语义直接对得上，不需要改。
+ *
+ * ⚠️ 2026-10-08 补的「导出哪些设备？」：
+ *    以前这里没有范围选项，`doExportExcel()` 也不传 `all`，于是 `doExport()` 去读
+ *    `state.devicesQuery` —— 那是**设备台账页的筛选**，切到本页照样留着、且页面上
+ *    完全看不见。用户在台账里筛过「台式主机」再来导出，拿到一份只有台式主机的文件
+ *    （「按分类分表」就只剩一张表），而卡片上还写着「台式主机 / 显示器…各一个工作表」
+ *    —— **界面自己打自己的脸**，用户连排查方向都没有。
+ *    现在范围显式摆出来、**默认「全部设备」**，和「此刻的台账快照」这句承诺一致。
+ *
+ * @param {{allTotal?: number|null, filteredTotal?: number|null, filterText?: string}} scope
+ *        两个台数是「查得到就显示、查不到就不显示」（null 表示没查到），不挡页面。
  */
-function exportCardHTML() {
+function exportCardHTML(scope = {}) {
+  const allTotal = scope.allTotal ?? null;
+  const filteredTotal = scope.filteredTotal ?? null;
+  const filterText = scope.filterText || '';
+  const n = (v) => (v === null || v === undefined ? '' : `（${v} 台）`);
   return `
     <div class="card xl-card">
       <div class="xl-task-head"><span class="xl-num">1</span><h3>导出一份 Excel 文件</h3></div>
       <p class="xl-lead">打印、存档、发给别人。<b>照片直接嵌在单元格里</b>，对方打开就能看到。</p>
+
+      <div class="xl-scope">
+        <div class="xl-scope-t">导出哪些设备？</div>
+        <label class="xl-scope-row"><input type="radio" name="expScope" id="expScopeAll" value="all" checked>
+          <span>全部设备<span class="muted">${n(allTotal)}</span></span></label>
+        ${filterText ? `
+        <label class="xl-scope-row"><input type="radio" name="expScope" id="expScopeFiltered" value="filtered">
+          <span>只导出设备台账当前的筛选结果<span class="muted">${n(filteredTotal)}</span></span></label>
+        <p class="xl-scope-hint">设备台账当前的筛选：<b>${esc(filterText)}</b>。选「全部设备」就不受它影响。</p>` : `
+        <p class="xl-scope-hint">设备台账当前没有筛选条件。</p>`}
+      </div>
+
       <button class="btn primary xl-big" onclick="doExportExcel()">${svgIcon('sheet')} 导出 Excel 文件</button>
       <p class="muted xl-note">导出的是<b>此刻</b>的台账快照，导完就固定了。想让数据一直保持最新，用第 ③ 张卡。</p>
 
@@ -2863,10 +2911,12 @@ function importHistoryHTML(batches) {
 
 /** 页面主体：三件事，从上到下就是使用顺序 */
 async function renderExcel() {
-  // 两个接口互不依赖，并发拉；任一失败都不该把整页打挂 —— 历史为空就当作「暂无记录」
-  const [batches, live] = await Promise.all([
+  // 三个接口互不依赖，并发拉；任一失败都不该把整页打挂 —— 历史为空就当作「暂无记录」。
+  // scope 是为了在导出卡片上写清「全部多少台 / 当前筛选多少台」，内部已全部 catch。
+  const [batches, live, scope] = await Promise.all([
     api('/excel/batches?limit=20').then((d) => d.items).catch(() => []),
     api('/excel/live-links').catch(() => null),
+    exportScopeCounts(),
   ]);
   state.liveLinks = live;
   // 默认选推荐地址（局域网优先），并初始化 state.livePick（copyLiveLink 依赖它）
@@ -2881,7 +2931,7 @@ async function renderExcel() {
     </div>
 
     <div class="grid grid-2">
-      ${exportCardHTML()}
+      ${exportCardHTML(scope)}
       ${importCardHTML()}
     </div>
 
@@ -2893,9 +2943,38 @@ async function renderExcel() {
   renderLiveTable();
 }
 
-/** 导出卡片上三个开关 → doExport 的选项。**不改 doExport 签名**（它在设备列表页也被调用）。 */
+/**
+ * 导出卡片要显示的两个台数（全部 / 当前筛选），顺带把筛选条件翻成人话。
+ * 台数**取不到就留空**（catch → null）—— 这只是提示信息，不该因为一次请求失败把整页打挂。
+ * （服务端 /devices 要 device.read 权限，而本页只要 excel.export，所以确实可能取不到。）
+ */
+async function exportScopeCounts() {
+  const fq = devicesFilterQuery();
+  const one = (q) => api('/devices?' + new URLSearchParams({ ...q, page: 1, page_size: 1 }).toString())
+    .then((d) => d.total)
+    .catch(() => null);
+  const [allTotal, filteredTotal] = await Promise.all([
+    one({}),
+    Object.keys(fq).length ? one(fq) : Promise.resolve(null),
+  ]);
+  return { allTotal, filteredTotal, filterText: devicesFilterSummary() };
+}
+
+/** 导出范围（radio 的值）。只有「设备台账确实有筛选」时才会渲染出 filtered 那个选项。 */
+function exportScopeWanted() {
+  return $('#expScopeFiltered')?.checked ? 'filtered' : 'all';
+}
+
+/**
+ * 导出卡片上「范围 + 三个开关」→ doExport 的选项。**不改 doExport 签名**（它在设备列表页也被调用）。
+ *
+ * ⚠️ `all: true` 必须**显式**带上，不能让 doExport() 自己去读 state.devicesQuery ——
+ *    那是设备台账页残留的筛选、本页面上看不见。真实故障见 exportCardHTML 的注释。
+ */
 function doExportExcel() {
+  const all = exportScopeWanted() !== 'filtered';
   return doExport({
+    ...(all ? { all: true } : {}),
     split: $('#expSplit')?.checked !== false,
     photos: $('#expPhotos')?.checked !== false,
     help: $('#expHelp')?.checked !== false,

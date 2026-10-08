@@ -571,10 +571,21 @@ tbody tr:hover { background: #f8fafc; }
 <p>左侧 <strong>📑 Excel 表格</strong>。</p>
 <h3 id="61-导出设备台账一次性快照">6.1 导出设备台账（一次性快照）<a class="anchor" href="#61-导出设备台账一次性快照">#</a></h3>
 <blockquote><p>💡 <strong>界面上的「?」小圆点</strong>：鼠标悬停或点一下，会弹出这个设置/按钮的完整说明。</p><p>长解释都收在里面了，所以按钮上只留几个字——看不明白就点那个「?」。</p></blockquote>
-<p>在左侧 <strong>📑 Excel 表格</strong> 页，或直接在设备台账页点「⬇ 导出」：</p>
+<p>在左侧 <strong>📑 Excel 表格</strong> 页，点第 ① 张卡上的「<strong>导出 Excel 文件</strong>」。卡片上先选<strong>导出范围</strong>，再点按钮：</p>
 <div class="tw"><table>
-<thead><tr><th>按钮</th><th>说明</th></tr></thead>
-<tbody><tr><td><strong>按分类分表</strong></td><td>⭐ 主机、显示器、笔记本… <strong>各自一个工作表</strong>，另附一张「汇总」页（数量/占比/资产总值/对应表名）</td></tr><tr><td><strong>⬇ 导出全部（单表）</strong></td><td>所有设备放在一张「设备台账」表里</td></tr><tr><td><strong>🚫 不导出照片</strong></td><td>表格更小（比如只想看数据、或设备很多）</td></tr><tr><td><strong>不含说明页</strong></td><td>只导数据表，文件更小</td></tr><tr><td>设备台账页的「⬇ 导出」</td><td>只导出<strong>当前筛选结果</strong></td></tr></tbody>
+<thead><tr><th>导出范围</th><th>默认</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>全部设备</strong></td><td>⭐ 选中</td><td>导出台账里的<strong>所有</strong>设备</td></tr><tr><td><strong>只导出设备台账当前的筛选结果</strong></td><td></td><td>只导你在设备台账页筛出来的那部分。<strong>只有设备台账确实设了筛选条件时才出现</strong>，旁边会写明筛的是什么、共多少台</td></tr></tbody>
+</table></div>
+<blockquote><p>⚠️ <strong>默认是「全部设备」，不受设备台账页设过的筛选影响。</strong></p><p>想只导筛出来的那部分，得<strong>主动</strong>选第二项——这样就不会再出现「本想导全表，结果拿到一份只有「台式主机」一张表的文件」。</p></blockquote>
+<p>折叠区「<strong>导出选项</strong>」里还有三个勾选：</p>
+<div class="tw"><table>
+<thead><tr><th>选项</th><th>默认</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>按分类分表</strong></td><td>✅ 开</td><td>⭐ 主机、显示器、笔记本… <strong>各自一个工作表</strong>，另附一张「汇总」页（数量/占比/资产总值/对应表名）</td></tr><tr><td><strong>含照片</strong></td><td>✅ 开</td><td>关掉后文件小得多（照片不嵌进单元格）</td></tr><tr><td><strong>含说明页</strong></td><td>✅ 开</td><td>附带「字段说明 / 设备分类 / 组织架构」三张辅助表</td></tr></tbody>
+</table></div>
+<p>设备台账页右上角还有两个入口：</p>
+<div class="tw"><table>
+<thead><tr><th>入口</th><th>导出什么</th></tr></thead>
+<tbody><tr><td><strong>⬇ 全部导出</strong></td><td><strong>全部</strong>设备（同样不受上方筛选影响）</td></tr><tr><td><strong>批量操作 → 导出所选</strong></td><td>只导出<strong>勾选</strong>的那几台</td></tr></tbody>
 </table></div>
 <p>导出的工作表：</p>
 <div class="tw"><table>
@@ -590,7 +601,7 @@ tbody tr:hover { background: #f8fafc; }
 <p>例如显示器那张表的列尾就是：</p>
 <pre><code>… 分辨率 | 接口类型 | 照片 | 照片链接</code></pre>
 <blockquote><p>🔗 <strong>链接地址是「大家都能打开」的那个</strong>：即使你是在服务器本机用 <code>127.0.0.1</code> 打开后台导出的，</p><p>链接也会自动写成<strong>局域网 IP</strong>（如 <code>http://192.168.1.100:8080/...</code>），换台电脑照样打得开。</p><p>想固定成某个地址（比如公网域名），去 <strong>系统设置 → 企业信息 → 外部访问地址</strong> 填一下即可。</p></blockquote>
-<blockquote><p>💡 行高会自动撑大让图放得下。如果设备很多导致文件偏大，点 <strong>不含照片</strong> 即可。</p></blockquote>
+<blockquote><p>💡 行高会自动撑大让图放得下。如果设备很多导致文件偏大，把「导出选项」里的 <strong>含照片</strong> 取消勾选即可。</p></blockquote>
 <h4 id="导出的文件太大-下载很慢">导出的文件太大 / 下载很慢？<a class="anchor" href="#导出的文件太大-下载很慢">#</a></h4>
 <p>早期录入的设备（缩略图功能上线之前）只有一张 1600px 的大图，每张约 150 KB，几十台就是好几 MB。</p>
 <p><strong>Excel 表格</strong> 页有一个 <strong>补缩略图</strong> 按钮：点一下，浏览器会批量把这些老照片缩成 320px 小图回传， 之后导出的体积能降到<strong>十分之一</strong>左右（30 台从 4.5 MB → 约 0.6 MB），下载也快得多。</p>
@@ -667,7 +678,7 @@ tbody tr:hover { background: #f8fafc; }
 <h4 id="几点说明">几点说明<a class="anchor" href="#几点说明">#</a></h4>
 <div class="tw"><table>
 <thead><tr><th>事项</th><th>说明</th></tr></thead>
-<tbody><tr><td>数据范围</td><td>只读，只包含设备台账字段，<strong>不含任何密钥或账号信息</strong></td></tr><tr><td>列的多少</td><td><strong>按分类走</strong>：每个分类的表只带该分类配置的字段（显示器不会出现 CPU/内存/硬盘，主机不会出现屏幕尺寸），和 6.1 的分表导出一致</td></tr><tr><td>「全部设备」那一张</td><td>跨分类的汇总视图，保留<strong>完整列</strong>，方便一眼看全</td></tr><tr><td>照片链接</td><td>单元格里是可点击的「<strong>打开照片</strong>」（点一下浏览器打开图）。用的是局域网地址或你设置的「外部访问地址」，不会写成 <code>127.0.0.1</code>，所以同网段的电脑都能打开</td></tr><tr><td>链接安全</td><td>链接自带只读口令；<strong>点「重置链接」可让旧链接立即失效</strong>（照片链接是同一套口令）</td></tr><tr><td>什么时候该重置链接</td><td>换电脑/换网络后怎么都取不到数，或者链接被发到了不该发的地方</td></tr><tr><td>想改数据</td><td>实时链接是<strong>只读</strong>的。批量改数据用导入功能（见 6.5）</td></tr><tr><td>导出点了没反应 / 浏览器报「网络问题」</td><td>系统已改成「先由页面把文件取回来、再触发下载」，失败时会明确告诉你原因。若仍失败，试试 <strong>不含照片</strong> 缩小体积，或点 <strong>补缩略图</strong></td></tr></tbody>
+<tbody><tr><td>数据范围</td><td>只读，只包含设备台账字段，<strong>不含任何密钥或账号信息</strong></td></tr><tr><td>列的多少</td><td><strong>按分类走</strong>：每个分类的表只带该分类配置的字段（显示器不会出现 CPU/内存/硬盘，主机不会出现屏幕尺寸），和 6.1 的分表导出一致</td></tr><tr><td>「全部设备」那一张</td><td>跨分类的汇总视图，保留<strong>完整列</strong>，方便一眼看全</td></tr><tr><td>照片链接</td><td>单元格里是可点击的「<strong>打开照片</strong>」（点一下浏览器打开图）。用的是局域网地址或你设置的「外部访问地址」，不会写成 <code>127.0.0.1</code>，所以同网段的电脑都能打开</td></tr><tr><td>链接安全</td><td>链接自带只读口令；<strong>点「重置链接」可让旧链接立即失效</strong>（照片链接是同一套口令）</td></tr><tr><td>什么时候该重置链接</td><td>换电脑/换网络后怎么都取不到数，或者链接被发到了不该发的地方</td></tr><tr><td>想改数据</td><td>实时链接是<strong>只读</strong>的。批量改数据用导入功能（见 6.5）</td></tr><tr><td>导出点了没反应 / 浏览器报「网络问题」</td><td>系统已改成「先由页面把文件取回来、再触发下载」，失败时会明确告诉你原因。若仍失败，试试取消 <strong>含照片</strong> 缩小体积，或点 <strong>补缩略图</strong></td></tr></tbody>
 </table></div>
 <h3 id="63-下载导入模板">6.3 下载导入模板<a class="anchor" href="#63-下载导入模板">#</a></h3>
 <p>点 <strong>⬇ 下载导入模板</strong>，得到 <code>IT资产导入模板_日期.xlsx</code>，包含 5 个工作表：</p>
@@ -953,7 +964,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 16:01:29</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 17:58:47</div>
 </div>
 </body>
 </html>

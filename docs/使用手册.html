@@ -220,7 +220,10 @@ tbody tr:hover { background: #f8fafc; }
 <p><strong>用法</strong>：</p>
 <ol>
 <li>左侧 <strong>💻 设备台账</strong> → 工具栏点 <strong>📷 批量识别录入</strong></li>
-<li>弹窗里点文件框，<strong>按住 Ctrl / Shift 点选</strong>，或在文件夹里<strong>直接框选</strong>一批（一次最多 50 张）</li>
+<li>把照片<strong>从资源管理器直接拖进那个虚线框</strong>（最顺手），或者点文件框<strong>按住 Ctrl / Shift 点选</strong>、</li>
+</ol>
+<p>在文件夹里<strong>直接框选</strong>一批（一次最多 50 张）</p>
+<ol>
 <li>系统<strong>一张一张地</strong>识别（为什么不能一起传，见下面的提示）</li>
 <li>识别完出现核对表格，每行是「照片 + 品牌 + 型号 + SN + 分类 + 组织 + 状态」：</li>
 </ol>
@@ -235,7 +238,7 @@ tbody tr:hover { background: #f8fafc; }
 <p><strong>各种识别结果怎么处理</strong>：</p>
 <div class="tw"><table>
 <thead><tr><th>情况</th><th>系统表现</th><th>你该做什么</th></tr></thead>
-<tbody><tr><td>读全了</td><td>状态「已读出」，默认<strong>打勾</strong></td><td>核对后直接入库</td></tr><tr><td>只读到品牌 / 型号，没读到 SN</td><td>标 <strong>没读全</strong></td><td>照片对着补 SN，补完自己打勾；不补就不会入库</td></tr><tr><td>整治照片什么都没读出来</td><td>标 <strong>识别失败</strong> + 原因，<strong>默认不打勾</strong></td><td>点「重试 N 张」只重跑这几张（已读到的不重跑）；或换张照片</td></tr><tr><td>网络/服务端错误</td><td>同上，失败原因原样显示</td><td>同上</td></tr></tbody>
+<tbody><tr><td>拖进来的是文件夹 / Excel</td><td>提示「拖进来的不是图片文件」，不入队</td><td>Excel 走 <a href="#六excel-批量导入与导出">第六章 Excel 导入</a></td></tr><tr><td>读全了</td><td>状态「已读出」，默认<strong>打勾</strong></td><td>核对后直接入库</td></tr><tr><td>只读到品牌 / 型号，没读到 SN</td><td>标 <strong>没读全</strong></td><td>照片对着补 SN，补完自己打勾；不补就不会入库</td></tr><tr><td>整治照片什么都没读出来</td><td>标 <strong>识别失败</strong> + 原因，<strong>默认不打勾</strong></td><td>点「重试 N 张」只重跑这几张（已读到的不重跑）；或换张照片</td></tr><tr><td>网络/服务端错误</td><td>同上，失败原因原样显示</td><td>同上</td></tr></tbody>
 </table></div>
 <blockquote><p>⏱ <strong>为什么必须一张一张地传</strong></p><p>系统用的是免费视觉识别服务，<strong>限的是「同时几个请求」，不是「一天多少次」</strong>。</p><p>十张一起传上去会被服务端直接拒掉，而界面上的表现只是「没读出内容」——</p><p>看着像识别不准，其实是并发撞的，而且极难查。所以这里刻意做成串行：慢一点，但一定读得到。</p><p>50 张最坏（每张都要换角度重试）大约几分钟，<strong>期间别关标签页</strong>。关掉窗口会中止还在跑的识别，</p><p>已经读到的不受影响。</p></blockquote>
 <blockquote><p>📌 <strong>只识别品牌 / 型号 / SN 三个字段</strong>，其余字段（使用人、存放位置、采购日期…）统一在入库后补：</p><p>单台走「编辑」，一批走 <strong>批量操作 → 交接使用人 / 转移到组织</strong>。</p></blockquote>
@@ -950,7 +953,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 12:11:33</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 12:29:07</div>
 </div>
 </body>
 </html>

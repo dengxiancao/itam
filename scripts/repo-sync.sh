@@ -158,6 +158,23 @@ if [ -z "$DIRTY" ] && [ "$AHEAD" -eq 0 ]; then
   exit 0
 fi
 
+# ---------- 闸门：变异测试进行中，本轮绝不提交 ----------
+# 变异脚本运行期间，工作区里是**故意改坏**的源码（`if (false && unsaved)` 这类）。
+# 2026-10-08 实测事故：同步任务正好在这个窗口跑，把变异版本 commit + push 到了公开仓库
+# （commit ecaa740）。文件随后被变异脚本逐字节还原，所以事后 `git status` 是干净的、
+# **完全看不出来** —— 只有 `git show HEAD:<file>` 才看得见。
+# 锁由 __patch/mutate-*.mjs 写；超过 30 分钟视为陈旧（脚本被强杀），照常同步，不能永远停着。
+MUTLOCK="$ROOT/__patch/.mutation-in-progress"
+if [ -f "$MUTLOCK" ]; then
+  mage=$(( $(date +%s) - $(stat -c %Y "$MUTLOCK" 2>/dev/null || echo 0) ))
+  if [ "$mage" -lt 1800 ]; then
+    setstatus "结果：变异测试进行中（锁 ${mage}s），本轮不提交 —— 免得把变异版本推上去"
+    log "变异测试进行中（锁建立于 ${mage}s 前），跳过提交"
+    exit 0
+  fi
+  log "变异锁已陈旧（${mage}s），忽略它继续同步"
+fi
+
 COUNT=0
 if [ -n "$DIRTY" ]; then
   git add -A

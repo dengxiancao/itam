@@ -280,16 +280,24 @@ export function readPhotoBytes(photoPath, thumbPath, maxBytes = 400 * 1024) {
 /**
  * 导出的照片相关列（追加在最后，避免打乱用户已经配好的实时表格列顺序）。
  *
- * 只有真的有「独立原图」时才给「原图链接」列 —— 否则它会和「照片链接」一模一样，
- * 看上去就像坏了两列（早期录入的设备只有一张压缩图，就是这种情况）。
+ * ⚠️ **只有一列链接：「原图链接」**（`photo_url`，值取「原图优先，没有独立原图时退回压缩图」，
+ *    所以永远不会是空的）。
+ *
+ * 以前这里是**两列**：「照片链接」（→ 压缩图）+「原图链接」（→ 原图，且只在有独立原图时才出）。
+ * 但两列的差别只是同一张照片的两个尺寸版本 —— 实测全库 1692 台设备**每一台都有独立原图**，
+ * 于是「原图链接」列必然存在、且两列的值除文件名外完全一样。用户看到的原话：
+ *    「图片链接只保留原图链接就好了」。
+ * 所以砍掉冗余的「照片链接」，只留一列，并且让它指向**能看清铭牌的那张**。
+ *
+ * 「照片」列（嵌入式图片）**保留** —— 它是图片本身、不是链接，导出后对方打开就能看见、不用点。
+ * 嵌入用的仍是小图（走 `readPhotoBytes` 的缩略图优先），别拿原图去撑爆表格体积。
  */
-export function photoColumns({ embed = false, hasOriginal = false } = {}) {
+export function photoColumns({ embed = false } = {}) {
   const cols = [];
   if (embed) {
     cols.push({ header: '照片', key: 'photo_bytes', width: 15, type: 'image', imageWidth: 88, imageHeight: 62 });
   }
-  cols.push({ header: '照片链接', key: 'photo_url', width: 22, link: true });
-  if (hasOriginal) cols.push({ header: '原图链接', key: 'original_url', width: 22, link: true });
+  cols.push({ header: '原图链接', key: 'photo_url', width: 22, link: true });
   return cols;
 }
 
@@ -297,25 +305,19 @@ export function photoColumns({ embed = false, hasOriginal = false } = {}) {
 export function attachPhotoUrls(rows, baseUrl, { embed = false } = {}) {
   const settings = photoSettingsSafe();
   return rows.map((r) => {
-    // 只有当原图确实与识别图不是同一个文件时，才单独给一条「原图链接」
-    const distinctOriginal = r.photo_original_path && r.photo_original_path !== r.photo_path
-      ? r.photo_original_path
-      : '';
     const out = {
       ...r,
-      photo_url: photoUrl(baseUrl, r.photo_path || r.photo_original_path),
-      original_url: distinctOriginal ? photoUrl(baseUrl, distinctOriginal) : '',
+      // 原图优先：链接只有一条，用户点开就想看到能看清铭牌的那张。
+      // 没有独立原图的设备（早期录入的）退回压缩图，链接不会是空的。
+      photo_url: photoUrl(baseUrl, r.photo_original_path || r.photo_path),
     };
     if (embed && settings.embed_in_excel) {
+      // 嵌入的是**缩略图/压缩图**，和上面那条链接不是同一个文件 —— 这是故意的：
+      // 几十台设备各嵌一张原图能把文件撑到几十兆。
       out.photo_bytes = readPhotoBytes(r.photo_path, r.photo_thumb_path);
     }
     return out;
   });
-}
-
-/** 这批数据里有没有人真的存了独立原图（决定要不要出「原图链接」列） */
-export function hasDistinctOriginal(rows) {
-  return rows.some((r) => r.original_url);
 }
 
 /** 避免 excel.js 与 services.js 循环依赖，这里直接读设置表 */
@@ -384,8 +386,7 @@ export async function exportDevices(query = {}, {
   }));
 
   // 照片列固定追加在最后，用户已配好的实时表格列顺序不受影响
-  const anyOriginal = hasDistinctOriginal(data);
-  const photoCols = baseUrl ? photoColumns({ embed, hasOriginal: anyOriginal }) : [];
+  const photoCols = baseUrl ? photoColumns({ embed }) : [];
   const withPhotoCols = (list) => (photoCols.length ? [...list, ...toCols(photoCols)] : list);
 
   const stamp = new Date().toLocaleString('zh-CN');
@@ -518,7 +519,7 @@ export function toHTMLTable(rows, columns = allColumns(), title = 'IT 资产台�
   const cellHTML = (c, v) => {
     const s = String(v ?? '');
     if (c.link && /^https?:\/\//.test(s)) {
-      const label = c.key === 'original_url' ? '打开原图' : '打开照片';
+      const label = '打开原图';
       return `<a href="${esc(s)}" title="${esc(s)}">${label}</a>`;
     }
     return esc(s);
@@ -568,7 +569,7 @@ export function toHTMLWorkbook(sheetsData = []) {
     const tbody = s.rows.map((r) => `<tr>${cols.map((c) => {
       const v = String(r[c.key] ?? '');
       if (c.link && /^https?:\/\//.test(v)) {
-        const label = c.key === 'original_url' ? '打开原图' : '打开照片';
+        const label = '打开原图';
         return `<td><a href="${esc(v)}" title="${esc(v)}">${label}</a></td>`;
       }
       return `<td>${esc(v)}</td>`;

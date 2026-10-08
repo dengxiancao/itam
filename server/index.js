@@ -18,7 +18,7 @@ import * as svc from './services.js';
 import { exportDevices, buildTemplate, previewImport, importDevices, importBatches,
   collectRows, toCSV, toHTMLTable, toHTMLWorkbook, liveManifest, liveManifestText,
   liveToken, resetLiveToken, checkLiveToken, categoryColumns, sheetColumnsFor, allColumns,
-  photoColumns, attachPhotoUrls, hasDistinctOriginal } from './excel.js';
+  photoColumns, attachPhotoUrls } from './excel.js';
 import { recognize, ocrStatus } from './lib/ocr.js';
 import { interpret } from './lib/recognize.js';
 import { qrcodeSvg } from './lib/qrcode.js';
@@ -1252,7 +1252,8 @@ async function routeApi(ctx) {
     // 一个页面里包含所有分类的表格：导入时可一次勾选多张表
     if (route === '/live/workbook.html') {
       const sheetsData = [];
-      const livePhotoCols = (rows) => photoColumns({ embed: false, hasOriginal: hasDistinctOriginal(rows) });
+      // 照片列只剩一列「原图链接」，不再依赖这批数据里有没有独立原图
+      const livePhotoCols = () => photoColumns({ embed: false });
       for (const c of svc.categoryList()) {
         const rows = collectRows({ category_id: c.id });
         if (rows.length) {

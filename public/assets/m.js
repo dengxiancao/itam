@@ -1767,6 +1767,9 @@ async function runBatchQueue(subset) {
     it.stage = '';
     // 识别出来的值先灌进 edit，用户再改就是改 edit
     it.edit = { brand: r.brand || '', model: r.model || '', sn: r.sn || '' };
+    // 「没读全」的（没有 SN）默认不勾：勾了也提交不了，还会让用户以为点一下就完事。
+    // 补上 SN 后他自己勾，或者直接点「全选」。
+    it.include = !!String(it.edit.sn).trim();
   }, {
     // 用户退出了这个页面就别再往服务器打请求了
     shouldContinue: () => state.batch === mine && state.view === 'batch',

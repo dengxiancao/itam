@@ -1652,6 +1652,8 @@ async function runBatchOcrQueue(subset) {
     it.stage = '';
     // 识别出来的值灌进 edit，之后用户改的是 edit
     it.edit = { ...it.edit, brand: r.brand || '', model: r.model || '', sn: r.sn || '' };
+    // 「没读全」的（没有 SN）默认不勾：勾了也提交不了。补上 SN 后自己勾，或点「全选可入库的」。
+    it.include = !!String(it.edit.sn).trim();
   }, {
     // 用户把弹窗关了就别再往服务器打请求
     shouldContinue: () => state.batchOcr === mine,
@@ -5003,6 +5005,9 @@ window.openDeviceForm = openDeviceForm;
    其余的控件在 bindBatchOcrModal() 里按 id 挂，不需要导出。 */
 window.openBatchOcr = openBatchOcr;
 window.closeBatchOcr = closeBatchOcr;
+/* 内部状态也挂出来：和移动端的 window.mobileState 对称。
+   测试夹具靠它读批次状态（不暴露的话只能靠猜 DOM，断言就会变成「抄一遍实现」）。 */
+window.adminState = state;
 window.openOrgForm = openOrgForm;
 window.openCatForm = openCatForm;
 window.openQRModal = openQRModal;

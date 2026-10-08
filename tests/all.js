@@ -46,6 +46,7 @@ const SUITES = [
   { file: 'render-smoke.js', label: '页面渲染', server: true },
   { file: 'explorer.js', label: '资源管理器', server: true },
   { file: 'scan-verify.js', label: '扫码核对流程', server: true },
+  { file: 'batch-ocr.js', label: '批量识别入库', server: true },
   { file: 'agent.js', label: 'GLPI Agent 对接', server: true },
   { file: 'account.js', label: '账户与权限', server: true },
   { file: 'api-smoke.js', label: 'HTTP 接口', server: true },

@@ -153,18 +153,28 @@ async function ensurePhotoDevice() {
   const day = new Date().toISOString().slice(0, 10);
   const rel = `/uploads/${day}/smoke-photo-${Date.now()}.png`;
   const abs = path.join(__dirname, '..', 'data', rel.replace(/^\/uploads\//, 'uploads/'));
+  // ⚠️ 还要一份**独立原图**（`photo_path !== photo_original_path`），两个文件都真的落盘。
+  //    为什么非"独立"不可：手机端入库会存三份（压缩图 / 原图 / 缩略图），
+  //    「导出的链接列只留一列、且必须指向原图」这条判据**需要两台路径不同的设备**才有样本。
+  //    只造压缩图的话那条断言会**静默跳过** —— 变异测试 M22 就是这么抓出来的：
+  //    把链接改回指向压缩图，套件照样全绿，因为断言根本没跑。
+  const origRel = rel.replace(/\.png$/, '-orig.png');
+  const origAbs = path.join(__dirname, '..', 'data', origRel.replace(/^\/uploads\//, 'uploads/'));
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   // 1×1 的合法 PNG：内容无所谓，要的是「有个真文件可以被嵌进 Excel / 用 token 取回」
-  fs.writeFileSync(abs, Buffer.from(
+  const PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     'base64',
-  ));
+  );
+  fs.writeFileSync(abs, PNG);
+  fs.writeFileSync(origAbs, PNG);
   await req('/api/devices/' + target.id, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ photo_path: rel }),
+    // 三个字段都写：手机端入库时写的就是这几个（压缩图 / 原图 / 缩略图）
+    body: JSON.stringify({ photo_path: rel, photo_original_path: origRel, photo_thumb_path: rel }),
   });
-  return { id: target.id, path: rel };
+  return { id: target.id, path: rel, original: origRel };
 }
 const photoFix = await ensurePhotoDevice();
 if (photoFix) console.log(`  （库中设备都没照片，已给测试设备 ${photoFix.id.slice(0, 8)} 补了一张）\n`);
@@ -368,19 +378,23 @@ await check('照片列：导出 Excel 自动嵌图 + 实时链接带可用的照
 
   // ★ 合并后留下的那一列必须指向**原图**（`photo_original_path`），不是压缩图 ——
   //   这才是「只保留原图链接」这句话的实质：不是单纯删一列，而是留下的那列要是原图。
+  //
+  // ⚠️ 样本取不到时**必须失败，不能静默跳过**。第一版写成 `if (样本) {...}`，
+  //    结果因为夹具只造了压缩图、没有独立原图，这段一次都没跑过 ——
+  //    变异 M22（把链接改回指向压缩图）照样全绿，等于白写。
+  //    现在 `ensurePhotoDevice()` 会专门给测试设备配上独立原图，保证样本存在。
   const withDistinctOrig = (await req('/api/devices?page_size=200')).body.items
     .find((d) => d.photo_original_path && d.photo_original_path !== d.photo_path);
-  if (withDistinctOrig) {
-    const origFile = withDistinctOrig.photo_original_path.split('/').pop();
-    const compFile = withDistinctOrig.photo_path.split('/').pop();
-    if (!html.includes(origFile)) {
-      throw new Error(`「原图链接」没有指向原图：实时表格里找不到 ${origFile}`);
-    }
-    // 该设备那一行里不该出现压缩图的文件名（出现就说明链接还指着压缩图）
-    const row = html.split('<tr>').find((tr) => tr.includes(origFile));
-    if (row && row.includes(compFile)) {
-      throw new Error(`「原图链接」指向的是压缩图 ${compFile}，不是原图 ${origFile}`);
-    }
+  if (!withDistinctOrig) {
+    throw new Error('取不到「有独立原图的设备」样本 —— 本项判据失效（夹具没造出独立原图？）');
+  }
+  const origFile = withDistinctOrig.photo_original_path.split('/').pop();
+  const compFile = withDistinctOrig.photo_path.split('/').pop();
+  if (!html.includes(origFile)) {
+    throw new Error(`「原图链接」没有指向原图：实时表格里找不到 ${origFile}`);
+  }
+  if (html.includes(`/${compFile}?token=`)) {
+    throw new Error(`照片链接指向了压缩图 ${compFile} —— 合并后这一列只该指向原图`);
   }
 
   const m = /(https?:\/\/[^"'<\s]+\/uploads\/[^"'<\s]+token=[a-f0-9]+)/.exec(html);

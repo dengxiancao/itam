@@ -79,13 +79,19 @@ const ctx = FN_SRC.includes('function fmtLocal(')
 /* ================= A. 前端 fmtLocal：按本地时区换算 ================= */
 setTZ('Asia/Shanghai');
 if (ctx) {
-  const TS = '2026-10-08T10:02:52.959Z';   // 库里真实的那一条：北京时间 18:02:52
-  assert('★ 时间戳按**本地**时区显示（不是切 UTC 字符串）', ctx.fmtLocal(TS) === '2026-10-08 18:02',
-    `实测「${ctx.fmtLocal(TS)}」/ 期望「2026-10-08 18:02」`);
+  const TS = '2026-10-08T10:02:52.959Z';        // 库里真实的那一条：北京时间 18:02:52（**与 UTC 同一天**）
+  const MIDNIGHT = '2026-10-08T16:30:00.000Z';  // 北京**次日** 00:30 —— 日期会跨天
+
+  // ⚠️ 主断言必须用**跨天**的样本！
+  //    用 TS 的话「UTC 日期」和「本地日期」恰好是同一天，把 ymd 换成
+  //    `d.toISOString().slice(0, 10)` 也照样输出 `2026-10-08 18:02` —— 判据就成了恒真。
+  //    变异 M23 第一次跑正是这么漏过去的：时间"看着对"，其实一个字节都没验到。
+  assert('★ 时间戳按**本地**时区显示（不是切 UTC 字符串）', ctx.fmtLocal(MIDNIGHT) === '2026-10-09 00:30',
+    `实测「${ctx.fmtLocal(MIDNIGHT)}」/ 期望「2026-10-09 00:30」`);
   assert('fmtLocal(..., "sec") 带秒', ctx.fmtLocal(TS, 'sec') === '2026-10-08 18:02:52',
     `实测「${ctx.fmtLocal(TS, 'sec')}」`);
-  assert('fmtLocal(..., "date") 只要日期', ctx.fmtLocal(TS, 'date') === '2026-10-08',
-    `实测「${ctx.fmtLocal(TS, 'date')}」`);
+  assert('fmtLocal(..., "date") 只要日期', ctx.fmtLocal(MIDNIGHT, 'date') === '2026-10-09',
+    `实测「${ctx.fmtLocal(MIDNIGHT, 'date')}」`);
   assert('fmtLocal(..., "md") = 月-日 时:分（登录日志那种紧凑格式）', ctx.fmtLocal(TS, 'md') === '10-08 18:02',
     `实测「${ctx.fmtLocal(TS, 'md')}」`);
 
@@ -102,7 +108,7 @@ if (ctx) {
 
   /* ---- D. ★ 真正的杀手场景：北京时间凌晨 ---- */
   // UTC 的 10-08 16:30 = 北京 10-09 00:30。这时「UTC 的日期」和「本地日期」是**两天**。
-  const MIDNIGHT = '2026-10-08T16:30:00.000Z';
+  // （`MIDNIGHT` 在 A 组已经声明，主断言用的就是它。）
   assert('★ 北京凌晨 00:30 录入的设备，日期显示为**当天**（10-09）',
     ctx.fmtLocal(MIDNIGHT, 'date') === '2026-10-09', `实测「${ctx.fmtLocal(MIDNIGHT, 'date')}」`);
   assert('（对照）同一个时刻按 UTC 切会给 10-08 —— 这就是用户看到「差一天」的来源',

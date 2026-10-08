@@ -531,20 +531,22 @@ section('手机端 m.js —— 上限与「退出会不会丢」');
   assert(ocrCalls.length === 30, `只对进来的 30 张发识别（实测 ${ocrCalls.length} 趟）—— 丢掉的不能还去烧额度`);
 
   // —— 有「识别好、没入库」的项时退出：必须先问 ——
-  globalThis.exitBatch();
-  const asked = await waitFor(() => els.get('#mConfirmBox').hidden === false, 3000);
-  assert(asked, '有 30 张识别好没入库 → 退出前先弹确认（手机端退出按钮就在拇指下面，误触成本最高）');
-  assert(String(els.get('#mConfirmMsg').textContent).includes('30 张'), `确认框里写清丢多少张（实测「${els.get('#mConfirmMsg').textContent}」）`);
-  assert(els.get('#mConfirmYes').textContent === '放弃' && els.get('#mConfirmNo').textContent === '继续核对', `两个按钮说人话（实测「${els.get('#mConfirmYes').textContent}」/「${els.get('#mConfirmNo').textContent}」）`);
+  // ⚠️ 这里一律用 `qs()` 而不是 `els.get()`：`qs` 是**按需创建**，`els.get` 拿不到就返回 undefined。
+  //    变异成「不弹确认框」时，mConfirm 从没跑过 → 这几个 id 从没进过 Map →
+  //    `els.get('#mConfirmMsg').textContent` 会直接 TypeError 把整套打崩，
+  //    那样变异测试看到的是「崩溃」而不是「这条断言红了」。
+  assert(qs('#mConfirmBox').hidden === false, '有 30 张识别好没入库 → 退出前先弹确认（手机端退出按钮就在拇指下面，误触成本最高）');
+  assert(String(qs('#mConfirmMsg').textContent).includes('30 张'), `确认框里写清丢多少张（实测「${qs('#mConfirmMsg').textContent}」）`);
+  assert(qs('#mConfirmYes').textContent === '放弃' && qs('#mConfirmNo').textContent === '继续核对', `两个按钮说人话（实测「${qs('#mConfirmYes').textContent}」/「${qs('#mConfirmNo').textContent}」）`);
 
   globalThis.mConfirmAnswer(false);            // 用户改主意了
-  await waitFor(() => els.get('#mConfirmBox').hidden === true, 1000);
+  await waitFor(() => qs('#mConfirmBox').hidden === true, 1000);
   assert(mState.batch !== null && mState.view === 'batch' && mState.batch.items.length === 30, '点「继续核对」→ 留在核对页，30 张结果一张没丢');
-  assert(els.get('#mConfirmBox').hidden === true && els.get('#mConfirmMask').hidden === true, '答完把确认框和遮罩一起收起来（留个全屏遮罩在上面就是「点哪都没反应」）');
+  assert(qs('#mConfirmBox').hidden === true && qs('#mConfirmMask').hidden === true, '答完把确认框和遮罩一起收起来（留个全屏遮罩在上面就是「点哪都没反应」）');
 
   // —— 真要走：确认之后才清 ——
   globalThis.exitBatch();
-  await waitFor(() => els.get('#mConfirmBox').hidden === false, 3000);
+  await waitFor(() => qs('#mConfirmBox').hidden === false, 3000);
   globalThis.mConfirmAnswer(true);
   await waitFor(() => mState.batch === null, 3000);
   assert(mState.batch === null && mState.view === 'home', '点「放弃」才真的清空并回首页');
@@ -564,7 +566,7 @@ section('手机端 m.js —— 上限与「退出会不会丢」');
 
   globalThis.exitBatch();
   assert(mState.batch === null && mState.view === 'home', '没东西可丢 → 不弹确认，直接退（否则确认框会变成人人都在盲点的噪音）');
-  assert(els.get('#mConfirmBox').hidden === true, '确认框确实没弹出来');
+  assert(qs('#mConfirmBox').hidden === true, '确认框确实没弹出来');
 }
 
 {

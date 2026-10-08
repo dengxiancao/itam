@@ -1769,7 +1769,7 @@ function startBatch(files) {
       edit: { brand: '', model: '', sn: '' },
     })),
     total: list.length,
-    dropped: 0,
+    dropped,
     running: false,
     phase: 'recognize',   // recognize | review
     shared: defaultBatchShared(),

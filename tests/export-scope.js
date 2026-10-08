@@ -107,6 +107,17 @@ function elFor(sel) {
   return elCache.get(sel);
 }
 
+/**
+ * admin.js 只用到 URL 的两个**静态**方法（`createObjectURL` / `revokeObjectURL`，
+ * 给下载和缩略图预览用），没有 `new URL(...)`。这里补上它们 ——
+ * 否则 doExport 会在「请求已经发出去之后」抛异常，本套件就永远走不到成功路径，
+ * 也就看不到那条会告诉用户「正在导出全部设备」的提示。
+ */
+class FakeURL extends URL {
+  static createObjectURL() { return 'blob:stub'; }
+  static revokeObjectURL() {}
+}
+
 function makeDocument() {
   return {
     getElementById(id) { return elFor('#' + id); },
@@ -183,7 +194,7 @@ const sandbox = {
   addEventListener() {}, removeEventListener() {},
   alert() {}, confirm: () => true, prompt: () => null,
   matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }),
-  URLSearchParams, URL, TextEncoder, TextDecoder, Date, Math, JSON,
+  URLSearchParams, URL: FakeURL, TextEncoder, TextDecoder, Date, Math, JSON,
   Blob: class {}, FormData: class {}, File: class {}, FileReader: class {},
   Event: class {}, CustomEvent: class {}, MouseEvent: class {},
   SVGElement: class {}, HTMLElement: class {}, Node: class {}, Element: class {},
@@ -281,6 +292,14 @@ async function inSandbox() {
     urlAll && !/keyword=|org_id=|status=|brand=|supplier=/.test(urlAll), '实测 URL：' + urlAll);
   __ok('默认导出仍然按分类分表（split）', urlAll.includes('split=1'), '实测 URL：' + urlAll);
 
+  // 用户在**下载开始之前**就得知道这次导的是哪一批 —— 提示里必须出现范围口径。
+  // 这也顺带证明导出走完了成功路径（不是「发完请求就抛异常」）。
+  const toasts = () => $('#toasts').children.map((c) => String(c.lastElementChild.textContent));
+  __ok('提示里写明这次导的是「全部设备」',
+    toasts().some((t) => t.includes('全部设备')), '实测提示：' + JSON.stringify(toasts()));
+  __ok('导出走完了成功路径（提示里出现「已开始下载」）',
+    toasts().some((t) => t.includes('已开始下载')), '实测提示：' + JSON.stringify(toasts()));
+
   /* ---- 4. 主动选「只导出当前筛选结果」时，筛选要**真的**带上 ---- */
   $('#expScopeFiltered').checked = true;
   __ok('勾上之后范围变成 filtered', exportScopeWanted() === 'filtered', '实测 ' + exportScopeWanted());
@@ -290,6 +309,8 @@ async function inSandbox() {
   const urlFiltered = __calls.filter((u) => u.includes('/excel/export')).pop() || '';
   __ok('★ 选了「只导出筛选结果」就真的带上 category_id（否则这个选项是假的）',
     urlFiltered.includes('category_id=c-pc'), '实测 URL：' + urlFiltered);
+  __ok('选「只导出筛选结果」时，提示里说的是「当前筛选结果」',
+    toasts().some((t) => t.includes('当前筛选结果')), '实测提示：' + JSON.stringify(toasts()));
   $('#expScopeFiltered').checked = false;
 
   /* ---- 5. 页面接线：renderExcel 必须把 scope 传进卡片 ---- */
@@ -350,7 +371,10 @@ for (const cls of ['.xl-scope {', '.xl-scope-t {', '.xl-scope-row {', '.xl-scope
     // 这三个键仍指向**旧**沙箱，源码里 `window.xxx` 就取到别处去了。
     const sb2 = {};
     for (const k of Object.keys(sandbox)) sb2[k] = sandbox[k];
-    sb2.__calls = [];
+    // ⚠️ 必须是**同一个**数组：`fetch` 那个闭包捕获的是模块级的 `calls`，
+    //    给 sb2 换一个新数组的话，请求会照旧推进 `calls`，而沙箱里读到的永远为空。
+    calls.length = 0;
+    sb2.__calls = calls;
     sb2.__ok = () => {};
     sb2.window = sb2; sb2.globalThis = sb2; sb2.self = sb2;
     vm.createContext(sb2);
@@ -368,6 +392,9 @@ for (const cls of ['.xl-scope {', '.xl-scope-t {', '.xl-scope-row {', '.xl-scope
 }
 
 /* ================= 汇报 ================= */
-for (const f of fails) console.log('  ✗ ' + f);
+// ⚠️ 失败行用 `✘`（U+2718），和其余十几个套件保持一致 ——
+//    `__patch/mutate-batch.mjs` 就是按这个符号从套件输出里捞失败断言名的。
+//    （tests/ledger-density.js 用的是 `✗`，全项目仅此一个；那是历史笔误，不要跟着学。）
+for (const f of fails) console.log('  ✘ ' + f);
 console.log(`\nExcel 导出范围回归：${pass} 通过 / ${fails.length} 失败\n`);
 process.exit(fails.length ? 1 : 0);

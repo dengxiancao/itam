@@ -529,44 +529,46 @@ async function exitBatchClean(ok = true) {
   await exitBatchClean();          // 这批只剩 error + pending，没东西可丢 → 不该弹确认
 }
 
-/* ---- 上限：只收前 30 张，而且必须说清「有几张没进来」 ---- */
+/* ---- 上限：只收前 100 张，而且必须说清「有几张没进来」 ---- */
 section('手机端 m.js —— 上限与「退出会不会丢」');
 
 {
-  // 40 张一起选：只有前 30 张进来。剩下的不能只弹一条 3 秒的提示就没影了 ——
-  // 用户很可能没盯着那 3 秒，等识别跑完才发现清单里只有 30 张。
-  ocrScript = Array.from({ length: 40 }, (_, i) => ocrPayload({ sn: `SN-P${i}`, image_path: `/uploads/p${i}.jpg` }));
+  // 130 张一起选：只有前 100 张进来。剩下的不能只弹一条 3 秒的提示就没影了 ——
+  // 用户很可能没盯着那 3 秒，等识别跑完才发现清单里只有 100 张。
+  ocrScript = Array.from({ length: 130 }, (_, i) => ocrPayload({ sn: `SN-P${i}`, image_path: `/uploads/p${i}.jpg` }));
   ocrCalls = []; devicePosts = [];
-  const files = Array.from({ length: 40 }, (_, i) => new File([new Uint8Array(64)], `p${i}.jpg`, { type: 'image/jpeg' }));
+  const files = Array.from({ length: 130 }, (_, i) => new File([new Uint8Array(64)], `p${i}.jpg`, { type: 'image/jpeg' }));
   globalThis.startBatch(files);
-  assert(mState.batch.items.length === 30, `一次最多 30 张，超出的**直接丢弃**（实测进来 ${mState.batch.items.length} 张）`);
-  assert(mState.batch.dropped === 10, `丢了几张记在 state 上（实测 ${mState.batch.dropped} 张）—— 不能只靠一条会自己消失的提示`);
-  assert(els.get('#main').innerHTML.includes('还有 <b>10</b> 张没有加进来'), '识别页常驻写着「还有 10 张没进来」（回头也能看见，不是只闪 3 秒）');
+  assert(mState.batch.items.length === 100, `一次最多 100 张，超出的**直接丢弃**（实测进来 ${mState.batch.items.length} 张）`);
+  assert(mState.batch.dropped === 30, `丢了几张记在 state 上（实测 ${mState.batch.dropped} 张）—— 不能只靠一条会自己消失的提示`);
+  assert(els.get('#main').innerHTML.includes('还有 <b>30</b> 张没有加进来'), '识别页常驻写着「还有 30 张没进来」（回头也能看见，不是只闪 3 秒）');
 
-  const toReview = await waitFor(() => mState.batch && mState.batch.phase === 'review');
-  assert(toReview, '这 30 张识别完并进入待确认阶段');
-  assert(mState.batch.items.length === 30, '识别完还是 30 张（丢掉的 10 张不会偷偷补进来）');
-  assert(ocrCalls.length === 30, `只对进来的 30 张发识别（实测 ${ocrCalls.length} 趟）—— 丢掉的不能还去烧额度`);
+  // ⚠️ 显式给 30s（默认 10s）：这里要跑满 100 张，比原先的 30 张多 3 倍多，
+  //    贴着默认超时的话会在慢一点的机器上偶发失败，而那条失败长得跟「功能坏了」一模一样。
+  const toReview = await waitFor(() => mState.batch && mState.batch.phase === 'review', 30000);
+  assert(toReview, '这 100 张识别完并进入待确认阶段');
+  assert(mState.batch.items.length === 100, '识别完还是 100 张（丢掉的 30 张不会偷偷补进来）');
+  assert(ocrCalls.length === 100, `只对进来的 100 张发识别（实测 ${ocrCalls.length} 趟）—— 丢掉的不能还去烧额度`);
 
   // —— 有「识别好、没入库」的项时退出：必须先问 ——
   // 先钉住前置条件：否则「确认框弹出来了」可能读到的是**上一个用例留下的框**，
   // 「写清丢多少张」也会读到别的批次的数字（本套件真实踩过这个坑）。
-  assert(batchUnsavedOf(mState.batch) === 30, `前置：这一批确实有 ${batchUnsavedOf(mState.batch)} 张识别好没入库`);
+  assert(batchUnsavedOf(mState.batch) === 100, `前置：这一批确实有 ${batchUnsavedOf(mState.batch)} 张识别好没入库`);
   assert(qs('#mConfirmBox').hidden === true, '前置：此刻确认框是收着的（不然下面「弹出来了吗」判不准）');
 
   globalThis.exitBatch();
   const asked = await waitFor(() => qs('#mConfirmBox').hidden === false, 3000);
-  assert(asked, '有 30 张识别好没入库 → 退出前先弹确认（手机端退出按钮就在拇指下面，误触成本最高）');
+  assert(asked, '有 100 张识别好没入库 → 退出前先弹确认（手机端退出按钮就在拇指下面，误触成本最高）');
   // ⚠️ 这里一律用 `qs()` 而不是 `els.get()`：`qs` 是**按需创建**，`els.get` 拿不到就返回 undefined。
   //    变异成「不弹确认框」时，mConfirm 从没跑过 → 这几个 id 从没进过 Map →
   //    `els.get('#mConfirmMsg').textContent` 会直接 TypeError 把整套打崩，
   //    那样变异测试看到的是「崩溃」而不是「这条断言红了」。
-  assert(String(qs('#mConfirmMsg').textContent).includes('30 张'), `确认框里写清丢多少张（实测「${qs('#mConfirmMsg').textContent}」）`);
+  assert(String(qs('#mConfirmMsg').textContent).includes('100 张'), `确认框里写清丢多少张（实测「${qs('#mConfirmMsg').textContent}」）`);
   assert(qs('#mConfirmYes').textContent === '放弃' && qs('#mConfirmNo').textContent === '继续核对', `两个按钮说人话（实测「${qs('#mConfirmYes').textContent}」/「${qs('#mConfirmNo').textContent}」）`);
 
   globalThis.mConfirmAnswer(false);            // 用户改主意了
   await waitFor(() => qs('#mConfirmBox').hidden === true, 1000);
-  assert(mState.batch !== null && mState.view === 'batch' && mState.batch.items.length === 30, '点「继续核对」→ 留在核对页，30 张结果一张没丢');
+  assert(mState.batch !== null && mState.view === 'batch' && mState.batch.items.length === 100, '点「继续核对」→ 留在核对页，100 张结果一张没丢');
   assert(qs('#mConfirmBox').hidden === true && qs('#mConfirmMask').hidden === true, '答完把确认框和遮罩一起收起来（留个全屏遮罩在上面就是「点哪都没反应」）');
 
   // —— 真要走：确认之后才清 ——

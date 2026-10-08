@@ -240,10 +240,10 @@ tbody tr:hover { background: #f8fafc; }
 <thead><tr><th>情况</th><th>系统表现</th><th>你该做什么</th></tr></thead>
 <tbody><tr><td>拖进来的是文件夹 / Excel</td><td>提示「拖进来的不是图片文件」，不入队</td><td>Excel 走 <a href="#六excel-批量导入与导出">第六章 Excel 导入</a></td></tr><tr><td>读全了</td><td>状态「已读出」，默认<strong>打勾</strong></td><td>核对后直接入库</td></tr><tr><td>只读到品牌 / 型号，没读到 SN</td><td>标 <strong>没读全</strong></td><td>照片对着补 SN，补完自己打勾；不补就不会入库</td></tr><tr><td>整治照片什么都没读出来</td><td>标 <strong>识别失败</strong> + 原因，<strong>默认不打勾</strong></td><td>点「重试 N 张」只重跑这几张（已读到的不重跑）；或换张照片</td></tr><tr><td>网络/服务端错误</td><td>同上，失败原因原样显示</td><td>同上</td></tr></tbody>
 </table></div>
-<blockquote><p>⏱ <strong>为什么必须一张一张地传</strong></p><p>系统用的是免费视觉识别服务，<strong>限的是「同时几个请求」，不是「一天多少次」</strong>。</p><p>十张一起传上去会被服务端直接拒掉，而界面上的表现只是「没读出内容」——</p><p>看着像识别不准，其实是并发撞的，而且极难查。所以这里刻意做成串行：慢一点，但一定读得到。</p><p>50 张最坏（每张都要换角度重试）大约几分钟；100 张最坏要跑 400 次识别，按十几分钟到半小时算，</p><p><strong>期间别关标签页</strong>。关掉窗口会中止还在跑的识别，已经读到的不受影响 —— 但如果已经有识别好、</p><p>还没入库的，系统会<strong>先问你一句</strong>（100 张的结果手一滑关掉就全没了，得重选一遍照片）。</p></blockquote>
+<blockquote><p>⏱ <strong>为什么必须一张一张地传</strong></p><p>系统用的是免费视觉识别服务，<strong>限的是「同时几个请求」，不是「一天多少次」</strong>。</p><p>十张一起传上去会被服务端直接拒掉，而界面上的表现只是「没读出内容」——</p><p>看着像识别不准，其实是并发撞的，而且极难查。所以这里刻意做成串行：慢一点，但一定读得到。</p><p>十张最坏（每张都要换角度重试）大约两三分钟；满额 100 张最坏要跑 400 次识别，按十几分钟到半小时算，</p><p><strong>期间别关标签页</strong>。关掉窗口会中止还在跑的识别，已经读到的不受影响 —— 但如果已经有识别好、</p><p>还没入库的，系统会<strong>先问你一句</strong>（100 张的结果手一滑关掉就全没了，得重选一遍照片）。</p></blockquote>
 <blockquote><p>📌 <strong>只识别品牌 / 型号 / SN 三个字段</strong>，其余字段（使用人、存放位置、采购日期…）统一在入库后补：</p><p>单台走「编辑」，一批走 <strong>批量操作 → 交接使用人 / 转移到组织</strong>。</p></blockquote>
 <blockquote><p>📌 <strong>和 Excel 导入怎么选</strong>：手上有<strong>照片</strong> → 用这里；手上有别人填好的<strong>表格</strong> → 走</p><p><a href="#六excel-批量导入与导出">第六章 Excel 导入</a>。别绕照片一圈。</p></blockquote>
-<blockquote><p>📱 同样的能力手机上也有（相册一次选多张，最多 30 张），见</p><p><a href="#一次选多张批量识别入库">5.4 一次选多张</a>。</p></blockquote>
+<blockquote><p>📱 同样的能力手机上也有（相册一次选多张，<strong>两端上限相同：一次最多 100 张</strong>），见</p><p><a href="#一次选多张批量识别入库">5.4 一次选多张</a>。</p></blockquote>
 <h3 id="45-编辑与批量操作">4.5 编辑与批量操作<a class="anchor" href="#45-编辑与批量操作">#</a></h3>
 <p><strong>编辑单台</strong>：列表行尾点「编辑」，改完保存。所有改动都会记进流转记录。</p>
 <p><strong>批量操作</strong>：</p>
@@ -543,7 +543,7 @@ tbody tr:hover { background: #f8fafc; }
 <h3 id="54-从相册选图识别">5.4 从相册选图识别<a class="anchor" href="#54-从相册选图识别">#</a></h3>
 <p>没有摄像头权限、或想用已经拍好的照片时：首页点 <strong>🖼️ 从相册选图识别</strong>，选<strong>一张</strong>铭牌照片即可识别 （不需要相机权限，走的是和拍照完全一样的识别链路）。</p>
 <h4 id="一次选多张批量识别入库">一次选多张：批量识别入库<a class="anchor" href="#一次选多张批量识别入库">#</a></h4>
-<p>一次拍了一叠铭牌（比如刚拆箱十台显示器），不用一张张来：首页点 <strong>📋 批量识别入库</strong>， 在相册里<strong>一次勾选多张</strong>（一次最多 30 张；选多了不会排队，页面上会写明还剩多少张没进来），然后：</p>
+<p>一次拍了一叠铭牌（比如刚拆箱十台显示器），不用一张张来：首页点 <strong>📋 批量识别入库</strong>， 在相册里<strong>一次勾选多张</strong>（一次最多 100 张；选多了不会排队，页面上会写明还剩多少张没进来），然后：</p>
 <ol>
 <li>屏幕上显示进度「已识别 3 / 10」，<strong>一张一张地</strong>识别</li>
 <li>识别完进入<strong>核对页</strong>：每张照片旁边有品牌 / 型号 / SN 三个输入框，<strong>照着照片核对并改错</strong></li>
@@ -557,7 +557,7 @@ tbody tr:hover { background: #f8fafc; }
 <tbody><tr><td>某张没读到 SN</td><td>标成 <strong>没读全</strong>，<strong>默认不勾</strong>（没有 SN 的设备录进去也查不着）。补上 SN 再勾，或点右上角「全选 / 全不选」</td></tr><tr><td>某张彻底失败（网络 / 服务端问题）</td><td>标成 <strong>识别失败</strong> 并写明原因，点「重试 N 张」只重跑这几张；其余已读到的不重跑</td></tr><tr><td>有几张不想入库（比如拍到了桌上的其他东西）</td><td>把它的勾去掉就行</td></tr><tr><td>中途想退出</td><td>点底部 <strong>退出批量识别</strong>。如果已经有<strong>识别好、还没入库</strong>的，会先问一句「还有 N 张没入库」—— 点「放弃」才真的走，点「继续核对」就留在原处，已经改过的内容不会丢</td></tr></tbody>
 </table></div>
 <blockquote><p>⏱ <strong>和电脑端一样，一次只传一张</strong>。免费识别服务限的是并发数，一起传会被拒，</p><p>界面上只会看到「没读出内容」。串行慢一点，但一定读得到 ——</p><p>所以识别期间<strong>别锁屏、别切走浏览器</strong>。</p></blockquote>
-<blockquote><p>💡 十张照片最坏情况（每张都要换角度重试）大约两三分钟。想更快就分两批各五张。</p></blockquote>
+<blockquote><p>💡 十张照片最坏情况（每张都要换角度重试）大约两三分钟。上限 100 张是给「一层楼的机器一次拍完」</p><p>这种整批场景留的，<strong>不是建议你每次都拍满</strong> —— 满额最坏要十几到几十分钟，而且屏幕得全程亮着。</p><p>一次拍二三十张仍然是更稳的用法。</p></blockquote>
 <blockquote><p>📌 批量页里的分类专属字段用 <code>bt_</code> 打头、单张结果页用 <code>mt_</code>，两者<strong>不会互相抢输入框</strong> ——</p><p>你不用担心在这边改了值那边跟着变。</p></blockquote>
 <h3 id="55-最近设备">5.5 最近设备<a class="anchor" href="#55-最近设备">#</a></h3>
 <p>底部 <strong>🗂️ 最近设备</strong> 列出最近更新的 50 台设备，点进去看详情，省得回电脑上查。</p>
@@ -953,7 +953,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 15:04:45</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 16:01:29</div>
 </div>
 </body>
 </html>

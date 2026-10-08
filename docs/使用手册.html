@@ -593,13 +593,14 @@ tbody tr:hover { background: #f8fafc; }
 <tbody><tr><td>分表</td><td><code>汇总</code> + 每个分类一张表（如 <code>台式主机</code>、<code>显示器</code>）+ <code>字段说明</code>、<code>设备分类</code>、<code>组织架构</code></td></tr><tr><td>单表</td><td><code>设备台账</code> + <code>字段说明</code>、<code>设备分类</code>、<code>组织架构</code></td></tr></tbody>
 </table></div>
 <h4 id="-设备照片会一起导出默认开启">📸 设备照片会一起导出（默认开启）<a class="anchor" href="#-设备照片会一起导出默认开启">#</a></h4>
-<p>每张明细表的<strong>最后三列</strong>就是照片：</p>
+<p>每张明细表的<strong>最后两列</strong>就是照片：</p>
 <div class="tw"><table>
 <thead><tr><th>列</th><th>内容</th></tr></thead>
-<tbody><tr><td><strong>照片</strong></td><td>⭐ 图片<strong>直接嵌在单元格里</strong>，打开就能看到，不用点链接</td></tr><tr><td><strong>照片链接</strong></td><td>可点击的「打开照片」</td></tr><tr><td><strong>原图链接</strong></td><td>可点击的「打开原图」——<strong>只有真的存了独立原图时才出现这一列</strong>（早期录入的设备只有一张图，就不会出这列，免得两列一模一样）</td></tr></tbody>
+<tbody><tr><td><strong>照片</strong></td><td>⭐ 图片<strong>直接嵌在单元格里</strong>，打开就能看到，不用点链接</td></tr><tr><td><strong>原图链接</strong></td><td>可点击的「打开原图」—— 指向<strong>原图</strong>（看得清铭牌的那张）；万一某台设备没有单独存原图，就退回压缩图，所以这一列<strong>不会是空的</strong></td></tr></tbody>
 </table></div>
 <p>例如显示器那张表的列尾就是：</p>
-<pre><code>… 分辨率 | 接口类型 | 照片 | 照片链接</code></pre>
+<pre><code>… 分辨率 | 接口类型 | 照片 | 原图链接</code></pre>
+<blockquote><p>📌 以前这里是「照片链接」和「原图链接」<strong>两列</strong>，但两列只是同一张照片的两个尺寸版本，</p><p>看上去像重复了两遍，所以合并成<strong>一列</strong>，只保留原图链接。</p></blockquote>
 <blockquote><p>🔗 <strong>链接地址是「大家都能打开」的那个</strong>：即使你是在服务器本机用 <code>127.0.0.1</code> 打开后台导出的，</p><p>链接也会自动写成<strong>局域网 IP</strong>（如 <code>http://192.168.1.100:8080/...</code>），换台电脑照样打得开。</p><p>想固定成某个地址（比如公网域名），去 <strong>系统设置 → 企业信息 → 外部访问地址</strong> 填一下即可。</p></blockquote>
 <blockquote><p>💡 行高会自动撑大让图放得下。如果设备很多导致文件偏大，把「导出选项」里的 <strong>含照片</strong> 取消勾选即可。</p></blockquote>
 <h4 id="导出的文件太大-下载很慢">导出的文件太大 / 下载很慢？<a class="anchor" href="#导出的文件太大-下载很慢">#</a></h4>
@@ -611,7 +612,7 @@ tbody tr:hover { background: #f8fafc; }
 <p><strong>照片能自动更新</strong> 和 <strong>表格里直接看到图</strong> 这两件事，在 Excel 里没法同时做到，选一个：</p>
 <div class="tw"><table>
 <thead><tr><th>你的需求</th><th>用哪个</th><th>Excel 里的照片长什么样</th></tr></thead>
-<tbody><tr><td>表格里<strong>直接看到图</strong>，不介意手动更新</td><td><strong>按分类分表</strong></td><td>图片嵌在单元格里</td></tr><tr><td>数据<strong>自动更新</strong>，照片点开看</td><td><strong>🔄 实时数据链接</strong></td><td>「打开照片」超链接，点一下浏览器打开</td></tr><tr><td><strong>两个都要</strong></td><td>实时链接 + 自己加一列公式</td><td>加 <code>=IMAGE(照片链接单元格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图会跟着变</td></tr></tbody>
+<tbody><tr><td>表格里<strong>直接看到图</strong>，不介意手动更新</td><td><strong>按分类分表</strong></td><td>图片嵌在单元格里</td></tr><tr><td>数据<strong>自动更新</strong>，照片点开看</td><td><strong>🔄 实时数据链接</strong></td><td>「打开原图」超链接，点一下浏览器打开</td></tr><tr><td><strong>两个都要</strong></td><td>实时链接 + 自己加一列公式</td><td>加 <code>=IMAGE(原图链接单元格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图会跟着变</td></tr></tbody>
 </table></div>
 <p><strong>Excel 表格</strong> 页上有一张对照表，随时可以看。</p>
 <blockquote><p>⚠️ 导出的是<strong>快照</strong>，导完就固定了。想让数据自动更新，看下一节。</p></blockquote>
@@ -619,7 +620,7 @@ tbody tr:hover { background: #f8fafc; }
 <p>导出不是把所有字段都铺上去，而是<strong>按每个分类在「设备分类 → 专属字段」里的配置出列</strong>：</p>
 <div class="tw"><table>
 <thead><tr><th>列</th><th>内容</th></tr></thead>
-<tbody><tr><td><strong>核心列（固定 7 列，任何分类都有）</strong></td><td>资产编号、设备分类、品牌、型号、SN 序列号、所属组织、状态</td></tr><tr><td><strong>其余列</strong></td><td><strong>分类里配了什么就出什么</strong>：使用人 / 存放位置 / 采购日期 / 保修到期 / 采购金额 / 供应商 / 合同号 / 成色 / 备注 / CPU / 内存 / 硬盘 / 操作系统 / IP / MAC / 屏幕尺寸，以及分类自定义列（分辨率、接口类型、打印类型、端口数、机柜位、IMEI…）</td></tr><tr><td>照片列</td><td>固定追加在最后（照片 / 照片链接 / 原图链接）</td></tr></tbody>
+<tbody><tr><td><strong>核心列（固定 7 列，任何分类都有）</strong></td><td>资产编号、设备分类、品牌、型号、SN 序列号、所属组织、状态</td></tr><tr><td><strong>其余列</strong></td><td><strong>分类里配了什么就出什么</strong>：使用人 / 存放位置 / 采购日期 / 保修到期 / 采购金额 / 供应商 / 合同号 / 成色 / 备注 / CPU / 内存 / 硬盘 / 操作系统 / IP / MAC / 屏幕尺寸，以及分类自定义列（分辨率、接口类型、打印类型、端口数、机柜位、IMEI…）</td></tr><tr><td>照片列</td><td>固定追加在最后（照片 / 原图链接）</td></tr></tbody>
 </table></div>
 <p>举例：<strong>「台式主机」只配了「使用人 / 存放位置」→ 那张表就是 9 列</strong>（7 核心 + 2）， 不会再有 CPU、内存、硬盘、使用人工号、采购日期这些没配的列。</p>
 <div class="tw"><table>
@@ -673,12 +674,12 @@ tbody tr:hover { background: #f8fafc; }
 <h4 id="只想同步某一个分类-想让照片显示出来">只想同步某一个分类 / 想让照片显示出来<a class="anchor" href="#只想同步某一个分类-想让照片显示出来">#</a></h4>
 <div class="tw"><table>
 <thead><tr><th>想做</th><th>怎么做</th></tr></thead>
-<tbody><tr><td>只同步一个分类</td><td>展开第 ③ 张卡里的 <strong>「只想同步某一个分类」</strong>，每个分类各有一条链接，粘到不同工作表即可</td></tr><tr><td>看某个分类有多少台</td><td>同上，那一列写着每个分类的设备数量</td></tr><tr><td><strong>让照片显示在单元格里</strong></td><td>导入后自己加一列，填 <code>=IMAGE(照片链接那一格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图片跟着变</td></tr><tr><td>想让照片<strong>一开始就嵌在文件里</strong></td><td>用第 ① 张卡的「导出一份 Excel 文件」（快照，不自动更新，但照片直接嵌好、发给谁都能看）</td></tr></tbody>
+<tbody><tr><td>只同步一个分类</td><td>展开第 ③ 张卡里的 <strong>「只想同步某一个分类」</strong>，每个分类各有一条链接，粘到不同工作表即可</td></tr><tr><td>看某个分类有多少台</td><td>同上，那一列写着每个分类的设备数量</td></tr><tr><td><strong>让照片显示在单元格里</strong></td><td>导入后自己加一列，填 <code>=IMAGE(原图链接那一格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图片跟着变</td></tr><tr><td>想让照片<strong>一开始就嵌在文件里</strong></td><td>用第 ① 张卡的「导出一份 Excel 文件」（快照，不自动更新，但照片直接嵌好、发给谁都能看）</td></tr></tbody>
 </table></div>
 <h4 id="几点说明">几点说明<a class="anchor" href="#几点说明">#</a></h4>
 <div class="tw"><table>
 <thead><tr><th>事项</th><th>说明</th></tr></thead>
-<tbody><tr><td>数据范围</td><td>只读，只包含设备台账字段，<strong>不含任何密钥或账号信息</strong></td></tr><tr><td>列的多少</td><td><strong>按分类走</strong>：每个分类的表只带该分类配置的字段（显示器不会出现 CPU/内存/硬盘，主机不会出现屏幕尺寸），和 6.1 的分表导出一致</td></tr><tr><td>「全部设备」那一张</td><td>跨分类的汇总视图，保留<strong>完整列</strong>，方便一眼看全</td></tr><tr><td>照片链接</td><td>单元格里是可点击的「<strong>打开照片</strong>」（点一下浏览器打开图）。用的是局域网地址或你设置的「外部访问地址」，不会写成 <code>127.0.0.1</code>，所以同网段的电脑都能打开</td></tr><tr><td>链接安全</td><td>链接自带只读口令；<strong>点「重置链接」可让旧链接立即失效</strong>（照片链接是同一套口令）</td></tr><tr><td>什么时候该重置链接</td><td>换电脑/换网络后怎么都取不到数，或者链接被发到了不该发的地方</td></tr><tr><td>想改数据</td><td>实时链接是<strong>只读</strong>的。批量改数据用导入功能（见 6.5）</td></tr><tr><td>导出点了没反应 / 浏览器报「网络问题」</td><td>系统已改成「先由页面把文件取回来、再触发下载」，失败时会明确告诉你原因。若仍失败，试试取消 <strong>含照片</strong> 缩小体积，或点 <strong>补缩略图</strong></td></tr></tbody>
+<tbody><tr><td>数据范围</td><td>只读，只包含设备台账字段，<strong>不含任何密钥或账号信息</strong></td></tr><tr><td>列的多少</td><td><strong>按分类走</strong>：每个分类的表只带该分类配置的字段（显示器不会出现 CPU/内存/硬盘，主机不会出现屏幕尺寸），和 6.1 的分表导出一致</td></tr><tr><td>「全部设备」那一张</td><td>跨分类的汇总视图，保留<strong>完整列</strong>，方便一眼看全</td></tr><tr><td>原图链接</td><td>单元格里是可点击的「<strong>打开原图</strong>」（点一下浏览器打开图）。用的是局域网地址或你设置的「外部访问地址」，不会写成 <code>127.0.0.1</code>，所以同网段的电脑都能打开</td></tr><tr><td>链接安全</td><td>链接自带只读口令；<strong>点「重置链接」可让旧链接立即失效</strong>（原图链接是同一套口令）</td></tr><tr><td>什么时候该重置链接</td><td>换电脑/换网络后怎么都取不到数，或者链接被发到了不该发的地方</td></tr><tr><td>想改数据</td><td>实时链接是<strong>只读</strong>的。批量改数据用导入功能（见 6.5）</td></tr><tr><td>导出点了没反应 / 浏览器报「网络问题」</td><td>系统已改成「先由页面把文件取回来、再触发下载」，失败时会明确告诉你原因。若仍失败，试试取消 <strong>含照片</strong> 缩小体积，或点 <strong>补缩略图</strong></td></tr></tbody>
 </table></div>
 <h3 id="63-下载导入模板">6.3 下载导入模板<a class="anchor" href="#63-下载导入模板">#</a></h3>
 <p>点 <strong>⬇ 下载导入模板</strong>，得到 <code>IT资产导入模板_日期.xlsx</code>，包含 5 个工作表：</p>
@@ -964,7 +965,7 @@ tbody tr:hover { background: #f8fafc; }
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 17:58:47</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 19:00:33</div>
 </div>
 </body>
 </html>

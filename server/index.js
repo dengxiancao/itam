@@ -42,7 +42,7 @@ import {
   findUserByName, findUserById, publicUser, can, permissionsOf, ROLES, USER_STATUS,
   maskSecrets, isMasked, SESSION_TTL,
 } from './auth.js';
-import { logger, HttpError, nowISO, uuid, str, formatBytes } from './util.js';
+import { logger, HttpError, nowISO, uuid, str, formatBytes, today } from './util.js';
 
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const CERT_DIR = path.join(ROOT, 'certs');
@@ -118,8 +118,12 @@ const ocrGate = createGate({ max: 6, name: '图像识别' });
 /**
  * 把内存里的图片写到 data/uploads/<日期>/<uuid>.<ext>，返回可访问的相对路径。
  * 顺带兜住扩展名，避免把非图片内容存成 .jpg 后被浏览器当图片渲染。
+ *
+ * ⚠️ `<日期>` 用**服务器本地**日历日（`today()`），不是 UTC 日期 ——
+ *    否则北京时间凌晨 0:00~7:59 拍的照片会被归进**前一天**的文件夹，
+ *    用户按日期翻照片时对不上。
  */
-function saveUpload(buffer, mime = 'image/jpeg', stamp = nowISO().slice(0, 10), subdir = '') {
+function saveUpload(buffer, mime = 'image/jpeg', stamp = today(), subdir = '') {
   const ext = mime === 'image/png' ? '.png' : mime === 'image/webp' ? '.webp' : mime === 'image/gif' ? '.gif' : '.jpg';
   const name = `${subdir ? subdir + '/' : ''}${stamp}/${uuid()}${ext}`;
   const abs = path.join(UPLOAD_DIR, name);
@@ -959,7 +963,7 @@ async function routeApi(ctx) {
     let originalPath = null;
     let thumbPath = null;
     if (saveImage) {
-      const stamp = nowISO().slice(0, 10);
+      const stamp = today();
       const photoCfg = svc.photoSettings();
       imagePath = saveUpload(buffer, mime, stamp);
       if (photoCfg.keep_original) {
@@ -1228,7 +1232,7 @@ async function routeApi(ctx) {
     if (!buffer?.length) throw new HttpError(400, '文件为空');
 
     const ext = extOf(filename) || (mime === 'image/png' ? '.png' : mime === 'image/webp' ? '.webp' : '.jpg');
-    const name = `${subdir}/${nowISO().slice(0, 10)}/${uuid()}${ext}`;
+    const name = `${subdir}/${today()}/${uuid()}${ext}`;
     const abs = path.join(UPLOAD_DIR, name);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, buffer);

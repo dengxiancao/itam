@@ -14,7 +14,7 @@ import path from 'node:path';
 import {
   deviceList, categoryList, orgFlatWithPath, DEVICE_STATUS, categoryCreate, orgCreate, deviceCreate, deviceUpdate,
 } from './services.js';
-import { nowISO, uuid, str, normalizeDate, compactAlnum, buildTree } from './util.js';
+import { nowISO, uuid, str, normalizeDate, compactAlnum, buildTree, today } from './util.js';
 
 /* ================================================================== *
  * 1. 列定义
@@ -458,7 +458,7 @@ export async function exportDevices(query = {}, {
   const suffix = split ? '（分类分表）' : '';
   return {
     buffer: await buildXlsx({ sheets, title: 'IT 资产设备台账' }),
-    filename: `IT资产台账${suffix}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+    filename: `IT资产台账${suffix}_${today()}.xlsx`,
     count: data.length,
     sheets: sheets.length,
     photos: data.filter((r) => r.photo_url).length,
@@ -706,7 +706,7 @@ export async function buildTemplate() {
 
   return {
     buffer: await buildXlsx({ sheets, title: 'IT 资产导入模板' }),
-    filename: `IT资产导入模板_${new Date().toISOString().slice(0, 10)}.xlsx`,
+    filename: `IT资产导入模板_${today()}.xlsx`,
   };
 }
 

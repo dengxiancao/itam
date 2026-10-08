@@ -82,7 +82,9 @@ export function str(v, max = 500) {
 export function normalizeDate(v) {
   if (v === undefined || v === null || v === '') return null;
   if (typeof v === 'number' && isFinite(v)) {
-    // Excel 日期序列号（1900 系统）
+    // Excel 日期序列号（1900 系统）。25569 = 1970-01-01 的序列号，
+    // 算出来的是 **UTC 午夜**，所以这里必须配 `toISOString()`（UTC → UTC）取日期，
+    // 换成 `localDateOf()` 反而会在时区靠西的机器上退一天。
     const ms = Math.round((v - 25569) * 86400 * 1000);
     const d = new Date(ms);
     if (!isNaN(d)) return d.toISOString().slice(0, 10);
@@ -100,13 +102,21 @@ export function normalizeDate(v) {
   if (!isNaN(d.getTime())) {
     // 防止 "2024" 被解析成 2001 年
     if (/^\d{4}$/.test(s)) return `${s}-01-01`;
-    return d.toISOString().slice(0, 10);
+    // ⚠️ 取**本地**日历日，不能写 `d.toISOString().slice(0, 10)`。
+    //   走到这里的是 `2026-10-08 00:30`、`Oct 8, 2026` 这类「不带时区」的输入，
+    //   JS 会把它们按**本地**时区解析；再拿 UTC 日期去切，UTC+8 下会整体退回**前一天**。
+    return localDateOf(d);
   }
   return null;
 }
 
 function pad2(n) {
   return String(n).padStart(2, '0');
+}
+
+/** 任意 Date → **本地**日历日 `YYYY-MM-DD`（不作任何时区换算，就是这台机器上的那一天） */
+export function localDateOf(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /**
@@ -117,7 +127,7 @@ function pad2(n) {
 export function localDate(offsetDays = 0) {
   const d = new Date();
   if (offsetDays) d.setDate(d.getDate() + offsetDays);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  return localDateOf(d);
 }
 
 /**

@@ -409,7 +409,7 @@ function hydrate(row) {
     org,
     category: cat ? { ...cat, tracking_fields: safeJson(cat.tracking_fields, []) } : null,
     org_path: org ? orgPath(org.id) : '',
-    warranty_expired: row.warranty_until ? row.warranty_until < new Date().toISOString().slice(0, 10) : null,
+    warranty_expired: row.warranty_until ? row.warranty_until < today() : null,
   };
 }
 
@@ -489,8 +489,8 @@ export function deviceList(q = {}) {
   if (q.owner) { where.push('(d.owner_name LIKE ? OR d.owner_employee_no LIKE ?)'); params.push(`%${q.owner}%`, `%${q.owner}%`); }
   if (q.date_from) { where.push('d.created_at >= ?'); params.push(q.date_from); }
   if (q.date_to) { where.push('d.created_at <= ?'); params.push(`${q.date_to}T23:59:59.999Z`); }
-  if (q.warranty === 'expired') where.push(`d.warranty_until IS NOT NULL AND d.warranty_until < '${new Date().toISOString().slice(0, 10)}'`);
-  if (q.warranty === 'valid') where.push(`d.warranty_until IS NOT NULL AND d.warranty_until >= '${new Date().toISOString().slice(0, 10)}'`);
+  if (q.warranty === 'expired') where.push(`d.warranty_until IS NOT NULL AND d.warranty_until < '${today()}'`);
+  if (q.warranty === 'valid') where.push(`d.warranty_until IS NOT NULL AND d.warranty_until >= '${today()}'`);
 
   const whereSql = `WHERE ${where.join(' AND ')}`;
 
@@ -1169,8 +1169,9 @@ export function savePhotoSettings(patch = {}) {
  * ================================================================== */
 
 export function dashboard() {
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const soon = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+  // 「今天」「90 天后」都按**本地**日历日算（UTC 的今天在 UTC+8 凌晨会早一天）
+  const todayStr = today();
+  const soon = localDate(90);
 
   const kpi = {
     total: scalar('SELECT COUNT(*) AS c FROM device WHERE deleted_at IS NULL'),
@@ -1244,7 +1245,11 @@ export function dashboard() {
     SELECT substr(created_at,1,7) AS month, COUNT(*) AS value
     FROM device WHERE deleted_at IS NULL AND created_at >= ?
     GROUP BY month ORDER BY month
-  `, [`${new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 7)}-01`]);
+  `, [`${localDate(-365).slice(0, 7)}-01`]);
+  // 起点用**本地**日期倒推 365 天（`setDate` 处理跨月/闰年，比 `Date.now() - 365*86400000` 准）。
+  // 分组键仍是 `created_at`（UTC）的月份 —— 只有每月 1 号 00:00~07:59 录入的会归到上个月，
+  // 影响可以忽略；要彻底按本地月份分组得写 `strftime('%Y-%m', created_at, 'localtime')`，
+  // 而那个修饰符依赖 SQLite 编译时的时区，跨平台不一定可靠，不值得为这点差异引入。
 
   return { kpi, byCategory, byStatus, byBrand, byOrg, recent, recentLogs, expiring, trend, generated_at: nowISO() };
 }

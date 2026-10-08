@@ -1983,6 +1983,7 @@ function renderBatch() {
     <div class="card">
       <div class="card-head"><h3>批量识别入库</h3></div>
       <p class="hint" style="margin-top:0">共 ${b.total} 张，一张一张地识别（上游识别服务限并发，一起传只会被拒）。中途可以退出，已读到的不受影响。</p>
+      ${batchDroppedNote(b)}
       <div class="batch-bar"><i id="batchBarFill"></i></div>
       <div class="batch-stat" id="batchStat"></div>
       <div class="batch-list" id="batchList">${batchListHTML(b)}</div>
@@ -1991,6 +1992,18 @@ function renderBatch() {
       <button class="btn ghost wide" onclick="exitBatch()">${svgIcon('x', 16)} 退出批量识别</button>
     </div>`;
   paintBatchList();
+}
+
+/**
+ * 「这次有几张没进来」的常驻提示（只在真的丢过时出现）。
+ * 和 `startBatch()` 里那条 toast 是两件事：toast 三秒就没了，这条用户回头还能看见 ——
+ * 一次选 40 张的人很可能没盯着那三秒，等识别跑完才发现只有 30 张在清单里。
+ */
+function batchDroppedNote(b) {
+  if (!b || !b.dropped) return '';
+  return `<div class="batch-dropped">${svgIcon('alert', 14)}
+    <span>还有 <b>${b.dropped}</b> 张没有加进来（一次最多 ${BATCH_MAX} 张）。这批处理完再选一次即可。</span>
+  </div>`;
 }
 
 function batchListHTML(b) {
@@ -2035,6 +2048,7 @@ function renderBatchReview(b) {
         共 ${b.total} 张：读到 ${b.items.filter((it) => it.status === 'ok' || it.status === 'weak' || it.status === 'saved').length} 张${weak ? `（其中 ${weak} 张没读全）` : ''}${bad ? ` · ${bad} 张失败` : ''}。
         照着每张上面的照片核对一遍再勾选 —— 识别只是初稿，SN 最容易看错（L/1、O/Q）。
       </p>
+      ${batchDroppedNote(b)}
       <div class="batch-list" id="batchReviewList">${batchReviewListHTML(b)}</div>
     </div>
 

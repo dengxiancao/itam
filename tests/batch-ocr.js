@@ -102,6 +102,16 @@ const qs = (sel) => {
 };
 
 /**
+ * ⚠️ FakeEl 造出来时 `hidden = false`，而桩**不解析 HTML** ——
+ * `public/m/index.html` 里两个确认框元素是带 `hidden` 属性出厂的。
+ * 不在这里对齐初始值，「确认框弹出来了 / 没弹」两条断言就会双双假绿：
+ * 元素压根没被碰过时读到的也是 false。
+ */
+qs('#mConfirmBox').hidden = true;
+qs('#mConfirmMask').hidden = true;
+qs('#modalMask').hidden = true;
+
+/**
  * 把**刚渲染出来的 HTML** 里的表单默认值灌回桩。
  *
  * DOM 桩不解析 HTML，而 m.js / admin.js 读表单统一走 `$('#batchCat').value`。
@@ -185,6 +195,16 @@ async function waitFor(cond, ms = 10000, step = 30) {
   return false;
 }
 function section(t) { console.log(`\n── ${t} ──`); }
+
+/**
+ * 「识别好、还没入库」的项数 —— 与 m.js 的 `batchUnsaved()` / admin.js 的
+ * `batchOcrUnsaved()` 同一口径。
+ *
+ * 测试里读不到那两个函数（都是模块内私有的，没挂 window），所以这里**独立写一份**：
+ * 这样断言「没东西可丢时不弹确认」的前提就是测试自己算出来的，
+ * 而不是拿被测代码的结论去证明被测代码 —— 后者是循环论证。
+ */
+const batchUnsavedOf = (b) => (b?.items || []).filter((it) => it.status === 'ok' || it.status === 'weak').length;
 
 /* ================= 登录（拿会话 Cookie，boot 才拿得到 /api/options） ================= */
 let cookie = '';
@@ -491,6 +511,73 @@ assert(!!mState && Array.isArray(mState.categories) && mState.categories.length 
   globalThis.exitBatch();
 }
 
+/* ---- 上限：只收前 30 张，而且必须说清「有几张没进来」 ---- */
+section('手机端 m.js —— 上限与「退出会不会丢」');
+
+{
+  // 40 张一起选：只有前 30 张进来。剩下的不能只弹一条 3 秒的提示就没影了 ——
+  // 用户很可能没盯着那 3 秒，等识别跑完才发现清单里只有 30 张。
+  ocrScript = Array.from({ length: 40 }, (_, i) => ocrPayload({ sn: `SN-P${i}`, image_path: `/uploads/p${i}.jpg` }));
+  ocrCalls = []; devicePosts = [];
+  const files = Array.from({ length: 40 }, (_, i) => new File([new Uint8Array(64)], `p${i}.jpg`, { type: 'image/jpeg' }));
+  globalThis.startBatch(files);
+  assert(mState.batch.items.length === 30, `一次最多 30 张，超出的**直接丢弃**（实测进来 ${mState.batch.items.length} 张）`);
+  assert(mState.batch.dropped === 10, `丢了几张记在 state 上（实测 ${mState.batch.dropped} 张）—— 不能只靠一条会自己消失的提示`);
+  assert(els.get('#main').innerHTML.includes('还有 <b>10</b> 张没有加进来'), '识别页常驻写着「还有 10 张没进来」（回头也能看见，不是只闪 3 秒）');
+
+  const toReview = await waitFor(() => mState.batch && mState.batch.phase === 'review');
+  assert(toReview, '这 30 张识别完并进入待确认阶段');
+  assert(mState.batch.items.length === 30, '识别完还是 30 张（丢掉的 10 张不会偷偷补进来）');
+  assert(ocrCalls.length === 30, `只对进来的 30 张发识别（实测 ${ocrCalls.length} 趟）—— 丢掉的不能还去烧额度`);
+
+  // —— 有「识别好、没入库」的项时退出：必须先问 ——
+  globalThis.exitBatch();
+  const asked = await waitFor(() => els.get('#mConfirmBox').hidden === false, 3000);
+  assert(asked, '有 30 张识别好没入库 → 退出前先弹确认（手机端退出按钮就在拇指下面，误触成本最高）');
+  assert(String(els.get('#mConfirmMsg').textContent).includes('30 张'), `确认框里写清丢多少张（实测「${els.get('#mConfirmMsg').textContent}」）`);
+  assert(els.get('#mConfirmYes').textContent === '放弃' && els.get('#mConfirmNo').textContent === '继续核对', `两个按钮说人话（实测「${els.get('#mConfirmYes').textContent}」/「${els.get('#mConfirmNo').textContent}」）`);
+
+  globalThis.mConfirmAnswer(false);            // 用户改主意了
+  await waitFor(() => els.get('#mConfirmBox').hidden === true, 1000);
+  assert(mState.batch !== null && mState.view === 'batch' && mState.batch.items.length === 30, '点「继续核对」→ 留在核对页，30 张结果一张没丢');
+  assert(els.get('#mConfirmBox').hidden === true && els.get('#mConfirmMask').hidden === true, '答完把确认框和遮罩一起收起来（留个全屏遮罩在上面就是「点哪都没反应」）');
+
+  // —— 真要走：确认之后才清 ——
+  globalThis.exitBatch();
+  await waitFor(() => els.get('#mConfirmBox').hidden === false, 3000);
+  globalThis.mConfirmAnswer(true);
+  await waitFor(() => mState.batch === null, 3000);
+  assert(mState.batch === null && mState.view === 'home', '点「放弃」才真的清空并回首页');
+}
+
+{
+  // —— 没东西可丢时**不许**多问一句：三张全部识别失败的情况 ——
+  ocrScript = [
+    { __status: 500, error: '炸' }, { __status: 500, error: '炸' }, { __status: 500, error: '炸' },
+  ];
+  ocrCalls = [];
+  const files = ['z1.jpg', 'z2.jpg', 'z3.jpg'].map((n) => new File([new Uint8Array(64)], n, { type: 'image/jpeg' }));
+  globalThis.startBatch(files);
+  await waitFor(() => mState.batch && mState.batch.phase === 'review');
+  assert(mState.batch.items.every((it) => it.status === 'error'), '三张都识别失败（这一块的前提）');
+  assert(batchUnsavedOf(mState.batch) === 0, '此时没有任何「识别好、没入库」的项');
+
+  globalThis.exitBatch();
+  assert(mState.batch === null && mState.view === 'home', '没东西可丢 → 不弹确认，直接退（否则确认框会变成人人都在盲点的噪音）');
+  assert(els.get('#mConfirmBox').hidden === true, '确认框确实没弹出来');
+}
+
+{
+  // —— 手机端确认框的「接线」：元素在 HTML 里、按钮挂在 window 上 ——
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const src = fs.readFileSync(path.join(process.cwd(), 'public/assets/m.js'), 'utf8');
+  const html = fs.readFileSync(path.join(process.cwd(), 'public/m/index.html'), 'utf8');
+  assert(/id="mConfirmBox"/.test(html) && /id="mConfirmMask"/.test(html) && /id="mConfirmYes"/.test(html), 'index.html 里真有这三个元素 —— mConfirm 找不到元素时会**直接放行**，所以光有个函数不算数');
+  assert(/onclick="mConfirmAnswer\(true\)"/.test(html) && /onclick="mConfirmAnswer\(false\)"/.test(html), '两个按钮（含点遮罩）都走 mConfirmAnswer');
+  assert(/window\.mConfirmAnswer\s*=/.test(src) && /window\.mConfirm\s*=/.test(src), 'mConfirmAnswer 导出到了 window（内联 onclick 只看全局作用域，漏了就是「点了没反应、控制台干净」）');
+}
+
 /* ================= ③ 电脑端：批量识别录入 ================= */
 section('电脑端 admin.js —— 资源管理器多选 → 串行识别 → 核对表格 → 批量入库');
 
@@ -508,6 +595,26 @@ await wait(900);
 
 const aState = globalThis.adminState;
 assert(!!aState && !!aState.options, '管理端已加载选项（分类 / 组织 / 状态）');
+
+/**
+ * 关电脑端批量弹窗，并把「要不要放弃」这一步答掉。
+ *
+ * `admin.js` 的 `confirmBox()` 是**模块内私有**的，外面替换不了（ES module 的词法绑定），
+ * 所以只能走它给的真实出口：它把 resolve 挂在 `window.__confirmResolve` 上了。
+ * 判断「确认框有没有弹」也不能看 __confirmResolve 在不在（上一次的还挂在那儿），
+ * 要看弹窗内容里有没有那两个按钮的 onclick —— 那才是 `confirmBox` 渲染出来的东西。
+ */
+async function closeAdminBatch(ok = true) {
+  globalThis.closeBatchOcr();
+  const asked = await waitFor(() => els.get('#modal').innerHTML.includes('__confirmResolve(true)'), 2000);
+  if (asked) {
+    const fn = globalThis.__confirmResolve;
+    globalThis.__confirmResolve = null;
+    fn(ok);
+  }
+  await waitFor(() => aState.batchOcr === null, 2000);
+  return asked;
+}
 
 {
   globalThis.openBatchOcr();
@@ -579,13 +686,67 @@ assert(!!aState && !!aState.options, '管理端已加载选项（分类 / 组织
   assert(prevented >= 2, `dragover / drop 都调了 preventDefault（实测 ${prevented} 次）—— 漏了的话浏览器会把那张图直接打开、把页面顶掉`);
   assert(drop.classList.contains('over') === false, '放下之后把高亮撤掉');
 
-  // 非图片被拖进来时不能静默什么都不做
-  globalThis.closeBatchOcr();
+  // 非图片被拖进来时不能静默什么都不做。
+  // ⚠️ 这一批里 d9 已经识别好了，所以现在关窗**会先问一句**（见下面「关窗确认」那一块）——
+  //    这里必须把那一问答掉，否则这次关闭停在等确认上，后面几条断言会莫名其妙地飘。
+  await closeAdminBatch();
+  assert(aState.batchOcr === null, '关掉弹窗会把批次状态清空并中止还在跑的识别');
   globalThis.openBatchOcr();
   const drop2 = els.get('#batchOcrDrop');
   drop2.fire('drop', ev([new File([new Uint8Array(8)], 'bom.xlsx', { type: 'application/vnd.ms-excel' })]));
   assert(!aState.batchOcr || aState.batchOcr.items.length === 0, '拖进来的不是图片 → 不入队（Excel 该走「Excel 表格」那一页，别在这里当照片认）');
+  await closeAdminBatch();
+}
+
+/* ================= ④ 电脑端：上限 100 与「关掉会不会丢」 ================= */
+section('电脑端 admin.js —— 上限 100 与关窗确认');
+
+{
+  globalThis.openBatchOcr();
+  ocrScript = Array.from({ length: 120 }, (_, i) => ocrPayload({ sn: `SN-Q${i}`, image_path: `/uploads/q${i}.jpg` }));
+  ocrCalls = []; devicePosts = [];
+  const files = Array.from({ length: 150 }, (_, i) => new File([new Uint8Array(64)], `q${i}.jpg`, { type: 'image/jpeg' }));
+  // 走**真实的绑定路径**塞文件（startBatchOcr 没挂 window，它是内部函数 ——
+  // 从这里直接调反而绕开了「文件框有没有绑 onchange」这条线）
+  const input = els.get('#batchOcrFiles');
+  assert(typeof input.onchange === 'function', '文件选择框已绑定 onchange');
+  input.files = files;
+  input.onchange();
+
+  assert(aState.batchOcr.items.length === 100, `一次最多 100 张（实测进来 ${aState.batchOcr.items.length} 张）`);
+  assert(aState.batchOcr.dropped === 50, `剩下 50 张没进来，记在 state 上（实测 ${aState.batchOcr.dropped}）—— 不只是弹一条 3 秒的提示`);
+  assert(els.get('#modal').innerHTML.includes('还有 <b>50</b> 张没有加进来'), '弹窗里常驻写着「还有 50 张没进来」');
+
+  const done = await waitFor(() => aState.batchOcr && aState.batchOcr.phase === 'review', 30000);
+  assert(done, '100 张全部识别完（上限提到 100 之后队列跑得完，不是「点下去就没反应了」）');
+  assert(ocrCalls.length === 100, `只对进来的 100 张发识别（实测 ${ocrCalls.length} 趟）—— 丢掉的 50 张不能还去烧额度`);
+  assert(aState.batchOcr.items.every((it) => it.status === 'ok'), '100 张全部读到');
+
+  // —— 关窗确认：100 张的结果，手一滑点了 × 就全没 ——
+  globalThis.closeBatchOcr();      // 故意不 await：它会挂着等用户答
+  const asked = await waitFor(() => els.get('#modal').innerHTML.includes('__confirmResolve(true)'), 3000);
+  assert(asked, '有 100 张识别好没入库 → 关窗前先弹确认');
+  assert(els.get('#modal').innerHTML.includes('100 张'), '确认文案写清丢多少张');
+
+  globalThis.__confirmResolve(false);              // 等价于点「取消」
+  const back = await waitFor(() => aState.batchOcr && aState.batchOcr.phase === 'review'
+    && els.get('#modal').innerHTML.includes('id="batchOcrBody"'), 3000);
+  assert(aState.batchOcr !== null && aState.batchOcr.items.length === 100, '点「取消」→ 100 张识别结果一张没丢，批次原样还在');
+  assert(back, '取消后**把批量弹窗画回来了** —— confirmBox 借的是同一个 #modal，不画回来用户会以为「点了取消结果还是被关了」');
+
   globalThis.closeBatchOcr();
+  await waitFor(() => els.get('#modal').innerHTML.includes('__confirmResolve(true)'), 3000);
+  globalThis.__confirmResolve(true);
+  await waitFor(() => aState.batchOcr === null, 3000);
+  assert(aState.batchOcr === null && els.get('#modalMask').hidden === true, '点「确定」才真的关掉并清空');
+}
+
+{
+  // —— 没有可丢的东西时不许拦：选文件阶段、全部入完库之后 ——
+  globalThis.openBatchOcr();
+  const asked = await closeAdminBatch();
+  assert(!asked && aState.batchOcr === null, '选文件阶段关掉 → 不弹确认，直接关');
+  assert(!els.get('#modal').innerHTML.includes('__confirmResolve(true)'), '确认框确实没弹出来');
 }
 
 /* ================= 汇总 ================= */

@@ -743,6 +743,16 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .m-confirm-act { display: flex; gap: 10px; }
 .m-confirm-act .btn { flex: 1; }
 
+/* 「还有 N 张没进来」：常驻提示，不是 toast —— 一闪而过的提示挡不住「以为都进来了」 */
+.batch-dropped {
+  display: flex; align-items: flex-start; gap: 7px;
+  margin: 0 0 12px; padding: 9px 11px;
+  font-size: 12.5px; line-height: 1.55; color: var(--amber);
+  background: var(--amber-soft); border: 1px solid rgba(181, 71, 8, .22);   /* = --amber 的淡边 */
+  border-radius: 10px;
+}
+.batch-dropped svg { flex: none; margin-top: 1px; }
+
 /* ---- 最近设备：概览页里的紧凑列表（只读，点进详情） ---- */
 .rec-list { display: flex; flex-direction: column; }
 .rec-row {

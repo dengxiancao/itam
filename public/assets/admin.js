@@ -1716,7 +1716,7 @@ function startBatchOcr(files) {
     edit: { brand: '', model: '', sn: '', category_id: b.firstCat, org_id: '', status: 'in_use' },
   }));
   b.total = list.length;
-  b.dropped = dropped;
+  b.dropped = 0;
   b.phase = 'run';
   b.ctrl = new AbortController();
   if (dropped) toast(`一次最多 ${ADMIN_BATCH_MAX} 张：这次只收下前 ${ADMIN_BATCH_MAX} 张，剩下 ${dropped} 张没有进来`, 'warn');

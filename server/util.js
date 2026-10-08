@@ -109,8 +109,27 @@ function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
+/**
+ * 本地日期加减天数 → `YYYY-MM-DD`。
+ * 用 `setDate()` 让 Date 自己处理跨月 / 跨年 / 闰年，**别自己加毫秒**
+ * （`Date.now() + n*86400000` 碰上夏令时和闰年会有偏差）。
+ */
+export function localDate(offsetDays = 0) {
+  const d = new Date();
+  if (offsetDays) d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/**
+ * 「今天」＝**服务器本地**日历日（`YYYY-MM-DD`）。
+ *
+ * ⚠️ 不要写 `new Date().toISOString().slice(0, 10)` —— 那是 **UTC 的今天**。
+ *    在 UTC+8 的机器上，北京时间 0:00~7:59 之间它会比本地日期**早一天**，
+ *    于是保修「已过期 / 有效」筛选、仪表盘的到期统计、导出文件名全会差一天。
+ *    `.toISOString()` 只用来存**时间戳**（那必须统一 UTC），不能拿来取「哪一天」。
+ */
 export function today() {
-  return new Date().toISOString().slice(0, 10);
+  return localDate(0);
 }
 
 /* ------------------------------------------------------------------ *

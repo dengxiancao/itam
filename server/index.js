@@ -1261,7 +1261,7 @@ async function routeApi(ctx) {
           sheetsData.push({
             name: c.name,
             rows: withUrls,
-            columns: [...categoryColumns(c), ...livePhotoCols(withUrls)],
+            columns: [...categoryColumns(c), ...livePhotoCols()],
           });
         }
       }
@@ -1271,7 +1271,7 @@ async function routeApi(ctx) {
         sheetsData.push({
           name: '未分类',
           rows: withUrls,
-          columns: [...sheetColumnsFor('未分类', uncat), ...livePhotoCols(withUrls)],
+          columns: [...sheetColumnsFor('未分类', uncat), ...livePhotoCols()],
         });
       }
       res.writeHead(200, {
@@ -1309,9 +1309,8 @@ async function routeApi(ctx) {
         ...(catObj
           ? categoryColumns(catObj)
           : (q.uncategorized === '1' ? sheetColumnsFor('未分类', rows) : allColumns())),
-        // 照片链接（实时表里只能给链接，图片不能嵌入）
-        // 只有真的有独立原图时才出「原图链接」，避免两列一模一样
-        ...photoColumns({ embed: false, hasOriginal: hasDistinctOriginal(withPhotos) }),
+        // 照片链接（实时表里只能给链接，图片不能嵌入）—— 只有一列，且指向原图
+        ...photoColumns({ embed: false }),
       ];
       const commonHeaders = {
         'Cache-Control': 'no-store',

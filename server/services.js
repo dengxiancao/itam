@@ -4,7 +4,7 @@
 import {
   all, get, run, scalar, tx, insert, update, nextAssetNo, deviceLog, allP, getP, scalarP, getSetting, setSetting, audit,
 } from './db.js';
-import { buildTree, flattenTree, HttpError, bad, notFound, nowISO, uuid, str, normalizeDate, uniq } from './util.js';
+import { buildTree, flattenTree, HttpError, bad, notFound, nowISO, uuid, str, normalizeDate, uniq, today, localDate } from './util.js';
 import { snCandidates } from './lib/recognize.js';
 
 /* ================================================================== *

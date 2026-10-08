@@ -230,6 +230,46 @@ function fmtMoney(n) {
 }
 function fmtDate(s) { return s ? String(s).slice(0, 10) : '—'; }
 
+/**
+ * 把服务端返回的时间戳转成**本地时间**显示。
+ *
+ * ⚠️ 服务端一律存 UTC（`new Date().toISOString()`，带 Z 结尾）。以前这里到处写
+ *    `(x || '').replace('T', ' ').slice(0, 16)` —— 那是把 UTC 当本地时间直接切字符串，
+ *    对 UTC+8 的用户来说「录入时间 / 更新时间」会整整**差 8 小时**
+ *    （实测：库里最新一台 NB-2026-0003 存的是 `2026-10-08T10:02:52.959Z`，
+ *     北京时间其实是 18:02，界面却显示 10:02）。
+ *    **凡是显示「时间戳」的地方都必须走这里。**
+ *
+ * mode：'date' → 2026-10-08 ｜ 'md' → 10-08 18:02 ｜ 'min' → 2026-10-08 18:02（默认）
+ *       'sec' → 2026-10-08 18:02:52
+ *
+ * ⚠️ 纯日期串（`2027-01-01` 这种没有时刻的，比如采购日期 / 保修到期）**不做时区换算**、
+ *    原样返回 —— 它表示的是「哪一天」这个日历概念，硬套时区可能整体挪一天。
+ *    空值 / 非法值统一回 '—'，调用方不用再判空。
+ */
+function fmtLocal(iso, mode = 'min') {
+  const raw = String(iso ?? '').trim();
+  if (!raw) return '—';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return mode === 'md' ? raw.slice(5) : raw;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  const ymd = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  if (mode === 'date') return ymd;
+  if (mode === 'md') return `${ymd.slice(5)} ${hm}`;
+  if (mode === 'sec') return `${ymd} ${hm}:${p(d.getSeconds())}`;
+  return `${ymd} ${hm}`;
+}
+
+/**
+ * 「今天」＝**本地**日历日（YYYY-MM-DD）。
+ * ⚠️ 别写 `new Date().toISOString().slice(0,10)` —— 那是 UTC 的今天，
+ *    北京时间 0:00~7:59 之间会比本地日期**早一天**，于是保修「已过期」判断、导出文件名
+ *    都会差一天。全项目「今天」只认这一个函数。
+ */
+function todayLocal() { return fmtLocal(new Date().toISOString(), 'date'); }
+
 function statusBadge(status) {
   const meta = state.options?.statuses?.find((s) => s.id === status);
   const color = meta?.color || 'var(--text-3)';
@@ -381,9 +421,9 @@ async function renderUsers() {
             <td data-label="角色"><span class="badge" style="color:${ROLE_BADGE[u.role] || 'var(--text-3)'}">${esc(u.role_label)}</span></td>
             <td data-label="状态"><span class="badge" style="color:${STATUS_BADGE[u.status] || 'var(--text-3)'}">${esc(u.status_label)}</span>
               ${u.locked_until && new Date(u.locked_until) > new Date() ? '<span class="tag" style="color:var(--red);margin-left:4px">已锁定</span>' : ''}</td>
-            <td class="muted" data-label="最后登录">${u.last_login_at ? esc(u.last_login_at.replace('T', ' ').slice(0, 16)) : '—'}</td>
+            <td class="muted" data-label="最后登录">${esc(fmtLocal(u.last_login_at))}</td>
             <td class="num" data-label="登录次数">${u.login_count || 0}</td>
-            <td class="muted" data-label="创建时间">${esc((u.created_at || '').slice(0, 10))}</td>
+            <td class="muted" data-label="创建时间">${esc(fmtLocal(u.created_at, 'date'))}</td>
             <td data-label=""><div class="row-actions">
               <button class="btn xs" onclick="editUser('${u.id}')">编辑</button>
               <button class="btn xs" onclick="resetUserPw('${u.id}','${esc(u.username)}')">重置密码</button>
@@ -532,7 +572,7 @@ async function openLoginLog() {
     <div class="modal-body"><div class="table-wrap"><table class="grid">
       <thead><tr><th>时间</th><th>用户</th><th>动作</th><th>IP</th><th>说明</th></tr></thead>
       <tbody>${r.items.map((l) => `<tr>
-        <td class="muted">${esc((l.created_at || '').replace('T', ' ').slice(0, 19))}</td>
+        <td class="muted">${esc(fmtLocal(l.created_at, 'sec'))}</td>
         <td class="mono">${esc(l.username || '—')}</td>
         <td>${esc({ login: '登录成功', logout: '退出', login_failed: '登录失败', lockout: '账号锁定', register: '注册' }[l.action] || l.action)}</td>
         <td class="muted">${esc(l.ip || '')}</td>
@@ -567,7 +607,7 @@ async function renderTrash() {
             <td class="mono muted" data-label="SN">${esc(d.sn || '—')}</td>
             <td data-label="使用人">${esc(d.owner_name || '—')}</td>
             <td data-label="供应商">${esc(d.supplier || '—')}</td>
-            <td class="muted" data-label="删除时间">${esc((d.deleted_at || '').replace('T', ' ').slice(0, 16))}</td>
+            <td class="muted" data-label="删除时间">${esc(fmtLocal(d.deleted_at))}</td>
             <td data-label=""><div class="row-actions">
               <button class="btn xs" onclick="restoreDevice('${d.id}')">恢复</button>
               <button class="btn xs danger" onclick="purgeDevice('${d.id}','${esc(d.asset_no)}')">彻底删除</button>
@@ -683,7 +723,7 @@ async function renderDashboard() {
               <td class="mono">${esc(e.asset_no)}</td>
               <td>${esc(e.brand || '')} ${esc(e.model || '')}</td>
               <td>${fmtDate(e.warranty_until)}</td>
-              <td>${e.warranty_until < new Date().toISOString().slice(0, 10) ? '<span class="badge" style="color:var(--red)">已过期</span>' : '<span class="badge" style="color:var(--amber)">即将到期</span>'}</td>
+              <td>${e.warranty_until < todayLocal() ? '<span class="badge" style="color:var(--red)">已过期</span>' : '<span class="badge" style="color:var(--amber)">即将到期</span>'}</td>
             </tr>`).join('')}</tbody>
         </table></div>` : '<div class="muted">暂无保修预警</div>'}
       </div>
@@ -692,7 +732,7 @@ async function renderDashboard() {
         <div class="table-wrap"><table class="grid">
           <thead><tr><th>时间</th><th>设备</th><th>操作</th><th>说明</th></tr></thead>
           <tbody>${d.recentLogs.map((l) => `
-            <tr><td class="muted">${esc((l.created_at || '').replace('T', ' ').slice(5, 16))}</td>
+            <tr><td class="muted">${esc(fmtLocal(l.created_at, 'md'))}</td>
             <td class="mono">${esc(l.asset_no || '—')}</td>
             <td>${esc(actionLabel(l.action))}</td>
             <td class="muted">${esc(l.note || l.field || '')}</td></tr>`).join('')}</tbody>
@@ -867,7 +907,7 @@ async function loadDevices() {
         <td class="dev-owner${d.owner_name ? '' : ' blank'}" data-label="使用人">${esc(d.owner_name || '—')}</td>
         <td class="dev-status" data-label="状态">${statusBadge(d.status)}</td>
         <td class="mut dev-warranty" data-label="保修">${d.warranty_expired === true ? '<span class="tag" style="color:var(--red)">已过期</span>' : d.warranty_expired === false ? `<span class="muted">${fmtDate(d.warranty_until)}</span>` : '<span class="muted">—</span>'}</td>
-        <td class="muted dev-updated" data-label="更新时间">${esc((d.updated_at || '').replace('T', ' ').slice(0, 16))}</td>
+        <td class="muted dev-updated" data-label="更新时间">${esc(fmtLocal(d.updated_at))}</td>
         <td data-label="" class="keep"><div class="row-actions">
           <button type="button" class="btn xs" onclick="openDeviceDetail('${d.id}')">查看</button>
           ${hasPerm('device.write') ? `<button type="button" class="btn xs" onclick="openDeviceForm('${d.id}')">编辑</button>` : ''}
@@ -1987,7 +2027,7 @@ async function openDeviceDetail(id) {
         <div id="dHist" hidden><div class="table-wrap"><table class="grid">
           <thead><tr><th>时间</th><th>操作</th><th>字段</th><th>旧值</th><th>新值</th><th>操作人</th><th>说明</th></tr></thead>
           <tbody>${hist.map((h) => `<tr>
-            <td class="muted">${esc((h.created_at || '').replace('T', ' ').slice(0, 19))}</td>
+            <td class="muted">${esc(fmtLocal(h.created_at, 'sec'))}</td>
             <td>${esc(actionLabel(h.action))}</td><td class="muted">${esc(h.field || '')}</td>
             <td class="muted">${esc(h.old_value || '')}</td><td>${esc(h.new_value || '')}</td>
             <td>${esc(h.operator || '')}</td><td class="muted">${esc(h.note || '')}</td></tr>`).join('')}</tbody>
@@ -2309,7 +2349,8 @@ async function doExport(opts = {}) {
     let name = star ? decodeURIComponent(star[1]) : (plain ? decodeURIComponent(plain[1]) : '');
     if (!name) {
       const tag = hasIds ? '（所选）' : (opts.split ? '（分类分表）' : '');
-      name = `IT资产台账${tag}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      // 兜底文件名也用**本地**日期（服务端没给 Content-Disposition 时才会走到这）
+      name = `IT资产台账${tag}_${todayLocal()}.xlsx`;
     }
 
     const objUrl = URL.createObjectURL(blob);
@@ -2610,9 +2651,9 @@ const XLS_TROUBLE_HTML = `
 
 /** 照片要不要显示 —— 老页面的 EXPORT_KINDS_HTML 精简版 */
 const XL_PHOTO_HTML = `
-  <p style="margin-top:0">实时链接过来的「照片链接」列是一串可点的文字，<b>点一下</b>就在浏览器里打开那张照片。</p>
+  <p style="margin-top:0">实时链接过来的「原图链接」列是一串可点的文字，<b>点一下</b>就在浏览器里打开那张照片（指向原图，看得清铭牌）。</p>
   <p style="margin:0">想让照片直接显示在单元格里：在表格里新增一列，填公式
-    <code>=IMAGE(照片链接所在单元格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图片会跟着变。</p>
+    <code>=IMAGE(原图链接所在单元格)</code>（Excel 365 / 较新版 WPS 支持），刷新时图片会跟着变。</p>
   <p class="muted" style="margin-bottom:0">想让照片<b>一开始就嵌在文件里</b>（不依赖公式、发给别人也能看），那就用第 ① 张卡的「导出一份 Excel 文件」。</p>`;
 
 /**
@@ -2893,7 +2934,7 @@ function importHistoryHTML(batches) {
     return '<div class="card" style="margin-top:16px"><h3>导入历史</h3><div class="muted">还没有导入过文件。</div></div>';
   }
   const rows = batches.map((b) => `<tr>
-    <td class="muted" data-label="时间">${esc((b.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+    <td class="muted" data-label="时间">${esc(fmtLocal(b.created_at))}</td>
     <td data-label="文件">${esc(b.filename || '—')}</td>
     <td class="num" data-label="总数">${b.total}</td>
     <td class="num" data-label="成功" style="color:var(--green)">${b.success}</td>
@@ -3648,7 +3689,7 @@ async function showMyLogins() {
     <div class="modal-body"><div class="table-wrap"><table class="grid">
       <thead><tr><th>时间</th><th>动作</th><th>IP</th><th>客户端</th></tr></thead>
       <tbody>${r.items.map((l) => `<tr>
-        <td class="muted">${esc((l.created_at || '').replace('T', ' ').slice(0, 19))}</td>
+        <td class="muted">${esc(fmtLocal(l.created_at, 'sec'))}</td>
         <td>${esc({ login: '登录成功', logout: '退出', login_failed: '登录失败', lockout: '账号锁定', register: '注册' }[l.action] || l.action)}</td>
         <td class="muted">${esc(l.ip || '')}</td>
         <td class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(l.user_agent || '')}</td>
@@ -3782,7 +3823,7 @@ function agentTime(s) {
   const diff = (Date.now() - d.getTime()) / 1000;
   const rel = diff < 60 ? '刚刚' : diff < 3600 ? `${Math.floor(diff / 60)} 分钟前`
     : diff < 86400 ? `${Math.floor(diff / 3600)} 小时前` : `${Math.floor(diff / 86400)} 天前`;
-  return `${String(s).replace('T', ' ').slice(0, 16)}（${rel}）`;
+  return `${fmtLocal(s)}（${rel}）`;
 }
 
 async function renderAgent() {
@@ -3953,7 +3994,7 @@ function agentTokensHTML() {
             <td>${t.use_count || 0} 次</td>
             <td class="muted">${esc(agentTime(t.last_used_at))}</td>
             <td class="mono muted">${esc(t.last_ip || '—')}</td>
-            <td class="muted">${esc(fmtDate(t.created_at))}</td>
+            <td class="muted">${esc(fmtLocal(t.created_at, 'date'))}</td>
             <td>${hasPerm('settings.write') ? `
               <button class="btn sm ghost" onclick="toggleAgentToken('${t.id}',${t.enabled ? 'false' : 'true'})">${t.enabled ? '停用' : '启用'}</button>
               <button class="btn sm ghost" onclick="delAgentToken('${t.id}')">删除</button>` : '—'}
@@ -4036,7 +4077,7 @@ async function agentReportsHTML() {
         <thead><tr><th>时间</th><th>机器</th><th>动作</th><th>内容</th><th>大小</th><th>令牌</th><th>来源 IP</th><th>结果</th></tr></thead>
         <tbody>${data.items.map((r) => `
           <tr>
-            <td class="muted">${esc(String(r.created_at || '').replace('T', ' ').slice(0, 19))}</td>
+            <td class="muted">${esc(fmtLocal(r.created_at, 'sec'))}</td>
             <td class="mono">${esc(r.deviceid || '—')}</td>
             <td>${esc({ contact: '打招呼', inventory: '交盘点', register: '注册', prolog: '老式打招呼', auth: '鉴权', parse: '解析', delete: '人工删除' }[r.action] || r.action || '—')}</td>
             <td class="muted">${r.partial ? '<span class="badge" style="color:var(--amber)">部分</span> ' : ''}${esc((r.sections || []).join(', ') || r.message || '—')}</td>
@@ -4572,7 +4613,7 @@ function exFolderRowHTML(o, i) {
     <div class="ex-muted"></div>
     <div class="ex-muted"></div>
     <div class="ex-muted">${esc(o.path || o.name)}</div>
-    <div class="ex-muted">${esc((o.updated_at || '').replace('T', ' ').slice(0, 16))}</div>
+    <div class="ex-muted">${esc(fmtLocal(o.updated_at))}</div>
     <div class="ex-item-badge">${cnt} 项</div>
   </div>`;
 }
@@ -4590,7 +4631,7 @@ function exDeviceRowHTML(d, i) {
     <div>${statusBadge(d.status)}</div>
     <div>${esc(d.owner_name || '')}</div>
     <div class="ex-muted">${esc(d.org_path || '未分配')}</div>
-    <div class="ex-muted">${esc((d.updated_at || '').replace('T', ' ').slice(0, 16))}</div>
+    <div class="ex-muted">${esc(fmtLocal(d.updated_at))}</div>
     <div></div>
   </div>`;
 }

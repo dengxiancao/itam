@@ -215,6 +215,32 @@ tbody tr:hover { background: #f8fafc; }
 <thead><tr><th>说明</th><th>内容</th></tr></thead>
 <tbody><tr><td>资产编号</td><td>留空按「分类前缀-年份-流水号」自动生成，如 <code>MON-2026-0001</code></td></tr><tr><td>SN 序列号</td><td>全库唯一，重复会报错</td></tr><tr><td>状态</td><td>默认「库存」；手机端录入默认「在用」</td></tr><tr><td>保修到期</td><td>填了会进仪表盘的「保修预警」</td></tr></tbody>
 </table></div>
+<h3 id="441-批量识别录入手上是照片一次入一批">4.4.1 批量识别录入：手上是照片，一次入一批<a class="anchor" href="#441-批量识别录入手上是照片一次入一批">#</a></h3>
+<p><strong>什么时候用它</strong>：刚拆箱一批设备，或从仓库收回一堆机器 —— 手上<strong>只有照片</strong>（手机拍的、相机拍的都行）， 没有表格。一台台手填太慢，走 Excel 导入又得先照着照片把字段敲进表格里，等于录两遍。</p>
+<p><strong>用法</strong>：</p>
+<ol>
+<li>左侧 <strong>💻 设备台账</strong> → 工具栏点 <strong>📷 批量识别录入</strong></li>
+<li>弹窗里点文件框，<strong>按住 Ctrl / Shift 点选</strong>，或在文件夹里<strong>直接框选</strong>一批（一次最多 50 张）</li>
+<li>系统<strong>一张一张地</strong>识别（为什么不能一起传，见下面的提示）</li>
+<li>识别完出现核对表格，每行是「照片 + 品牌 + 型号 + SN + 分类 + 组织 + 状态」：</li>
+</ol>
+<div class="tw"><table>
+<thead><tr><th>你要做的</th><th>说明</th></tr></thead>
+<tbody><tr><td><strong>照着左边的照片核对</strong></td><td>识别只是初稿。SN 最容易看错（<code>L/1</code>、<code>O/Q</code>、<code>8/B</code>），重点看这一列</td></tr><tr><td>改字段</td><td>直接在表格里改：品牌 / 型号 / SN，逐台可改<strong>分类、所属组织、状态</strong></td></tr><tr><td>去掉不想入库的</td><td>把那一行最左边的勾去掉</td></tr><tr><td>看置信度</td><td>每行末尾显示识别置信度；读到倒置照片会另外标注「已转正 180°」</td></tr></tbody>
+</table></div>
+<ol>
+<li>确认无误 → 点右下角 <strong>批量入库（N 台）</strong>。入库过程中每一行依次变成「已入库 xxx」</li>
+<li>点「取消」关掉弹窗，台账会自动刷新</li>
+</ol>
+<p><strong>各种识别结果怎么处理</strong>：</p>
+<div class="tw"><table>
+<thead><tr><th>情况</th><th>系统表现</th><th>你该做什么</th></tr></thead>
+<tbody><tr><td>读全了</td><td>状态「已读出」，默认<strong>打勾</strong></td><td>核对后直接入库</td></tr><tr><td>只读到品牌 / 型号，没读到 SN</td><td>标 <strong>没读全</strong></td><td>照片对着补 SN，补完自己打勾；不补就不会入库</td></tr><tr><td>整治照片什么都没读出来</td><td>标 <strong>识别失败</strong> + 原因，<strong>默认不打勾</strong></td><td>点「重试 N 张」只重跑这几张（已读到的不重跑）；或换张照片</td></tr><tr><td>网络/服务端错误</td><td>同上，失败原因原样显示</td><td>同上</td></tr></tbody>
+</table></div>
+<blockquote><p>⏱ <strong>为什么必须一张一张地传</strong></p><p>系统用的是免费视觉识别服务，<strong>限的是「同时几个请求」，不是「一天多少次」</strong>。</p><p>十张一起传上去会被服务端直接拒掉，而界面上的表现只是「没读出内容」——</p><p>看着像识别不准，其实是并发撞的，而且极难查。所以这里刻意做成串行：慢一点，但一定读得到。</p><p>50 张最坏（每张都要换角度重试）大约几分钟，<strong>期间别关标签页</strong>。关掉窗口会中止还在跑的识别，</p><p>已经读到的不受影响。</p></blockquote>
+<blockquote><p>📌 <strong>只识别品牌 / 型号 / SN 三个字段</strong>，其余字段（使用人、存放位置、采购日期…）统一在入库后补：</p><p>单台走「编辑」，一批走 <strong>批量操作 → 交接使用人 / 转移到组织</strong>。</p></blockquote>
+<blockquote><p>📌 <strong>和 Excel 导入怎么选</strong>：手上有<strong>照片</strong> → 用这里；手上有别人填好的<strong>表格</strong> → 走</p><p><a href="#六excel-批量导入与导出">第六章 Excel 导入</a>。别绕照片一圈。</p></blockquote>
+<blockquote><p>📱 同样的能力手机上也有（相册一次选多张，最多 30 张），见</p><p><a href="#一次选多张批量识别入库">5.4 一次选多张</a>。</p></blockquote>
 <h3 id="45-编辑与批量操作">4.5 编辑与批量操作<a class="anchor" href="#45-编辑与批量操作">#</a></h3>
 <p><strong>编辑单台</strong>：列表行尾点「编辑」，改完保存。所有改动都会记进流转记录。</p>
 <p><strong>批量操作</strong>：</p>
@@ -403,7 +429,7 @@ tbody tr:hover { background: #f8fafc; }
 <li><strong>识别更准</strong>：同样的像素预算集中在铭牌上，字符更清楚</li>
 </ol>
 <blockquote><p>📌 <strong>怎么保证不会把字裁掉</strong>：</p><p>- 取景框四周额外留了 <strong>15% 余量</strong>，铭牌稍微出去一点也能带上</p><p>- 拍完的<strong>预览页显示的就是裁好的那张图</strong>——如果发现铭牌被切了，当场点「重拍」就行</p><p>- 相机顶部提示也改成了「把铭牌放进框内（只保留框里的画面，字要完整入框；倒着 / 斜着也能认）」</p></blockquote>
-<blockquote><p>用 <strong>🖼️ 从相册选图</strong> 时<strong>不裁</strong>——你选的那张图本身就是你要的，按屏幕比例硬裁反而会切掉铭牌。</p></blockquote>
+<blockquote><p>用 <strong>🖼️ 从相册选图识别</strong> 时<strong>不裁</strong>——你选的那张图本身就是你要的，按屏幕比例硬裁反而会切掉铭牌。</p></blockquote>
 <p>保存成功后提示「已入库：资产编号」，设备出现在台账里。</p>
 <blockquote><p>⚠️ 如果 SN 已存在，会提示冲突，不会重复建两条记录。此时可以改用「扫码核对」去查那台设备。</p></blockquote>
 <h3 id="521-照片是自动归档的不用点任何保存">5.2.1 📸 照片是自动归档的（不用点任何保存）<a class="anchor" href="#521-照片是自动归档的不用点任何保存">#</a></h3>
@@ -417,7 +443,7 @@ tbody tr:hover { background: #f8fafc; }
 <li><strong>电脑端</strong>：设备台账 → 点设备 → 设备详情右侧「设备照片」，点图看原图，也能「下载原图」</li>
 <li><strong>手机端</strong>：最近设备 → 点设备 → 顶部「📸 设备照片」，点图全屏放大，也能「存到手机」</li>
 </ul>
-<blockquote><p>💡 用「🖼️ 选图片」从相册上传时，<strong>你选的原始文件本身就是原图</strong>，系统照样自动归档。</p></blockquote>
+<blockquote><p>💡 用「🖼️ 从相册选图识别」上传时，<strong>你选的原始文件本身就是原图</strong>，系统照样自动归档。</p></blockquote>
 <h4 id="顺便在手机里也留一份">顺便在手机里也留一份<a class="anchor" href="#顺便在手机里也留一份">#</a></h4>
 <p>服务器上的照片归服务器管；如果你想在<strong>手机本地</strong>也有备份（发同事、离线看），系统默认就会自动存：</p>
 <div class="tw"><table>
@@ -512,13 +538,30 @@ tbody tr:hover { background: #f8fafc; }
 <blockquote><p>📌 <strong>二维码里放的地址必须是手机能访问的</strong>。管理端点「打开二维码」时可以选地址：</p><p>手机连同一个 WiFi 就选<strong>局域网</strong>，手机在外面就选<strong>公网地址</strong>。</p><p>系统会自动把 <code>127.0.0.1</code> 换掉，不会生成一个只有服务器自己打得开的码。</p></blockquote>
 <p><strong>核对一致性</strong>：在设备详情页点「✅ 扫码核对这台设备」，再扫一次 SN，系统会告诉你<strong>扫描值与台账值是否一致</strong>，并把核对结果记进流转记录——适合盘点时用。</p>
 <h3 id="54-从相册选图识别">5.4 从相册选图识别<a class="anchor" href="#54-从相册选图识别">#</a></h3>
-<p>没有摄像头权限或想用已拍好的照片时：首页点 <strong>🖼️ 选择图片</strong>，选一张铭牌照片即可识别（不需要相机权限）。</p>
+<p>没有摄像头权限、或想用已经拍好的照片时：首页点 <strong>🖼️ 从相册选图识别</strong>，选<strong>一张</strong>铭牌照片即可识别 （不需要相机权限，走的是和拍照完全一样的识别链路）。</p>
+<h4 id="一次选多张批量识别入库">一次选多张：批量识别入库<a class="anchor" href="#一次选多张批量识别入库">#</a></h4>
+<p>一次拍了一叠铭牌（比如刚拆箱十台显示器），不用一张张来：首页点 <strong>📋 批量识别入库</strong>， 在相册里<strong>一次勾选多张</strong>（一次最多 30 张），然后：</p>
+<ol>
+<li>屏幕上显示进度「已识别 3 / 10」，<strong>一张一张地</strong>识别</li>
+<li>识别完进入<strong>核对页</strong>：每张照片旁边有品牌 / 型号 / SN 三个输入框，<strong>照着照片核对并改错</strong></li>
+<li>页面下方选 <strong>本批统一设置</strong>（设备分类、所属组织、分类专属字段、供应商、状态 —— 整批一起用这一套）</li>
+<li>勾选要入库的（读全的默认已勾），点 <strong>批量入库（N 台）</strong></li>
+<li>全部顺利入库后<strong>自动回到首页</strong>；如果还有没入库的（没读全 / 识别失败 / 你没勾的），</li>
+</ol>
+<p><strong>会留在核对页</strong>，方便你接着补</p>
+<div class="tw"><table>
+<thead><tr><th>情况</th><th>系统的处理</th></tr></thead>
+<tbody><tr><td>某张没读到 SN</td><td>标成 <strong>没读全</strong>，<strong>默认不勾</strong>（没有 SN 的设备录进去也查不着）。补上 SN 再勾，或点右上角「全选 / 全不选」</td></tr><tr><td>某张彻底失败（网络 / 服务端问题）</td><td>标成 <strong>识别失败</strong> 并写明原因，点「重试 N 张」只重跑这几张；其余已读到的不重跑</td></tr><tr><td>有几张不想入库（比如拍到了桌上的其他东西）</td><td>把它的勾去掉就行</td></tr><tr><td>中途想退出</td><td>点底部 <strong>退出批量识别</strong>。已识别的内容本来就要你确认才入库，退出不影响任何数据</td></tr></tbody>
+</table></div>
+<blockquote><p>⏱ <strong>和电脑端一样，一次只传一张</strong>。免费识别服务限的是并发数，一起传会被拒，</p><p>界面上只会看到「没读出内容」。串行慢一点，但一定读得到 ——</p><p>所以识别期间<strong>别锁屏、别切走浏览器</strong>。</p></blockquote>
+<blockquote><p>💡 十张照片最坏情况（每张都要换角度重试）大约两三分钟。想更快就分两批各五张。</p></blockquote>
+<blockquote><p>📌 批量页里的分类专属字段用 <code>bt_</code> 打头、单张结果页用 <code>mt_</code>，两者<strong>不会互相抢输入框</strong> ——</p><p>你不用担心在这边改了值那边跟着变。</p></blockquote>
 <h3 id="55-最近设备">5.5 最近设备<a class="anchor" href="#55-最近设备">#</a></h3>
 <p>底部 <strong>🗂️ 最近设备</strong> 列出最近更新的 50 台设备，点进去看详情，省得回电脑上查。</p>
 <h3 id="56-手机端常见问题">5.6 手机端常见问题<a class="anchor" href="#56-手机端常见问题">#</a></h3>
 <div class="tw"><table>
 <thead><tr><th>现象</th><th>解决</th></tr></thead>
-<tbody><tr><td>点拍摄没反应 / 提示需要 HTTPS</td><td>必须用 <code>https://</code> 打开；或先用「从相册选图」</td></tr><tr><td>提示「相机权限被拒绝」</td><td>浏览器地址栏左侧图标 → 把「摄像头」设为允许，刷新重试</td></tr><tr><td>识别结果不准</td><td>拍照时让铭牌填满取景框、光线充足、避免反光；<strong>对着结果页顶部的照片再核对一遍</strong>，必要时点开放大</td></tr><tr><td>结果页顶部的照片打不开</td><td>说明这次识别没有保存图片（或服务器上的文件被清理）；识别字段仍然可用，重拍一次即可恢复</td></tr><tr><td>照片太糊看不清</td><td>点缩略图全屏后两指放大；还是看不清就重拍，让手机离铭牌近一点并对上焦</td></tr><tr><td>想存到手机相册</td><td>识别结果页点「📤 存到相册」→ 选「存储图像」；或长按照片选「存储图像 / 下载图片」</td></tr><tr><td>自动保存没生成文件</td><td>部分浏览器会拦截「自动下载」。点照片下方的 <strong>💾 下载到手机</strong> 手动存一次；若之前点过「拒绝」，去浏览器设置里允许本站下载</td></tr><tr><td>不想自动存到手机</td><td>首页「💾 照片备份到手机」卡片里关掉开关</td></tr><tr><td>提示「SN 已存在」</td><td>该设备已录过，用「扫码核对」查询即可</td></tr><tr><td>上传很慢 / 卡住</td><td>系统已自动把照片压缩到最长边 1600px；若仍慢，检查手机与服务器是否同一 WiFi</td></tr><tr><td>打开是乱码或样式错乱</td><td>强制刷新（下拉刷新），或换 Chrome 浏览器</td></tr></tbody>
+<tbody><tr><td>点拍摄没反应 / 提示需要 HTTPS</td><td>必须用 <code>https://</code> 打开；或先用「从相册选图识别」（相册不需要相机权限）</td></tr><tr><td>批量识别到一半卡住不动</td><td>一张一张地传是故意的（并发会被上游拒）。等到当前那张出结果就行；实在卡住就「退出批量识别」重来，已读到的不丢</td></tr><tr><td>批量识别很慢</td><td>十张最坏约两三分钟（每张可能要换 4 个角度重试）。识别期间别锁屏、别切走浏览器</td></tr><tr><td>批量里某张老是「没读全」</td><td>那张照片可能反光 / 太糊 / 拍歪了。单张重拍后不用重开整批 —— 直接在核对页手填 SN，或者用单张流程补录这一台</td></tr><tr><td>提示「相机权限被拒绝」</td><td>浏览器地址栏左侧图标 → 把「摄像头」设为允许，刷新重试</td></tr><tr><td>识别结果不准</td><td>拍照时让铭牌填满取景框、光线充足、避免反光；<strong>对着结果页顶部的照片再核对一遍</strong>，必要时点开放大</td></tr><tr><td>结果页顶部的照片打不开</td><td>说明这次识别没有保存图片（或服务器上的文件被清理）；识别字段仍然可用，重拍一次即可恢复</td></tr><tr><td>照片太糊看不清</td><td>点缩略图全屏后两指放大；还是看不清就重拍，让手机离铭牌近一点并对上焦</td></tr><tr><td>想存到手机相册</td><td>识别结果页点「📤 存到相册」→ 选「存储图像」；或长按照片选「存储图像 / 下载图片」</td></tr><tr><td>自动保存没生成文件</td><td>部分浏览器会拦截「自动下载」。点照片下方的 <strong>💾 下载到手机</strong> 手动存一次；若之前点过「拒绝」，去浏览器设置里允许本站下载</td></tr><tr><td>不想自动存到手机</td><td>首页「💾 照片备份到手机」卡片里关掉开关</td></tr><tr><td>提示「SN 已存在」</td><td>该设备已录过，用「扫码核对」查询即可</td></tr><tr><td>上传很慢 / 卡住</td><td>系统已自动把照片压缩到最长边 1600px；若仍慢，检查手机与服务器是否同一 WiFi</td></tr><tr><td>打开是乱码或样式错乱</td><td>强制刷新（下拉刷新），或换 Chrome 浏览器</td></tr></tbody>
 </table></div>
 <hr>
 <h2 id="六excel-批量导入与导出">六、Excel 批量导入与导出<a class="anchor" href="#六excel-批量导入与导出">#</a></h2>
@@ -897,16 +940,17 @@ tbody tr:hover { background: #f8fafc; }
 </table></div>
 <h3 id="效率小技巧">效率小技巧<a class="anchor" href="#效率小技巧">#</a></h3>
 <ol>
-<li><strong>电脑上大批量</strong> → 用 Excel 导入；<strong>现场零星录入</strong> → 用手机拍照</li>
+<li><strong>电脑上大批量</strong> → 用 Excel 导入；<strong>手上是照片</strong> → 用批量识别（电脑端「设备台账 → 批量识别录入」或手机端「批量识别入库」）；<strong>现场零星录入</strong> → 用手机拍照</li>
 <li>手机识别后<strong>务必扫一眼 SN</strong>，识别置信度再高也要人工确认</li>
 <li>盘点时用手机<strong>扫码核对</strong>，会自动记录核对结果</li>
 <li>打印资产二维码贴在设备上（设备详情页可打开二维码），以后手机一扫就能查</li>
 <li>顶部全局搜索框支持 SN，客户报故障时直接粘 SN 回车定位</li>
 <li>定期看仪表盘的「保修即将到期」，比翻 Excel 靠谱</li>
+<li>批量识别的照片<strong>先拍清楚再传</strong>（铭牌填满画面、光线足、别反光），比事后一张张补数值</li>
 </ol>
 <hr>
 <p>*手册结束。有功能建议或发现问题，请联系系统管理员。*</p>
-<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/4 14:04:51</div>
+<div class="footer">IT 资产管理系统 · 使用手册 · 生成于 2026/10/8 12:11:33</div>
 </div>
 </body>
 </html>

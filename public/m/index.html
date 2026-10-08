@@ -43,6 +43,17 @@
       </a>
     </div>
 
+    <!-- 「放弃批量」这类丢了就回不来的操作，先问一句。点遮罩 = 取消 -->
+    <div class="m-confirm-mask" id="mConfirmMask" hidden onclick="mConfirmAnswer(false)"></div>
+    <div class="m-confirm" id="mConfirmBox" hidden role="alertdialog" aria-modal="true" aria-labelledby="mConfirmTitle">
+      <h3 class="m-confirm-t" id="mConfirmTitle"></h3>
+      <p class="m-confirm-m" id="mConfirmMsg"></p>
+      <div class="m-confirm-act">
+        <button class="btn ghost" id="mConfirmNo" onclick="mConfirmAnswer(false)">取消</button>
+        <button class="btn danger" id="mConfirmYes" onclick="mConfirmAnswer(true)">确定</button>
+      </div>
+    </div>
+
     <main class="m-main" id="main"></main>
 
     <nav class="m-tabbar" id="tabbar" role="tablist" aria-label="主导航">

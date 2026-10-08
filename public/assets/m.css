@@ -722,6 +722,27 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .more-sheet .m-row { border-radius: 0; }
 .more-sheet .m-row + .m-row { border-top: 1px solid var(--border); }
 
+/* ---------------- 确认框（「放弃批量」这类丢了就回不来的操作） ----------------
+ * 不用原生 confirm()：手机浏览器会在原生弹框上带一行当前域名，
+ * 在这个 App 观感的页面里突然冒出一个「带网址的系统框」，用户会以为是报错。
+ *
+ * 层级：84 / 86 —— 要盖过「更多」菜单（80）和底部固定动作条（45），
+ * 但要低于提示气泡（200），确认框弹出时「复制成功」这类提示仍然看得见。
+ */
+.m-confirm-mask { position: fixed; inset: 0; z-index: 84; background: rgba(15, 23, 42, .38); }
+.m-confirm {
+  position: fixed; z-index: 86; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: calc(100% - 44px); max-width: 340px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 16px 14px; box-shadow: var(--shadow-lg);
+  animation: confirmIn .16s cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes confirmIn { from { opacity: 0; transform: translate(-50%, -48%) scale(.97); } }
+.m-confirm-t { margin: 0 0 8px; font-size: 15.5px; font-weight: 650; color: var(--text); }
+.m-confirm-m { margin: 0 0 15px; font-size: 13.5px; line-height: 1.6; color: var(--ink-3); }
+.m-confirm-act { display: flex; gap: 10px; }
+.m-confirm-act .btn { flex: 1; }
+
 /* ---- 最近设备：概览页里的紧凑列表（只读，点进详情） ---- */
 .rec-list { display: flex; flex-direction: column; }
 .rec-row {
@@ -754,6 +775,11 @@ input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .card-head h3 { margin: 0; }
 .btn.xs { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: var(--radius-sm); gap: 4px; }
 .btn.xs.danger, .btn.sm.danger { background: var(--red-soft); border-color: var(--red-border); color: var(--red-text); }
+
+/* 整宽的实心红按钮：确认框里的「放弃」。上面那两条是浅色小按钮，不能共用 ——
+   确认框里的主行动要在视觉上「重」，浅色红看起来像次要按钮，用户会顺手点过去。 */
+.btn.danger { background: var(--red); border-color: var(--red); color: #fff; box-shadow: 0 1px 2px rgba(180, 35, 24, .24); }
+.btn.danger:active { filter: brightness(.94); }
 
 /* ============================================================
  * 批量识别入库

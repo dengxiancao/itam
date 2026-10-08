@@ -1335,8 +1335,19 @@ function bindDeviceForm(dev) {
  *    这样中途重绘表格不会把用户已经改好的内容冲掉。
  * ==================================================================== */
 
-/** 电脑端一次最多几张（比手机端放宽：电脑不会锁屏，页面可以一直开着） */
-const ADMIN_BATCH_MAX = 50;
+/**
+ * 电脑端一次最多几张。比手机端（30）放宽，因为两边的**约束条件根本不同**：
+ *   手机：页面得全程亮着不能锁屏，30 张最坏 120 次调用已经接近「一次操作」的上限；
+ *   电脑：不会锁屏，窗口可以后台开着，100 张最坏 400 次调用只是「挂一会儿」。
+ *
+ * 为什么是 100 而不是更大：真正会先撞到的不是服务端（串行一次只发一张，单请求 48MB /
+ * 64 段 / 240 次每分钟 / OCR 闸门 6 并发一个都够用），而是**上游免费额度和用户耐心**
+ * ——100 张最坏 400 次调用，按十几分钟到半小时量级算，再长就该分批多跑几次了。
+ *
+ * ⚠️ 超限是 `slice()` **直接丢弃**，不是排队等候。所以 `startBatchOcr()` 里那条提示
+ * 必须说清「有几张没进来」，不然用户以为 150 张都在处理。
+ */
+const ADMIN_BATCH_MAX = 100;
 
 const BATCH_TEXT = {
   pending: '等待识别', processing: '识别中…', ok: '已读出', weak: '没读全，请核对', error: '识别失败', saved: '已入库',
@@ -1346,23 +1357,66 @@ function openBatchOcr() {
   if (!hasPerm('device.write')) { toast('没有「新增设备」权限', 'warn'); return; }
   const firstCat = state.options?.categories?.[0]?.id || '';
   state.batchOcr = {
-    items: [], total: 0, running: false, phase: 'pick',
+    items: [], total: 0, dropped: 0, running: false, phase: 'pick',
     supplier: '', ctrl: null, firstCat,
   };
   renderBatchOcrModal();
 }
 
-/** 关弹窗：把还在飞的识别请求掐掉，别留一个后台队列在跑 */
-function closeBatchOcr() {
+/**
+ * 关弹窗：把还在飞的识别请求掐掉，别留一个后台队列在跑。
+ *
+ * ⚠️ 有「已识别、还没入库」的项时**先问一句**。100 张的批次可能已经跑了十几分钟、
+ *    烧掉几百次识别调用，手一滑点了关闭就全没了 —— 而且他得回资源管理器重新挑同样的照片。
+ *    没东西可丢时不多问（选文件阶段、全部入完库之后都直接关，别让确认框变成噪音）。
+ *
+ * ⚠️ `confirmBox` 借用的是**同一个 `#modal`**，会把批量弹窗整个顶掉，而且它两个按钮
+ *    都会 `closeModal()`。所以「取消」之后必须把批量弹窗重新画回来，否则用户会以为
+ *    「点了取消结果还是被关掉了」。
+ */
+async function closeBatchOcr() {
   const b = state.batchOcr;
-  if (b) { b.ctrl?.abort(); state.batchOcr = null; }
+  if (b) {
+    const unsaved = batchOcrUnsaved(b);
+    if (unsaved) {
+      const ok = await confirmBox('放弃这批识别', `还有 ${unsaved} 张已经识别好、但没入库。关掉就没了 —— 得重新选一遍照片、再识别一次。确定放弃吗？`);
+      // 等用户点确认的这几秒里，批次可能已经被换掉或清掉了，那就别再动手
+      if (state.batchOcr !== b) return;
+      if (!ok) { renderBatchOcrModal(); return; }
+    }
+    b.ctrl?.abort();
+    state.batchOcr = null;
+  }
   closeModal();
   if (state.view === 'devices') loadDevices();   // 入过库就顺手刷新台账
+}
+
+/**
+ * 「识别好了、还没入库」的项数 —— 离开就会白丢的那些。
+ * 只算 ok / weak：error 本来就没结果可丢，pending / processing 还没跑出东西。
+ */
+function batchOcrUnsaved(b) {
+  return (b?.items || []).filter((it) => it.status === 'ok' || it.status === 'weak').length;
 }
 
 function renderBatchOcrModal() {
   openModal(batchOcrModalHTML(), { wide: true });
   bindBatchOcrModal();
+}
+
+/**
+ * 「这次有几张没进来」的常驻提示（只在真的丢过东西时出现）。
+ *
+ * 和 `startBatchOcr()` 里那条 toast 是**两件事**，别合并：
+ *   - toast 负责「当场告诉你」（3.2 秒后自己消失）；
+ *   - 这条负责「回头看还在」。用户框选了 150 张，很可能没盯着那 3 秒的提示，
+ *     等识别跑完才发现只有 100 张 —— 那时候他需要的是页面上写着「还有 50 张没进来」。
+ */
+function batchDroppedNote(b) {
+  if (!b || !b.dropped) return '';
+  return `<div class="batch-drop-note">${svgIcon('alert', 14)}
+    <span>还有 <b>${b.dropped}</b> 张没有加进来（一次最多 ${ADMIN_BATCH_MAX} 张）。这批处理完再选一次即可。</span>
+  </div>`;
 }
 
 /**
@@ -1402,6 +1456,7 @@ function batchOcrModalHTML() {
       <div class="modal-body">
         <div class="batch-bar"><i id="batchOcrBarFill"></i></div>
         <div class="batch-sum" id="batchOcrStat"></div>
+        ${batchDroppedNote(b)}
         <div class="batch-list" id="batchOcrList">${adminBatchListHTML(b)}</div>
       </div>
       <div class="modal-foot">
@@ -1422,6 +1477,7 @@ function batchOcrModalHTML() {
         共 ${b.total} 张：读到 <b>${read}</b> 张${weak ? `（其中 ${weak} 张没读全）` : ''}${bad ? `，<b style="color:var(--red)">${bad} 张失败</b>` : ''}${saved ? `，已入库 ${saved} 台` : ''}。
         照着每张的照片核对一遍再勾选 —— 识别只是初稿，SN 最容易看错（L/1、O/Q）。
       </div>
+      ${batchDroppedNote(b)}
       <div class="batch-tools">
         <label class="sw-inline"><input type="checkbox" id="batchOcrAll" ${allOn ? 'checked' : ''}> 全选可入库的</label>
         <label class="sw-inline">供应商
@@ -1641,7 +1697,10 @@ function batchOcrToggleAll(on) {
 function startBatchOcr(files) {
   const b = state.batchOcr;
   if (!b || b.running) return;
-  if (files.length > ADMIN_BATCH_MAX) toast(`一次最多 ${ADMIN_BATCH_MAX} 张，先处理前 ${ADMIN_BATCH_MAX} 张`, 'warn');
+  // ⚠️ 超限是直接丢弃不是排队。丢了多少必须**留在 state 上**（不只是弹一条 3 秒的提示）：
+  //    提示一闪而过，而用户很可能正是从资源管理器框选了 150 张的人 ——
+  //    他不盯着屏幕就只会看到「处理完了」，以为 150 张都进来了。
+  const dropped = Math.max(0, files.length - ADMIN_BATCH_MAX);
   const list = files.slice(0, ADMIN_BATCH_MAX);
   const stamp = Date.now();
   b.items = list.map((f, i) => ({
@@ -1657,8 +1716,10 @@ function startBatchOcr(files) {
     edit: { brand: '', model: '', sn: '', category_id: b.firstCat, org_id: '', status: 'in_use' },
   }));
   b.total = list.length;
+  b.dropped = dropped;
   b.phase = 'run';
   b.ctrl = new AbortController();
+  if (dropped) toast(`一次最多 ${ADMIN_BATCH_MAX} 张：这次只收下前 ${ADMIN_BATCH_MAX} 张，剩下 ${dropped} 张没有进来`, 'warn');
   renderBatchOcrModal();
   runBatchOcrQueue(b.items);
 }

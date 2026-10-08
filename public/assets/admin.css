@@ -1410,6 +1410,16 @@ label > .help, .sw-txt > .help { vertical-align: -2px; }
 }
 .batch-sum { font-size: 13px; line-height: 1.6; color: var(--text-2); margin-bottom: 12px; }
 
+/* 「还有 N 张没进来」：常驻提示，不是 toast —— 一闪而过的提示挡不住「以为都进来了」 */
+.batch-drop-note {
+  display: flex; align-items: flex-start; gap: 7px;
+  margin: 0 0 12px; padding: 9px 11px;
+  font-size: 12.5px; line-height: 1.55; color: var(--amber);
+  background: var(--amber-soft); border: 1px solid var(--amber-border);
+  border-radius: 9px;
+}
+.batch-drop-note svg { flex: none; margin-top: 1px; }
+
 .batch-list { display: flex; flex-direction: column; max-height: 46vh; overflow-y: auto; }
 .batch-line {
   display: flex; align-items: center; gap: 10px;

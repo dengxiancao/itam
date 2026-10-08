@@ -171,6 +171,45 @@ function openMore(on) {
 }
 function closeMore() { openMore(false); }
 
+/* ---------------- 确认框（放弃批量这类「丢了就回不来」的操作） ----------------
+ *
+ * 为什么不用原生 `confirm()`：手机浏览器在原生弹框上会加一行当前域名，
+ * 在 App 观感的页面里突然出现一个「带网址的系统框」，用户第一反应是「出错了」，
+ * 而不是「在问我」。所以自己做一个，样式跟页面一致。
+ *
+ * ⚠️ 同一时刻只允许一个待确认（`mConfirmResolve` 只有一份）。真出现并发提问，
+ *    后一个会盖掉前一个的 resolve —— 前一个的 promise 就永远挂着。当前只有
+ *    退出批量这一处在用，不构成问题；将来要多个并发确认得改成队列。
+ */
+let mConfirmResolve = null;
+
+/** 弹确认框。resolve(true) = 用户选了「确定」。两个按钮的文案都从调用方传，别写死。 */
+function mConfirm(title, message, { okText = '确定', cancelText = '取消' } = {}) {
+  return new Promise((resolve) => {
+    const box = $('#mConfirmBox');
+    const mask = $('#mConfirmMask');
+    if (!box || !mask) { resolve(true); return; }   // 页面缺元素时不要把人卡死在这儿
+    mConfirmResolve = resolve;
+    $('#mConfirmTitle').textContent = title;
+    $('#mConfirmMsg').textContent = message;
+    $('#mConfirmYes').textContent = okText;
+    $('#mConfirmNo').textContent = cancelText;
+    box.hidden = false;
+    mask.hidden = false;
+  });
+}
+
+/** 供内联 onclick 调用（和 .more-mask 的写法一致：点遮罩 = 取消） */
+function mConfirmAnswer(ok) {
+  const box = $('#mConfirmBox');
+  const mask = $('#mConfirmMask');
+  if (box) box.hidden = true;
+  if (mask) mask.hidden = true;
+  const fn = mConfirmResolve;
+  mConfirmResolve = null;      // 先清再调：处理函数里再弹一个确认框也不会被这里冲掉
+  if (fn) fn(!!ok);
+}
+
 /**
  * 相册入口必须按当前流程走对分支：
  * 扫码模式下选图是「解条码」，不是「OCR 识别」。
@@ -1664,6 +1703,10 @@ async function saveRecognized() {
  * 一次最多几张。
  * 定 30 的依据：单张最坏要跑 4 趟识别（四个角度），30 张就是 120 次调用；
  * 而手机页面得全程开着不能锁屏。再多就不是「一次操作」而是「挂着跑一上午」了。
+ *
+ * ⚠️ 电脑端是 100（`admin.js` 的 `ADMIN_BATCH_MAX`），**故意不一样，别去「对齐」**：
+ *    两边卡住的东西不同 —— 手机卡的是「屏幕得亮着 + 电池」，电脑卡的是上游额度。
+ *    把手机也拉到 100，就是让用户抱着手机等半小时还不能锁屏。
  */
 const BATCH_MAX = 30;
 
@@ -1702,7 +1745,9 @@ function galleryForBatch() {
  * 不会把用户已经改好的内容抹掉。
  */
 function startBatch(files) {
-  if (files.length > BATCH_MAX) toast(`一次最多 ${BATCH_MAX} 张，先处理前 ${BATCH_MAX} 张`, 'warn');
+  // ⚠️ 超限是直接丢弃不是排队。丢了多少留在 state 上，不只是弹一条会自己消失的提示：
+  //    用户一次选了 40 张，很可能没盯着那 3 秒，等识别跑完才发现只有 30 张。
+  const dropped = Math.max(0, files.length - BATCH_MAX);
   const list = files.slice(0, BATCH_MAX);
   const stamp = Date.now();
   state.batch = {
@@ -1718,21 +1763,50 @@ function startBatch(files) {
       edit: { brand: '', model: '', sn: '' },
     })),
     total: list.length,
+    dropped,
     running: false,
     phase: 'recognize',   // recognize | review
     shared: defaultBatchShared(),
     ctrl: new AbortController(),
   };
+  if (dropped) toast(`一次最多 ${BATCH_MAX} 张：这次只收下前 ${BATCH_MAX} 张，剩下 ${dropped} 张没有进来`, 'warn');
   route('batch');
   runBatchQueue();
 }
 
-/** 离开批量页：把还在飞的请求掐掉、objectURL 释放掉，别留一堆没用的内存 */
-function exitBatch() {
+/**
+ * 离开批量页：把还在飞的请求掐掉、objectURL 释放掉，别留一堆没用的内存。
+ *
+ * ⚠️ 有「已识别、还没入库」的项时先问一句。手机端最容易误触（退出按钮在底部动作条上，
+ *    拇指一滑就点到），而这一下丢掉的是几张到几十张已经烧过识别额度的结果 ——
+ *    补回来要重新回相册挑一遍同样的照片、再识别一遍。
+ *    没东西可丢时不问（识别刚开跑、或者都入完库了都直接走）。
+ */
+async function exitBatch() {
   const b = state.batch;
-  if (b) b.ctrl?.abort();
+  if (b) {
+    const unsaved = batchUnsaved(b);
+    if (unsaved) {
+      const go = await mConfirm(
+        '放弃这批？',
+        `还有 ${unsaved} 张已经识别好、但没入库。退出就没了 —— 得重新回相册选一遍照片、再识别一次。`,
+        { okText: '放弃', cancelText: '继续核对' },
+      );
+      if (state.batch !== b) return;         // 等确认这会儿批次已经没了，别再动它
+      if (!go) return;                       // 「继续核对」：留在原页，什么都不清
+    }
+    b.ctrl?.abort();
+  }
   state.batch = null;
   route('home');   // route 会把 state.view 改成 home，正在跑的队列下一次检查就自己停了
+}
+
+/**
+ * 「识别好了、还没入库」的张数 —— 退出就会白丢的那些。
+ * 只算 ok / weak：error 本来就没结果可丢，pending / processing 还没跑出东西。
+ */
+function batchUnsaved(b) {
+  return (b?.items || []).filter((it) => it.status === 'ok' || it.status === 'weak').length;
 }
 
 function finishedCount(b) {
@@ -2931,6 +3005,10 @@ window.skRows = skRows;
 window.setTabbar = setTabbar;
 window.toggleMore = toggleMore;
 window.closeMore = closeMore;
+// mConfirmAnswer 是 index.html 里两个按钮的 onclick 目标 —— 漏了这个导出，
+// 表现就是「确认框弹出来了，点哪个都没反应」，而且控制台干干净净。
+window.mConfirm = mConfirm;
+window.mConfirmAnswer = mConfirmAnswer;
 // 扫码排障：手机上打开控制台敲 __scanInfo() 就能看到这台机器认不认二维码
 window.__scanInfo = () => ({
   hasBarcodeDetector: 'BarcodeDetector' in window,

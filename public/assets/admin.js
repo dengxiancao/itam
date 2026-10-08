@@ -2228,13 +2228,17 @@ function downscaleBlob(img, maxSide, quality) {
 
 /**
  * 导出 Excel
- *   doExport({ all: true })   全部导出（忽略当前筛选）
+ *   doExport({ all: true })   全部导出（忽略设备台账的筛选）
  *   doExport({ ids: [...] })  只导出勾选的这几台
- *   doExport()                按当前筛选条件导出（Excel 对接页用）
+ *   doExport()                按设备台账**当前**的筛选条件导出
+ *
+ * ⚠️ 「啥都不传」这条路只会用到 `state.devicesQuery` —— 那是**设备台账页的筛选**，
+ *    它跨页面存活、在别的页面上完全看不见。所以**别的页面调它时必须显式表态**：
+ *    Excel 页要全量就得传 `all: true`（见 doExportExcel 的注释，2026-10-08 的真实故障）。
  */
 async function doExport(opts = {}) {
   if (exporting) { toast('上一份还在生成，稍等一下…', 'warn'); return; }
-  // 三种来源：{ all:true } 全部 / { ids:[...] } 勾选的若干台 / 啥都不传 = 当前筛选结果。
+  // 三种来源：{ all:true } 全部 / { ids:[...] } 勾选的若干台 / 啥都不传 = 设备台账当前的筛选结果。
   // ⚠️ 「全选匹配」模式下传进来的是 { all_matching:true, query:{...} } —— 语义上就是
   //    「当前筛选结果」，所以这里必须**忽略 all_matching 的 query 而用页面上最新的 state.devicesQuery**，
   //    否则用户在勾选之后又改了筛选（例如换了搜索词）导出的还是旧条件。
